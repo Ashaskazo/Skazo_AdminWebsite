@@ -1,0 +1,108 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '14.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  pod 'Firebase/Analytics', :modular_headers => true
+  pod 'Firebase/Auth', :modular_headers => true
+  pod 'Firebase/Core', :modular_headers => true
+  pod 'Firebase/Firestore', :modular_headers => true
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  # Set C++17 at the project level first
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+    config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+  end
+  
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    if target.name == 'BoringSSL-GRPC'
+      target.source_build_phase.files.each do |file|
+        if file.settings && file.settings['COMPILER_FLAGS']
+          flags = file.settings['COMPILER_FLAGS'].split
+          flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
+          file.settings['COMPILER_FLAGS'] = flags.join(' ')
+        end
+      end
+    end
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+      
+      # Apply C++17 standard to all targets
+      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+      
+      # Specific fixes for gRPC-Core and gRPC-C++ targets
+      if target.name == 'gRPC-Core' || target.name == 'gRPC-C++' || target.name.include?('gRPC') || target.name.include?('GRPC')
+        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+        config.build_settings['CLANG_WARN_DOCUMENTATION_COMMENTS'] = 'NO'
+        config.build_settings['CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING'] = 'NO'
+        config.build_settings['CLANG_WARN_STRICT_PROTOTYPES'] = 'NO'
+        # Ensure C++17 is explicitly set
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        # Add compiler flags for C++17 support
+        if config.build_settings['OTHER_CPLUSPLUSFLAGS']
+          flags = config.build_settings['OTHER_CPLUSPLUSFLAGS']
+          flags = [flags] unless flags.is_a?(Array)
+          flags << '-std=c++17' unless flags.include?('-std=c++17')
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = flags
+        else
+          config.build_settings['OTHER_CPLUSPLUSFLAGS'] = ['-std=c++17']
+        end
+        # Additional C++ flags
+        config.build_settings['GCC_C_LANGUAGE_STANDARD'] = 'gnu11'
+      end
+    end
+    
+    # Also set C++17 for source files in gRPC targets
+    if target.name == 'gRPC-Core' || target.name == 'gRPC-C++'
+      target.source_build_phase.files.each do |file|
+        if file.file_ref && file.file_ref.path && file.file_ref.path.end_with?('.h', '.hpp', '.cpp', '.cc', '.cxx')
+          file.settings ||= {}
+          file.settings['COMPILER_FLAGS'] ||= ''
+          flags = file.settings['COMPILER_FLAGS'].split
+          flags << '-std=c++17' unless flags.include?('-std=c++17')
+          file.settings['COMPILER_FLAGS'] = flags.join(' ')
+        end
+      end
+    end
+  end
+end
