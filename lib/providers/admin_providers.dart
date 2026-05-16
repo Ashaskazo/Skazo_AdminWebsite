@@ -21,18 +21,49 @@ final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, emai
   }
 });
 
+/// Provider to get the current admin profile data
+final currentAdminProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null || user.email == null) return null;
+
+  try {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('admin')
+        .where('email', isEqualTo: user.email!.toLowerCase().trim())
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      return {
+        'id': snapshot.docs.first.id,
+        ...snapshot.docs.first.data(),
+      };
+    }
+  } catch (e) {
+    print('Error fetching admin profile: $e');
+  }
+  return null;
+});
+
+/// Provider to check if current user is a super admin
+final isSuperAdminProvider = Provider<bool>((ref) {
+  final profile = ref.watch(currentAdminProfileProvider).value;
+  if (profile == null) return false;
+  
+  // Support both 'role' (new) and 'level' (existing) fields
+  final role = profile['role'] ?? profile['level'];
+  return role == 'super_admin' || role == 'administrator';
+});
+
+/// Provider to watch the Firebase Auth state
+final authStateProvider = StreamProvider<User?>((ref) {
+  return FirebaseAuth.instance.authStateChanges();
+});
+
 /// Provider to get the current admin status
 final currentAdminStatusProvider = FutureProvider<bool>((ref) async {
-  final user = FirebaseAuth.instance.currentUser;
-
-  // If no user is logged in, they are not an admin
-  if (user == null) {
-    return false;
-  }
-
-  // Check if the current user's email is in the admins collection
-  final isAuthorized = await ref.watch(isAuthorizedAdminProvider(user.email ?? '').future);
-  return isAuthorized;
+  final profile = await ref.watch(currentAdminProfileProvider.future);
+  return profile != null;
 });
 
 /// Provider to handle logging out

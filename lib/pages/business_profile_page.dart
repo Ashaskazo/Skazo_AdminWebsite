@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:intl/intl.dart';
 
 class BusinessProfilePage extends ConsumerStatefulWidget {
   final Map<String, dynamic> businessData;
@@ -12,455 +11,377 @@ class BusinessProfilePage extends ConsumerStatefulWidget {
   const BusinessProfilePage({super.key, required this.businessData});
 
   @override
-  ConsumerState<BusinessProfilePage> createState() =>
-      _BusinessProfilePageState();
+  ConsumerState<BusinessProfilePage> createState() => _BusinessProfilePageState();
 }
 
-class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage>
-    with SingleTickerProviderStateMixin {
-  TabController? _tabController;
+class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
+  final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+
+  // Controllers
+  late TextEditingController _nameController;
+  late TextEditingController _bioController;
+  late TextEditingController _addressController;
+  late TextEditingController _firstNameController;
+  late TextEditingController _lastNameController;
+  late TextEditingController _phoneController;
+  late TextEditingController _emailController;
+  late TextEditingController _planController;
+  late TextEditingController _priorityController;
+  late TextEditingController _genderController;
+  late TextEditingController _usernameController;
+  late TextEditingController _ownerPaidController;
+  late TextEditingController _userPaidController;
+  late TextEditingController _fcmTokenController;
+
+  // Status variables
+  late bool _isVerified;
+  late bool _isActive;
+  late bool _isOnline;
+  late bool _isUser;
+  late bool _profileComplete;
+  late bool _categoryBoostEnabled;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final data = widget.businessData;
+    _nameController = TextEditingController(text: data['businessname'] ?? '');
+    _bioController = TextEditingController(text: data['businessbio'] ?? '');
+    _addressController = TextEditingController(text: data['businessaddress'] ?? '');
+    _firstNameController = TextEditingController(text: data['firstname'] ?? '');
+    _lastNameController = TextEditingController(text: data['lastname'] ?? '');
+    _phoneController = TextEditingController(text: data['phone']?.toString() ?? '');
+    _emailController = TextEditingController(text: data['email'] ?? '');
+    _planController = TextEditingController(text: data['AtivePlan']?.toString() ?? '0');
+    _priorityController = TextEditingController(text: data['priority']?.toString() ?? '0');
+    _genderController = TextEditingController(text: data['gender'] ?? '');
+    _usernameController = TextEditingController(text: data['username'] ?? '');
+    _ownerPaidController = TextEditingController(text: data['ownerPropertyPaid']?.toString() ?? '0');
+    _userPaidController = TextEditingController(text: data['userPropertyPaid']?.toString() ?? '0');
+    _fcmTokenController = TextEditingController(text: data['fcmtoken'] ?? '');
+
+    _isVerified = data['isverified'] ?? false;
+    _isActive = data['isactive'] ?? false;
+    _isOnline = data['isonline'] ?? false;
+    _isUser = data['isuser'] ?? false;
+    _profileComplete = data['profileComplete'] ?? false;
+    _categoryBoostEnabled = data['categoryBoostEnabled'] ?? false;
   }
 
   @override
   void dispose() {
-    _tabController?.dispose();
+    _nameController.dispose();
+    _bioController.dispose();
+    _addressController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _planController.dispose();
+    _priorityController.dispose();
+    _genderController.dispose();
+    _usernameController.dispose();
+    _ownerPaidController.dispose();
+    _userPaidController.dispose();
+    _fcmTokenController.dispose();
     super.dispose();
   }
 
-  Future<void> _verifyBusiness() async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Verify Business'),
-          content: const Text('Are you sure you want to verify this business?'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Verify'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirm != true) return;
-
+  Future<void> _saveChanges() async {
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+
     try {
-      final verificationNotifier = ref.read(userVerificationProvider.notifier);
-      final success = await verificationNotifier.verifyUser(
-        widget.businessData['id'],
-      );
+      final updatedData = {
+        'businessname': _nameController.text.trim(),
+        'businessbio': _bioController.text.trim(),
+        'businessaddress': _addressController.text.trim(),
+        'firstname': _firstNameController.text.trim(),
+        'lastname': _lastNameController.text.trim(),
+        'phone': int.tryParse(_phoneController.text.trim()) ?? 0,
+        'email': _emailController.text.trim(),
+        'AtivePlan': int.tryParse(_planController.text.trim()) ?? 0,
+        'priority': int.tryParse(_priorityController.text.trim()) ?? 0,
+        'gender': _genderController.text.trim(),
+        'username': _usernameController.text.trim(),
+        'ownerPropertyPaid': int.tryParse(_ownerPaidController.text.trim()) ?? 0,
+        'userPropertyPaid': int.tryParse(_userPaidController.text.trim()) ?? 0,
+        'fcmtoken': _fcmTokenController.text.trim(),
+        'isverified': _isVerified,
+        'isactive': _isActive,
+        'isonline': _isOnline,
+        'isuser': _isUser,
+        'profileComplete': _profileComplete,
+        'categoryBoostEnabled': _categoryBoostEnabled,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance.collection('users').doc(widget.businessData['id']).update(updatedData);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              success
-                  ? 'Business verified successfully'
-                  : 'Error verifying business',
-            ),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated successfully'), backgroundColor: Colors.green));
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error verifying business: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating profile: $e'), backgroundColor: Colors.red));
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _launchCall(String phoneNumber) async {
-    // Clean the phone number to ensure it's in a valid format
-    final cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
-
-    // Create the URI with the cleaned number
-    final Uri callUri = Uri(scheme: 'tel', path: cleanedNumber);
-
-    try {
-      if (await canLaunchUrl(callUri)) {
-        await launchUrl(callUri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Could not launch call to $cleanedNumber'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error launching call: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+  InputDecoration _buildInputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
+      labelStyle: GoogleFonts.poppins(color: const Color(0xFF64748B), fontSize: 13),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2)),
+    );
   }
 
-  Future<void> _launchMaps(String address) async {
-    final encodedAddress = Uri.encodeComponent(address);
-    final googleMapsUrl =
-        "https://www.google.com/maps/search/?api=1&query=$encodedAddress";
-    final Uri url = Uri.parse(googleMapsUrl);
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 32, bottom: 16),
+      child: Text(title, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+    );
+  }
 
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Could not launch maps for $address'),
-              backgroundColor: Colors.red,
+  Widget _buildReadOnlyField(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFFF1F5F9).withValues(alpha: 0.5), borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: GoogleFonts.poppins(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                Text(value, style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF0F172A), fontWeight: FontWeight.w600)),
+              ],
             ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error launching maps: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return 'N/A';
+    if (timestamp is Timestamp) {
+      return DateFormat('dd MMM yyyy, hh:mm a').format(timestamp.toDate());
     }
+    return timestamp.toString();
   }
 
   @override
   Widget build(BuildContext context) {
-    final business = widget.businessData;
+    final data = widget.businessData;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          'Business Profile',
-          style: GoogleFonts.nunitoSans(
-            fontWeight: FontWeight.bold,
-            fontSize: 21,
-          ),
-        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text('User Profile Editor', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF0F172A))),
+        iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [
-          if (!business['isverified'])
-            IconButton(
-              icon: const Icon(Icons.verified_user),
-              onPressed: _isLoading ? null : _verifyBusiness,
-              tooltip: 'Verify Business',
+          if (_isLoading)
+            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: ElevatedButton.icon(
+                onPressed: _saveChanges,
+                icon: const Icon(Icons.save_rounded, size: 18),
+                label: const Text('Save'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Card
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [const Color(0xFF2563EB), const Color(0xFF1E40AF)]),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 80, height: 80,
+                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 4)),
+                      child: ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: data['businesspic'] ?? '',
+                          fit: BoxFit.cover,
+                          errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.white, size: 40),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(data['businessname'] ?? 'No Name', style: GoogleFonts.poppins(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+                          Text(data['uid'] ?? 'No UID', style: GoogleFonts.poppins(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
+                            child: Text(data['isverified'] == true ? 'Verified' : 'Unverified', style: GoogleFonts.poppins(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              _buildSectionHeader('Business Information'),
+              TextFormField(controller: _nameController, decoration: _buildInputDecoration('Business Name', Icons.business_rounded)),
+              const SizedBox(height: 16),
+              TextFormField(controller: _bioController, maxLines: 2, decoration: _buildInputDecoration('Business Bio', Icons.description_rounded)),
+              const SizedBox(height: 16),
+              TextFormField(controller: _addressController, maxLines: 2, decoration: _buildInputDecoration('Business Address', Icons.location_on_rounded)),
+              
+              _buildSectionHeader('Personal Information'),
+              Row(
                 children: [
-                  const SizedBox(height: 24),
-                  // Profile header
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Profile image
-                      CircleAvatar(
-                        backgroundImage: CachedNetworkImageProvider(
-                          business['businesspic'] ??
-                              'https://via.placeholder.com/150',
-                        ),
-                        radius: 42,
-                      ),
-                      const SizedBox(width: 12),
-                      // Business details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              business['businessname'] ?? 'No Name',
-                              style: GoogleFonts.nunitoSans(
-                                fontSize: 21,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  business['isverified']
-                                      ? Icons.verified
-                                      : Icons.pending,
-                                  color:
-                                      business['isverified']
-                                          ? Colors.green
-                                          : Colors.orange,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child:
-                                      business['category'] == null
-                                          ? Text(
-                                            'No Category',
-                                            style: GoogleFonts.nunitoSans(
-                                              fontSize: 16,
-                                            ),
-                                          )
-                                          : Wrap(
-                                            spacing: 4,
-                                            runSpacing: 0,
-                                            children:
-                                                (business['category'] is List
-                                                        ? List<String>.from(
-                                                          business['category'],
-                                                        )
-                                                        : [
-                                                          business['category']
-                                                              .toString(),
-                                                        ])
-                                                    .map(
-                                                      (cat) => Chip(
-                                                        label: Text(
-                                                          cat,
-                                                          style:
-                                                              GoogleFonts.nunitoSans(
-                                                                fontSize: 14,
-                                                              ),
-                                                        ),
-                                                        backgroundColor: Colors
-                                                            .blue
-                                                            .withOpacity(0.1),
-                                                        labelStyle:
-                                                            const TextStyle(
-                                                              color:
-                                                                  Colors.blue,
-                                                            ),
-                                                      ),
-                                                    )
-                                                    .toList(),
-                                          ),
-                                ),
-                              ],
-                            ),
-                            if (business['avgRating'] != null)
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.star_rounded,
-                                    color: Colors.amber,
-                                  ),
-                                  Text(
-                                    '${business['avgRating']} (${business['totalRatings'] ?? 0})',
-                                    style: GoogleFonts.nunitoSans(fontSize: 16),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // Business bio
-                  Text(
-                    'About',
-                    style: GoogleFonts.nunitoSans(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    constraints: const BoxConstraints(maxHeight: 150),
-                    child: SingleChildScrollView(
-                      child: Text(
-                        business['businessbio'] ?? 'No description available',
-                        style: GoogleFonts.nunitoSans(
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Action buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed:
-                              () => _launchCall(business['phone'].toString()),
-                          icon: const Icon(Icons.phone),
-                          label: const Text('Call'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed:
-                              () => _launchMaps(business['businessaddress']),
-                          icon: const Icon(Icons.location_on),
-                          label: const Text('Location'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+                  Expanded(child: TextFormField(controller: _firstNameController, decoration: _buildInputDecoration('First Name', Icons.person_outline))),
+                  const SizedBox(width: 16),
+                  Expanded(child: TextFormField(controller: _lastNameController, decoration: _buildInputDecoration('Last Name', Icons.person_outline))),
                 ],
               ),
-            ),
-          ),
-          // TabBar
-          TabBar(
-            controller: _tabController,
-            tabs: [
-              Tab(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.photo_library),
-                    const SizedBox(width: 8),
-                    Text('Gallery', style: GoogleFonts.nunitoSans()),
-                  ],
-                ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: TextFormField(controller: _usernameController, decoration: _buildInputDecoration('Username', Icons.alternate_email_rounded))),
+                  const SizedBox(width: 16),
+                  Expanded(child: TextFormField(controller: _genderController, decoration: _buildInputDecoration('Gender', Icons.wc_rounded))),
+                ],
               ),
-              Tab(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.reviews),
-                    const SizedBox(width: 8),
-                    Text('Reviews', style: GoogleFonts.nunitoSans()),
-                  ],
-                ),
+              const SizedBox(height: 16),
+              TextFormField(controller: _phoneController, keyboardType: TextInputType.phone, decoration: _buildInputDecoration('Phone Number', Icons.phone_android_rounded)),
+              const SizedBox(height: 16),
+              TextFormField(controller: _emailController, keyboardType: TextInputType.emailAddress, decoration: _buildInputDecoration('Email', Icons.email_rounded)),
+
+              _buildSectionHeader('Service Details'),
+              // Category (Read only list for now)
+              _buildReadOnlyField('Categories', (data['category'] as List?)?.join(', ') ?? 'None', Icons.category_rounded),
+              _buildReadOnlyField('Service Rate Card', (data['ServiceRateCard'] as List?)?.map((e) => "${e['service']}: ₹${e['rate']}").join('\n') ?? 'None', Icons.payments_rounded),
+
+              _buildSectionHeader('Account & Subscription'),
+              Row(
+                children: [
+                  Expanded(child: TextFormField(controller: _planController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Active Plan', Icons.card_membership_rounded))),
+                  const SizedBox(width: 16),
+                  Expanded(child: TextFormField(controller: _priorityController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Priority', Icons.low_priority_rounded))),
+                ],
               ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: TextFormField(controller: _ownerPaidController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Owner Paid', Icons.monetization_on_rounded))),
+                  const SizedBox(width: 16),
+                  Expanded(child: TextFormField(controller: _userPaidController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('User Paid', Icons.account_balance_wallet_rounded))),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12, runSpacing: 12,
+                children: [
+                  _buildToggle('Verified', _isVerified, (v) => setState(() => _isVerified = v)),
+                  _buildToggle('Active', _isActive, (v) => setState(() => _isActive = v)),
+                  _buildToggle('Online', _isOnline, (v) => setState(() => _isOnline = v)),
+                  _buildToggle('Is User', _isUser, (v) => setState(() => _isUser = v)),
+                  _buildToggle('Profile Complete', _profileComplete, (v) => setState(() => _profileComplete = v)),
+                  _buildToggle('Category Boost', _categoryBoostEnabled, (v) => setState(() => _categoryBoostEnabled = v)),
+                ],
+              ),
+
+              _buildSectionHeader('Usage Statistics'),
+              Row(
+                children: [
+                  Expanded(child: _buildReadOnlyField('Total Calls', data['totalCallLogs']?.toString() ?? '0', Icons.call_rounded)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildReadOnlyField('Today Calls', data['todayCallLogs']?.toString() ?? '0', Icons.today_rounded)),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _buildReadOnlyField('Avg Rating', data['avgRating']?.toString() ?? '0.0', Icons.star_rounded)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildReadOnlyField('Total Ratings', data['totalRatings']?.toString() ?? '0', Icons.reviews_rounded)),
+                ],
+              ),
+              _buildReadOnlyField('Total Calls Generated', data['totalCallsGenerated']?.toString() ?? '0', Icons.trending_up_rounded),
+
+              _buildSectionHeader('Activity Timestamps'),
+              _buildReadOnlyField('Verified At', _formatTimestamp(data['verifiedAt']), Icons.verified_user_rounded),
+              _buildReadOnlyField('Last Call At', _formatTimestamp(data['lastCallAt']), Icons.history_rounded),
+              _buildReadOnlyField('Last Payment At', _formatTimestamp(data['lastPaymentAt']), Icons.payment_rounded),
+              _buildReadOnlyField('Category Boost Updated', _formatTimestamp(data['categoryBoostUpdatedAt']), Icons.auto_awesome_rounded),
+
+              _buildSectionHeader('Technical Metadata'),
+              TextFormField(controller: _fcmTokenController, decoration: _buildInputDecoration('FCM Token', Icons.key_rounded)),
+              const SizedBox(height: 16),
+              _buildReadOnlyField('Location (Geopoint)', data['location']?['geopoint']?.toString() ?? 'N/A', Icons.map_rounded),
+              _buildReadOnlyField('Coordinates', "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}", Icons.gps_fixed_rounded),
+              _buildReadOnlyField('Geohash 5/7', "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}", Icons.language_rounded),
             ],
           ),
-          // TabBarView
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Gallery Tab
-                FutureBuilder<QuerySnapshot>(
-                  future:
-                      FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(business['id'])
-                          .collection('gallery')
-                          .get(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+        ),
+      ),
+    );
+  }
 
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(child: Text('No photos available'));
-                    }
-
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(8),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                          ),
-                      itemCount: snapshot.data!.docs.length,
-                      itemBuilder: (context, index) {
-                        final photo = snapshot.data!.docs[index];
-                        return CachedNetworkImage(
-                          imageUrl: photo['url'],
-                          fit: BoxFit.cover,
-                        );
-                      },
-                    );
-                  },
-                ),
-                // Reviews Tab
-                FutureBuilder<QuerySnapshot>(
-                  future:
-                      FirebaseFirestore.instance
-                          .collection('users')
-                          .doc(business['id'])
-                          .collection('reviews')
-                          .get(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(child: Text('No reviews yet'));
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(8),
-                      itemCount: snapshot.data!.docs.length,
-                      itemBuilder: (context, index) {
-                        final review = snapshot.data!.docs[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 8,
-                          ),
-                          child: ListTile(
-                            title: Row(
-                              children: [
-                                Text(review['userName'] ?? 'Anonymous'),
-                                const Spacer(),
-                                Row(
-                                  children: List.generate(
-                                    review['rating'].toInt(),
-                                    (index) => const Icon(
-                                      Icons.star,
-                                      size: 16,
-                                      color: Colors.amber,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            subtitle: Text(review['comment'] ?? ''),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
+  Widget _buildToggle(String label, bool value, Function(bool) onChanged) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: value ? const Color(0xFF2563EB).withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: const Color(0xFF0F172A)),
+          ),
+          Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: const Color(0xFF2563EB),
             ),
           ),
         ],

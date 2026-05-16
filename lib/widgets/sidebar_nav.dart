@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/dashboard_provider.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 
 class SidebarNav extends ConsumerWidget {
   const SidebarNav({super.key});
@@ -126,20 +127,22 @@ class SidebarNav extends ConsumerWidget {
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('SYSTEM'),
-                _buildNavItem(
-                  ref,
-                  'Admin Management',
-                  Icons.admin_panel_settings_outlined,
-                  DashboardView.admin,
-                  currentView,
-                ),
-                _buildNavItem(
-                  ref,
-                  'App Config',
-                  Icons.settings_outlined,
-                  DashboardView.appConfig,
-                  currentView,
-                ),
+                if (ref.watch(isSuperAdminProvider)) ...[
+                  _buildNavItem(
+                    ref,
+                    'Admin Management',
+                    Icons.admin_panel_settings_outlined,
+                    DashboardView.admin,
+                    currentView,
+                  ),
+                  _buildNavItem(
+                    ref,
+                    'App Config',
+                    Icons.settings_outlined,
+                    DashboardView.appConfig,
+                    currentView,
+                  ),
+                ],
                 _buildNavItem(
                   ref,
                   'Logs',
@@ -153,38 +156,53 @@ class SidebarNav extends ConsumerWidget {
 
           // User Profile Info at Bottom
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: Colors.grey[200],
-                  child: const Icon(Icons.person, color: Colors.grey),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Admin User',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        'Super Admin',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+          ref.watch(currentAdminProfileProvider).when(
+            data: (profile) => Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                    child: Text(
+                      (profile?['name'] ?? 'A').toString().substring(0, 1).toUpperCase(),
+                      style: const TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          profile?['name'] ?? 'Admin User',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          (profile?['role'] ?? profile?['level'] ?? 'admin').toString().replaceAll('_', ' ').toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => ref.read(adminAuthProvider.notifier).signOut(),
+                    icon: const Icon(Icons.logout, size: 20, color: Color(0xFFEF4444)),
+                    tooltip: 'Logout',
+                  ),
+                ],
+              ),
             ),
+            loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+            error: (_, __) => const SizedBox.shrink(),
           ),
         ],
       ),
