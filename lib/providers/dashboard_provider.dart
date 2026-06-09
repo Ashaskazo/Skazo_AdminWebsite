@@ -12,6 +12,7 @@ enum DashboardView {
   admin,
   appConfig,
   logs,
+  payments,
 }
 
 // Manual StateProvider for the current dashboard view

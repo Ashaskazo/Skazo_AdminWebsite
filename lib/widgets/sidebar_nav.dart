@@ -100,6 +100,13 @@ class SidebarNav extends ConsumerWidget {
                   DashboardView.orders,
                   currentView,
                 ),
+                _buildNavItem(
+                  ref,
+                  'Payments',
+                  Icons.payments_outlined,
+                  DashboardView.payments,
+                  currentView,
+                ),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('OPERATIONS'),

@@ -20,12 +20,14 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     final searchQuery = ref.watch(userSearchQueryProvider);
     final selectedCity = ref.watch(userSelectedCityProvider);
     final verifiedOnly = ref.watch(userVerifiedOnlyProvider);
+    final dateFilter = ref.watch(userDateFilterProvider);
     final notifier = ref.watch(paginatedUserProvider.notifier);
 
     // Listen for filter changes and refresh the list
     ref.listen(userSearchQueryProvider, (_, __) => notifier.fetchInitial());
     ref.listen(userSelectedCityProvider, (_, __) => notifier.fetchInitial());
     ref.listen(userVerifiedOnlyProvider, (_, __) => notifier.fetchInitial());
+    ref.listen(userDateFilterProvider, (_, __) => notifier.fetchInitial());
 
     // Listen for filter changes to reset pagination
     ref.listen(
@@ -34,6 +36,10 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     );
     ref.listen(
       userSelectedCityProvider,
+      (_, __) => ref.read(paginatedUserProvider.notifier).fetchInitial(),
+    );
+    ref.listen(
+      userDateFilterProvider,
       (_, __) => ref.read(paginatedUserProvider.notifier).fetchInitial(),
     );
 
@@ -77,6 +83,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                   onPressed: () {
                     ref.read(userSearchQueryProvider.notifier).state = '';
                     ref.read(userSelectedCityProvider.notifier).state = null;
+                    ref.read(userDateFilterProvider.notifier).state = null;
                     ref.read(paginatedUserProvider.notifier).fetchInitial();
                   },
                   icon: const Icon(
@@ -126,9 +133,10 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                                     .state = value,
                         style: GoogleFonts.poppins(fontSize: 14),
                         decoration: InputDecoration(
-                          hintText: verifiedOnly 
-                              ? 'Search by business address...' 
-                              : 'Search by phone number...',
+                          hintText:
+                              verifiedOnly
+                                  ? 'Search by business address...'
+                                  : 'Search by phone number...',
                           hintStyle: GoogleFonts.poppins(
                             color: const Color(0xFF94A3B8),
                             fontSize: 14,
@@ -203,6 +211,104 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                             ),
                         error: (_, __) => const SizedBox.shrink(),
                       ),
+                  const SizedBox(width: 16),
+                  // Registration Date Filter
+                  Container(
+                    height: 54,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String?>(
+                        value: dateFilter,
+                        hint: Text(
+                          'Registration',
+                          style: GoogleFonts.poppins(fontSize: 14),
+                        ),
+                        onChanged: (value) {
+                          ref.read(userDateFilterProvider.notifier).state =
+                              value;
+                        },
+                        items: [
+                          DropdownMenuItem<String?>(
+                            value: null,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.date_range_rounded,
+                                  size: 18,
+                                  color: Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'All Time',
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem<String?>(
+                            value: 'today',
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.today_rounded,
+                                  size: 18,
+                                  color: Color(0xFF2563EB),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Today',
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem<String?>(
+                            value: 'yesterday',
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.history_rounded,
+                                  size: 18,
+                                  color: Color(0xFFEA580C),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Yesterday',
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem<String?>(
+                            value: 'month',
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.calendar_month_rounded,
+                                  size: 18,
+                                  color: Color(0xFF16A34A),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Last 1 Month',
+                                  style: GoogleFonts.poppins(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -225,9 +331,9 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                             ? 'Found ${notifier.filteredCount} ${verifiedOnly ? 'providers' : 'users'} in $selectedCity'
                             : searchQuery.isNotEmpty
                             ? 'Found ${notifier.filteredCount} matching ${verifiedOnly ? 'providers' : 'users'}'
-                            : verifiedOnly 
-                                ? 'Total Service Providers: ${notifier.verifiedCount}'
-                                : 'Total Users: ${notifier.totalCount}',
+                            : verifiedOnly
+                            ? 'Total Service Providers: ${notifier.verifiedCount}'
+                            : 'Total Users: ${notifier.totalCount}',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -277,7 +383,10 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                   ),
                   Switch(
                     value: ref.watch(userVerifiedOnlyProvider),
-                    activeColor: const Color(0xFF16A34A),
+                    activeThumbColor: const Color(0xFF16A34A),
+                    activeTrackColor: const Color(
+                      0xFF16A34A,
+                    ).withValues(alpha: 0.5),
                     onChanged: (value) {
                       ref.read(userVerifiedOnlyProvider.notifier).state = value;
                       notifier.fetchInitial();
@@ -444,6 +553,21 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                const SizedBox(width: 16),
+                const Icon(
+                  Icons.calendar_today_rounded,
+                  size: 11,
+                  color: Color(0xFF64748B),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatRegistrationDate(user['createdAt']),
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ],
@@ -477,5 +601,47 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     if (address == null || address.isEmpty) return null;
     final match = RegExp(r'\d{6}').firstMatch(address);
     return match?.group(0);
+  }
+
+  String _formatRegistrationDate(dynamic createdAt) {
+    if (createdAt == null) return 'N/A';
+    DateTime? dateTime;
+    if (createdAt is DateTime) {
+      dateTime = createdAt;
+    } else if (createdAt is int) {
+      dateTime = DateTime.fromMillisecondsSinceEpoch(createdAt);
+    } else if (createdAt is String) {
+      dateTime = DateTime.tryParse(createdAt);
+    } else {
+      try {
+        dateTime = createdAt.toDate();
+      } catch (_) {}
+    }
+    if (dateTime == null) return 'N/A';
+
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = monthNames[dateTime.month - 1];
+    final year = dateTime.year;
+
+    final hour24 = dateTime.hour;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final ampm = hour24 >= 12 ? 'PM' : 'AM';
+    final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
+
+    return '$day $month $year, $hour12:$minute $ampm';
   }
 }

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 
 class BusinessProfilePage extends ConsumerStatefulWidget {
   final Map<String, dynamic> businessData;
@@ -33,6 +34,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   late TextEditingController _ownerPaidController;
   late TextEditingController _userPaidController;
   late TextEditingController _fcmTokenController;
+  late TextEditingController _totalAmountController;
 
   // Status variables
   late bool _isVerified;
@@ -41,6 +43,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   late bool _isUser;
   late bool _profileComplete;
   late bool _categoryBoostEnabled;
+  late bool _paymentLinkSend;
 
   @override
   void initState() {
@@ -60,6 +63,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _ownerPaidController = TextEditingController(text: data['ownerPropertyPaid']?.toString() ?? '0');
     _userPaidController = TextEditingController(text: data['userPropertyPaid']?.toString() ?? '0');
     _fcmTokenController = TextEditingController(text: data['fcmtoken'] ?? '');
+    _totalAmountController = TextEditingController(text: data['totalAmount']?.toString() ?? '0');
 
     _isVerified = data['isverified'] ?? false;
     _isActive = data['isactive'] ?? false;
@@ -67,6 +71,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _isUser = data['isuser'] ?? false;
     _profileComplete = data['profileComplete'] ?? false;
     _categoryBoostEnabled = data['categoryBoostEnabled'] ?? false;
+    _paymentLinkSend = data['paymentLinkSend'] ?? false;
   }
 
   @override
@@ -85,6 +90,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _ownerPaidController.dispose();
     _userPaidController.dispose();
     _fcmTokenController.dispose();
+    _totalAmountController.dispose();
     super.dispose();
   }
 
@@ -93,7 +99,11 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     setState(() => _isLoading = true);
 
     try {
-      final updatedData = {
+      final adminProfile = ref.read(currentAdminProfileProvider).value;
+      final senderId = adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
+      final senderName = adminProfile?['name'] ?? 'Unknown';
+
+      final Map<String, dynamic> updatedData = {
         'businessname': _nameController.text.trim(),
         'businessbio': _bioController.text.trim(),
         'businessaddress': _addressController.text.trim(),
@@ -110,12 +120,22 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'fcmtoken': _fcmTokenController.text.trim(),
         'isverified': _isVerified,
         'isactive': _isActive,
+        'isDeactivated': !_isActive,
         'isonline': _isOnline,
         'isuser': _isUser,
         'profileComplete': _profileComplete,
         'categoryBoostEnabled': _categoryBoostEnabled,
+        'paymentLinkSend': _paymentLinkSend,
+        'totalAmount': int.tryParse(_totalAmountController.text.trim()) ?? 0,
         'updatedAt': FieldValue.serverTimestamp(),
       };
+
+      final bool wasSent = widget.businessData['paymentLinkSend'] ?? false;
+      if (_paymentLinkSend && !wasSent) {
+        updatedData['paymentLinkSenderId'] = senderId;
+        updatedData['paymentLinkSenderName'] = senderName;
+        updatedData['paymentLinkSentAt'] = FieldValue.serverTimestamp();
+      }
 
       await FirebaseFirestore.instance.collection('users').doc(widget.businessData['id']).update(updatedData);
 
@@ -310,6 +330,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   Expanded(child: TextFormField(controller: _userPaidController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('User Paid', Icons.account_balance_wallet_rounded))),
                 ],
               ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: TextFormField(controller: _totalAmountController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Total Amount Paid (₹)', Icons.payments_rounded))),
+                  const SizedBox(width: 16),
+                  const Expanded(child: SizedBox.shrink()),
+                ],
+              ),
               const SizedBox(height: 24),
               Wrap(
                 spacing: 12, runSpacing: 12,
@@ -320,6 +348,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   _buildToggle('Is User', _isUser, (v) => setState(() => _isUser = v)),
                   _buildToggle('Profile Complete', _profileComplete, (v) => setState(() => _profileComplete = v)),
                   _buildToggle('Category Boost', _categoryBoostEnabled, (v) => setState(() => _categoryBoostEnabled = v)),
+                  _buildToggle('Payment Link Sent', _paymentLinkSend, (v) => setState(() => _paymentLinkSend = v)),
                 ],
               ),
 

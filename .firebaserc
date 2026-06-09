@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "skazo-7e5c3"
+  },
+  "targets": {
+    "skazo-7e5c3": {
+      "hosting": {
+        "admin": [
+          "skazo-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

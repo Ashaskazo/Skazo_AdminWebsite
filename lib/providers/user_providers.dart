@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // This provider will fetch all unverified business users
 final unverifiedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   try {
     // Only query by isverified to avoid the need for a composite index
     final snapshot = await FirebaseFirestore.instance
@@ -12,15 +13,45 @@ final unverifiedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
         .get();
 
     final allUnverified = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-    
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
 
-    // Filter locally: businessname not empty
-    final filtered = allUnverified.where((user) {
+    // Filter locally: businessname not empty and not deactivated
+    var filtered = allUnverified.where((user) {
       final name = (user['businessname'] ?? '').toString();
-      return name.trim().isNotEmpty;
+      final isDeactivated = user['isDeactivated'] ?? false;
+      return name.trim().isNotEmpty && !isDeactivated;
     }).toList();
+
+    // Date filtering locally
+    if (dateFilter != null) {
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      filtered = filtered.where((user) {
+        final createdAt = user['createdAt'];
+        DateTime? dateTime;
+        if (createdAt is Timestamp) {
+          dateTime = createdAt.toDate();
+        } else if (createdAt is DateTime) {
+          dateTime = createdAt;
+        } else if (createdAt is int) {
+          dateTime = DateTime.fromMillisecondsSinceEpoch(createdAt);
+        } else if (createdAt is String) {
+          dateTime = DateTime.tryParse(createdAt);
+        }
+        if (dateTime == null) return false;
+
+        if (dateFilter == 'today') {
+          return dateTime.isAfter(todayStart) || dateTime.isAtSameMomentAs(todayStart);
+        } else if (dateFilter == 'yesterday') {
+          final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+          return (dateTime.isAfter(yesterdayStart) || dateTime.isAtSameMomentAs(yesterdayStart)) &&
+                 dateTime.isBefore(todayStart);
+        } else if (dateFilter == 'month') {
+          final monthStart = todayStart.subtract(const Duration(days: 30));
+          return dateTime.isAfter(monthStart) || dateTime.isAtSameMomentAs(monthStart);
+        }
+        return true;
+      }).toList();
+    }
 
     // Sort by newest first locally
     filtered.sort((a, b) {
@@ -49,6 +80,7 @@ final unverifiedUsersByCategoryProvider =
       category,
     ) async {
       final selectedCity = ref.watch(dashboardSelectedCityProvider);
+      final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
       
       final snapshot =
           await FirebaseFirestore.instance
@@ -61,6 +93,10 @@ final unverifiedUsersByCategoryProvider =
           snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 
       return users.where((user) {
+        // Deactivated check
+        final isDeactivated = user['isDeactivated'] ?? false;
+        if (isDeactivated) return false;
+
         // Category check
         final userCategories = user['category'];
         bool matchesCategory = false;
@@ -77,7 +113,36 @@ final unverifiedUsersByCategoryProvider =
         // City check
         if (selectedCity != null) {
           final address = (user['address'] ?? '').toString().toLowerCase();
-          return address.contains(selectedCity.toLowerCase());
+          if (!address.contains(selectedCity.toLowerCase())) return false;
+        }
+
+        // Date check
+        if (dateFilter != null) {
+          final now = DateTime.now();
+          final todayStart = DateTime(now.year, now.month, now.day);
+          final createdAt = user['createdAt'];
+          DateTime? dateTime;
+          if (createdAt is Timestamp) {
+            dateTime = createdAt.toDate();
+          } else if (createdAt is DateTime) {
+            dateTime = createdAt;
+          } else if (createdAt is int) {
+            dateTime = DateTime.fromMillisecondsSinceEpoch(createdAt);
+          } else if (createdAt is String) {
+            dateTime = DateTime.tryParse(createdAt);
+          }
+          if (dateTime == null) return false;
+
+          if (dateFilter == 'today') {
+            return dateTime.isAfter(todayStart) || dateTime.isAtSameMomentAs(todayStart);
+          } else if (dateFilter == 'yesterday') {
+            final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+            return (dateTime.isAfter(yesterdayStart) || dateTime.isAtSameMomentAs(yesterdayStart)) &&
+                   dateTime.isBefore(todayStart);
+          } else if (dateFilter == 'month') {
+            final monthStart = todayStart.subtract(const Duration(days: 30));
+            return dateTime.isAfter(monthStart) || dateTime.isAtSameMomentAs(monthStart);
+          }
         }
 
         return true;
@@ -173,7 +238,7 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
   return counts;
 });
 
-// This provider will handle user verification
+// This provider will handle user verification and deactivation
 class UserVerificationNotifier extends StateNotifier<bool> {
   final Ref ref;
   UserVerificationNotifier(this.ref) : super(false);
@@ -183,7 +248,29 @@ class UserVerificationNotifier extends StateNotifier<bool> {
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'isverified': true,
+        'isactive': true,
+        'isDeactivated': false,
         'verifiedAt': FieldValue.serverTimestamp(),
+      });
+
+      ref.invalidate(unverifiedUsersProvider);
+      ref.invalidate(categoryCountsProvider);
+
+      state = false;
+      return true;
+    } catch (e) {
+      state = false;
+      return false;
+    }
+  }
+
+  Future<bool> deactivateUser(String userId) async {
+    state = true;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'isactive': false,
+        'isDeactivated': true,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       ref.invalidate(unverifiedUsersProvider);
@@ -207,3 +294,7 @@ final userVerificationProvider =
 final userSearchQueryProvider = StateProvider<String>((ref) => '');
 final userSelectedCityProvider = StateProvider<String?>((ref) => null);
 final userVerifiedOnlyProvider = StateProvider<bool>((ref) => false);
+final userDateFilterProvider = StateProvider<String?>((ref) => null);
+
+// Provider to track selected date filter for the dashboard unverified businesses
+final dashboardSelectedDateFilterProvider = StateProvider<String?>((ref) => null);
