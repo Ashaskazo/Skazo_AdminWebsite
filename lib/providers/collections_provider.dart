@@ -34,10 +34,25 @@ String getSmartCity(Map<String, dynamic> user) {
 
   if (cityField != null && cityField.isNotEmpty) return cityField;
 
-  if (address.contains('Machilipatnam')) return 'Machilipatnam';
-  if (address.contains('Vijayawada')) return 'Vijayawada';
-  if (address.contains('Hyderabad')) return 'Hyderabad';
-  if (address.contains('Bangalore')) return 'Bangalore';
+  final parts = address.split(',');
+
+  for (final part in parts) {
+    final value = part.trim();
+
+    // Skip pincodes
+    if (RegExp(r'^\d{6}$').hasMatch(value)) continue;
+
+    // Skip plus codes like 7CXG+44W
+    if (RegExp(r'^[A-Z0-9+]{4,}$').hasMatch(value)) continue;
+
+    // Skip house numbers
+    if (value.toLowerCase().startsWith('h.no')) continue;
+    if (value.toLowerCase().startsWith('d.no')) continue;
+
+    if (value.length > 2) {
+      return value;
+    }
+  }
 
   return cityField ?? 'Unknown';
 }
@@ -81,45 +96,48 @@ final collectionDataProvider = FutureProvider.family<
 
 // Provider to gather a comprehensive list of cities from the database
 final userCitiesProvider = FutureProvider<Set<String>>((ref) async {
-  // We fetch a larger batch of users once to gather city names
   final snapshot =
       await FirebaseFirestore.instance.collection('users').limit(1000).get();
+
   final Set<String> cities = {};
 
   String normalizeCityName(String name) {
     final trimmed = name.trim().toLowerCase();
+
     if (trimmed == 'vijayawada') return 'Vijayawada';
     if (trimmed == 'hyderabad') return 'Hyderabad';
     if (trimmed == 'bheemavaram') return 'Bheemavaram';
-    if (trimmed == 'bangalore' || trimmed == 'bengaluru') return 'Bangalore';
-    if (trimmed == 'tirupathi' || trimmed == 'tirupati') return 'Tirupathi';
+    if (trimmed == 'bangalore' || trimmed == 'bengaluru') {
+      return 'Bangalore';
+    }
+    if (trimmed == 'tirupathi' || trimmed == 'tirupati') {
+      return 'Tirupathi';
+    }
     if (trimmed == 'guntur') return 'Guntur';
     if (trimmed == 'machilipatnam') return 'Machilipatnam';
+    if (trimmed == 'khammam') return 'Khammam';
 
     if (trimmed.isEmpty) return '';
-    return trimmed.split(' ').map((word) {
-      if (word.isEmpty) return '';
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
+
+    return trimmed
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) return '';
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
   }
 
-  for (var doc in snapshot.docs) {
+  for (final doc in snapshot.docs) {
     final data = doc.data();
-    final city = (data['City'] ?? data['city'])?.toString();
-    if (city != null && city.trim().isNotEmpty) {
+
+    final city = getSmartCity(data);
+
+    if (city.isNotEmpty && city != 'Unknown') {
       cities.add(normalizeCityName(city));
     }
-
-    // Also extract from address to populate the dropdown
-    final address = data['businessaddress']?.toString() ?? '';
-    if (address.contains('Machilipatnam')) cities.add('Machilipatnam');
-    if (address.contains('Vijayawada')) cities.add('Vijayawada');
-    if (address.contains('Hyderabad')) cities.add('Hyderabad');
-    if (address.contains('Bangalore') || address.contains('Bengaluru')) cities.add('Bangalore');
-    if (address.contains('Tirupathi') || address.contains('Tirupati')) cities.add('Tirupathi');
-    if (address.contains('Guntur')) cities.add('Guntur');
-    if (address.contains('Bheemavaram')) cities.add('Bheemavaram');
   }
+
   return cities;
 });
 
@@ -148,7 +166,10 @@ class PaginatedUserNotifier
       if (verifiedOnly) {
         query = query
             .where('businessaddress', isGreaterThanOrEqualTo: searchQuery)
-            .where('businessaddress', isLessThanOrEqualTo: '$searchQuery\uf8ff');
+            .where(
+              'businessaddress',
+              isLessThanOrEqualTo: '$searchQuery\uf8ff',
+            );
       } else {
         final phoneNum = int.tryParse(searchQuery);
         if (phoneNum != null) {
@@ -170,7 +191,7 @@ class PaginatedUserNotifier
       if (verifiedOnly) {
         query = query.where('isverified', isEqualTo: true);
       }
-      
+
       return query;
     }
 
@@ -196,8 +217,13 @@ class PaginatedUserNotifier
             .where('createdAt', isGreaterThanOrEqualTo: yesterdayStart)
             .where('createdAt', isLessThan: todayStart);
       } else if (dateFilter == 'month') {
-        final thirtyDaysAgoStart = todayStart.subtract(const Duration(days: 30));
-        query = query.where('createdAt', isGreaterThanOrEqualTo: thirtyDaysAgoStart);
+        final thirtyDaysAgoStart = todayStart.subtract(
+          const Duration(days: 30),
+        );
+        query = query.where(
+          'createdAt',
+          isGreaterThanOrEqualTo: thirtyDaysAgoStart,
+        );
       }
     }
 
@@ -234,14 +260,22 @@ class PaginatedUserNotifier
           final now = DateTime.now();
           final todayStart = DateTime(now.year, now.month, now.day);
           if (dateFilter == 'today') {
-            query = query.where('createdAt', isGreaterThanOrEqualTo: todayStart);
+            query = query.where(
+              'createdAt',
+              isGreaterThanOrEqualTo: todayStart,
+            );
           } else if (dateFilter == 'yesterday') {
             final yesterdayStart = todayStart.subtract(const Duration(days: 1));
             query = query
                 .where('createdAt', isGreaterThanOrEqualTo: yesterdayStart)
                 .where('createdAt', isLessThan: todayStart);
           } else if (dateFilter == 'month') {
-            query = query.where('createdAt', isGreaterThanOrEqualTo: todayStart.subtract(const Duration(days: 30)));
+            query = query.where(
+              'createdAt',
+              isGreaterThanOrEqualTo: todayStart.subtract(
+                const Duration(days: 30),
+              ),
+            );
           }
         }
         countSnapshot = await query.count().get();
@@ -321,16 +355,16 @@ class PaginatedUserNotifier
       final verifiedOnly = ref.read(userVerifiedOnlyProvider);
       final dateFilter = ref.read(userDateFilterProvider);
       final lowercaseCity = selectedCity.toLowerCase();
-      
+
       Query query = FirebaseFirestore.instance
           .collection('users')
           .where('city', isGreaterThanOrEqualTo: lowercaseCity)
           .where('city', isLessThanOrEqualTo: '$lowercaseCity\uf8ff');
-          
+
       if (verifiedOnly) {
         query = query.where('isverified', isEqualTo: true);
       }
-      
+
       if (dateFilter != null) {
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
@@ -342,15 +376,20 @@ class PaginatedUserNotifier
               .where('createdAt', isGreaterThanOrEqualTo: yesterdayStart)
               .where('createdAt', isLessThan: todayStart);
         } else if (dateFilter == 'month') {
-          query = query.where('createdAt', isGreaterThanOrEqualTo: todayStart.subtract(const Duration(days: 30)));
+          query = query.where(
+            'createdAt',
+            isGreaterThanOrEqualTo: todayStart.subtract(
+              const Duration(days: 30),
+            ),
+          );
         }
         query = query.orderBy('createdAt', descending: true);
       }
-      
+
       if (pageIndex < _pageCursors.length && _pageCursors[pageIndex] != null) {
         query = query.startAtDocument(_pageCursors[pageIndex]!);
       }
-      
+
       final snapshot = await query.limit(_pageSize).get();
       final users =
           snapshot.docs
@@ -361,12 +400,12 @@ class PaginatedUserNotifier
                 },
               )
               .toList();
-              
+
       if (pageIndex + 1 == _pageCursors.length &&
           snapshot.docs.length == _pageSize) {
         _pageCursors.add(snapshot.docs.last);
       }
-      
+
       _currentPage = pageIndex;
       state = AsyncValue.data(users);
     } catch (e, stack) {
@@ -431,14 +470,15 @@ final paginatedUserProvider = StateNotifierProvider<
 
 // Payments State Providers
 final paymentSearchQueryProvider = StateProvider<String>((ref) => '');
-final selectedPaymentAdminFilterProvider = StateProvider<String?>((ref) => null);
+final selectedPaymentAdminFilterProvider = StateProvider<String?>(
+  (ref) => null,
+);
 
-final adminsListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final adminsListProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
   final snapshot = await FirebaseFirestore.instance.collection('admin').get();
-  return snapshot.docs.map((doc) => {
-    'id': doc.id,
-    ...doc.data(),
-  }).toList();
+  return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 });
 
 class PaymentSalesStats {
@@ -455,65 +495,73 @@ class PaymentSalesStats {
   });
 }
 
-final paymentSalesStatsProvider = FutureProvider.family<PaymentSalesStats, String?>((ref, filterAdminId) async {
-  final snapshot = await FirebaseFirestore.instance
-      .collection('users')
-      .where('totalAmount', isGreaterThan: 0)
-      .get();
+final paymentSalesStatsProvider =
+    FutureProvider.family<PaymentSalesStats, String?>((
+      ref,
+      filterAdminId,
+    ) async {
+      final snapshot =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .where('totalAmount', isGreaterThan: 0)
+              .get();
 
-  double today = 0;
-  double yesterday = 0;
-  double thisMonth = 0;
-  double total = 0;
+      double today = 0;
+      double yesterday = 0;
+      double thisMonth = 0;
+      double total = 0;
 
-  final now = DateTime.now();
-  final todayStart = DateTime(now.year, now.month, now.day);
-  final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-  final thirtyDaysAgo = todayStart.subtract(const Duration(days: 30));
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+      final thirtyDaysAgo = todayStart.subtract(const Duration(days: 30));
 
-  for (var doc in snapshot.docs) {
-    final data = doc.data();
-    final senderId = data['paymentLinkSenderId']?.toString();
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final senderId = data['paymentLinkSenderId']?.toString();
 
-    // Filter by admin ID
-    if (filterAdminId != null && senderId != filterAdminId) {
-      continue;
-    }
+        // Filter by admin ID
+        if (filterAdminId != null && senderId != filterAdminId) {
+          continue;
+        }
 
-    final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
-    final paymentDateVal = data['paymentPaidAt'] ?? data['lastPaymentAt'];
-    DateTime? paymentDate;
-    if (paymentDateVal is Timestamp) {
-      paymentDate = paymentDateVal.toDate();
-    } else if (paymentDateVal is String) {
-      paymentDate = DateTime.tryParse(paymentDateVal);
-    } else if (paymentDateVal is int) {
-      paymentDate = DateTime.fromMillisecondsSinceEpoch(paymentDateVal);
-    }
+        final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+        final paymentDateVal = data['paymentPaidAt'] ?? data['lastPaymentAt'];
+        DateTime? paymentDate;
+        if (paymentDateVal is Timestamp) {
+          paymentDate = paymentDateVal.toDate();
+        } else if (paymentDateVal is String) {
+          paymentDate = DateTime.tryParse(paymentDateVal);
+        } else if (paymentDateVal is int) {
+          paymentDate = DateTime.fromMillisecondsSinceEpoch(paymentDateVal);
+        }
 
-    if (paymentDate != null) {
-      total += amount;
+        if (paymentDate != null) {
+          total += amount;
 
-      if (paymentDate.isAfter(todayStart) || paymentDate.isAtSameMomentAs(todayStart)) {
-        today += amount;
-      } else if ((paymentDate.isAfter(yesterdayStart) || paymentDate.isAtSameMomentAs(yesterdayStart)) &&
-          paymentDate.isBefore(todayStart)) {
-        yesterday += amount;
+          if (paymentDate.isAfter(todayStart) ||
+              paymentDate.isAtSameMomentAs(todayStart)) {
+            today += amount;
+          } else if ((paymentDate.isAfter(yesterdayStart) ||
+                  paymentDate.isAtSameMomentAs(yesterdayStart)) &&
+              paymentDate.isBefore(todayStart)) {
+            yesterday += amount;
+          }
+
+          if (paymentDate.isAfter(thirtyDaysAgo) ||
+              paymentDate.isAtSameMomentAs(thirtyDaysAgo)) {
+            thisMonth += amount;
+          }
+        }
       }
 
-      if (paymentDate.isAfter(thirtyDaysAgo) || paymentDate.isAtSameMomentAs(thirtyDaysAgo)) {
-        thisMonth += amount;
-      }
-    }
-  }
-
-  return PaymentSalesStats(
-    todaySale: today,
-    yesterdaySale: yesterday,
-    thisMonthSale: thisMonth,
-    totalSale: total,
-  );
-});
+      return PaymentSalesStats(
+        todaySale: today,
+        yesterdaySale: yesterday,
+        thisMonthSale: thisMonth,
+        totalSale: total,
+      );
+    });
 
 class PaginatedPaymentNotifier
     extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>> {
@@ -530,14 +578,16 @@ class PaginatedPaymentNotifier
 
   Query _applyFilters(Query query) {
     final searchQuery = ref.read(paymentSearchQueryProvider);
-    
+
     // Payments are usually for service providers, so we can filter by isuser == false and paymentLinkSend == true
-    query = query.where('isuser', isEqualTo: false).where('paymentLinkSend', isEqualTo: true);
+    query = query
+        .where('isuser', isEqualTo: false)
+        .where('paymentLinkSend', isEqualTo: true);
 
     // Apply Admin Filter
     final isSuperAdmin = ref.read(isSuperAdminProvider);
     final adminProfile = ref.read(currentAdminProfileProvider).value;
-    
+
     if (isSuperAdmin) {
       final selectedAdminId = ref.read(selectedPaymentAdminFilterProvider);
       if (selectedAdminId != null) {
@@ -582,7 +632,7 @@ class PaginatedPaymentNotifier
 
       final countSnapshot = await query.count().get();
       _filteredCount = countSnapshot.count ?? 0;
-      
+
       final searchQuery = ref.read(paymentSearchQueryProvider);
       if (searchQuery.isEmpty) {
         _totalCount = _filteredCount;
@@ -597,7 +647,7 @@ class PaginatedPaymentNotifier
     try {
       Query query = FirebaseFirestore.instance.collection('users');
       query = _applyFilters(query);
-      
+
       final searchQuery = ref.read(paymentSearchQueryProvider);
       if (searchQuery.isEmpty) {
         query = query.orderBy('createdAt', descending: true);
@@ -701,7 +751,7 @@ final rentalTimeFilterProvider = StateProvider<String>((ref) => 'All Time');
 // Helper to extract image URLs from property map
 List<String> extractPropertyImageUrls(Map<String, dynamic> prop) {
   final List<String> urls = [];
-  
+
   void addValue(dynamic value) {
     if (value == null) return;
     if (value is String) {
@@ -722,7 +772,8 @@ List<String> extractPropertyImageUrls(Map<String, dynamic> prop) {
             urls.add(p);
           }
         }
-      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      } else if (trimmed.startsWith('http://') ||
+          trimmed.startsWith('https://')) {
         urls.add(trimmed);
       }
     } else if (value is List) {
@@ -810,19 +861,23 @@ class PaginatedRentalNotifier
         .orderBy('createdAt', descending: true)
         .limit(2000)
         .snapshots()
-        .listen((snapshot) {
-          _allProperties = snapshot.docs.map((doc) => {
-            'id': doc.id,
-            ...doc.data(),
-          }).toList();
-          _applyFiltersAndNotify();
-        }, onError: (err, stack) {
-          state = AsyncValue.error(err, stack);
-        });
+        .listen(
+          (snapshot) {
+            _allProperties =
+                snapshot.docs
+                    .map((doc) => {'id': doc.id, ...doc.data()})
+                    .toList();
+            _applyFiltersAndNotify();
+          },
+          onError: (err, stack) {
+            state = AsyncValue.error(err, stack);
+          },
+        );
   }
 
   void _applyFiltersAndNotify() {
-    final searchQuery = ref.read(rentalSearchQueryProvider).trim().toLowerCase();
+    final searchQuery =
+        ref.read(rentalSearchQueryProvider).trim().toLowerCase();
     final selectedCity = ref.read(rentalSelectedCityProvider);
     final filterType = ref.read(rentalTypeFilterProvider);
     final timeFilter = ref.read(rentalTimeFilterProvider);
@@ -833,10 +888,11 @@ class PaginatedRentalNotifier
 
     // 1. Filter by City
     if (selectedCity != null) {
-      temp = temp.where((p) {
-        final city = (p['city'] ?? p['City'])?.toString().toLowerCase();
-        return city == selectedCity.toLowerCase();
-      }).toList();
+      temp =
+          temp.where((p) {
+            final city = (p['city'] ?? p['City'])?.toString().toLowerCase();
+            return city == selectedCity.toLowerCase();
+          }).toList();
     }
 
     // 2. Filter by Verification / Premium Type
@@ -845,12 +901,17 @@ class PaginatedRentalNotifier
     } else if (filterType == 'Unverified') {
       temp = temp.where((p) => p['isPropertyVerified'] != true).toList();
     } else if (filterType == 'Premium') {
-      temp = temp.where((p) {
-        final plan = p['ownerPlan']?.toString().toLowerCase() ?? '';
-        final isBoosted = p['isBoosted'] == true;
-        final isPremium = p['isPremium'] == true;
-        return plan.contains('premium') || plan == 'paid' || plan == '599' || isBoosted || isPremium;
-      }).toList();
+      temp =
+          temp.where((p) {
+            final plan = p['ownerPlan']?.toString().toLowerCase() ?? '';
+            final isBoosted = p['isBoosted'] == true;
+            final isPremium = p['isPremium'] == true;
+            return plan.contains('premium') ||
+                plan == 'paid' ||
+                plan == '599' ||
+                isBoosted ||
+                isPremium;
+          }).toList();
     }
 
     // 3. Filter by Time
@@ -861,51 +922,64 @@ class PaginatedRentalNotifier
       final sevenDaysAgo = todayStart.subtract(const Duration(days: 7));
       final thirtyDaysAgo = todayStart.subtract(const Duration(days: 30));
 
-      temp = temp.where((p) {
-        final createdAtVal = p['createdAt'];
-        DateTime? date;
-        if (createdAtVal is Timestamp) {
-          date = createdAtVal.toDate();
-        } else if (createdAtVal is String) {
-          date = DateTime.tryParse(createdAtVal);
-        } else if (createdAtVal is int) {
-          date = DateTime.fromMillisecondsSinceEpoch(createdAtVal);
-        }
+      temp =
+          temp.where((p) {
+            final createdAtVal = p['createdAt'];
+            DateTime? date;
+            if (createdAtVal is Timestamp) {
+              date = createdAtVal.toDate();
+            } else if (createdAtVal is String) {
+              date = DateTime.tryParse(createdAtVal);
+            } else if (createdAtVal is int) {
+              date = DateTime.fromMillisecondsSinceEpoch(createdAtVal);
+            }
 
-        if (date == null) return false;
+            if (date == null) return false;
 
-        if (timeFilter == 'Today') {
-          return date.isAfter(todayStart) || date.isAtSameMomentAs(todayStart);
-        } else if (timeFilter == 'Yesterday') {
-          return (date.isAfter(yesterdayStart) || date.isAtSameMomentAs(yesterdayStart)) && date.isBefore(todayStart);
-        } else if (timeFilter == 'Last 7 Days') {
-          return date.isAfter(sevenDaysAgo) || date.isAtSameMomentAs(sevenDaysAgo);
-        } else if (timeFilter == 'Last 30 Days') {
-          return date.isAfter(thirtyDaysAgo) || date.isAtSameMomentAs(thirtyDaysAgo);
-        }
-        return true;
-      }).toList();
+            if (timeFilter == 'Today') {
+              return date.isAfter(todayStart) ||
+                  date.isAtSameMomentAs(todayStart);
+            } else if (timeFilter == 'Yesterday') {
+              return (date.isAfter(yesterdayStart) ||
+                      date.isAtSameMomentAs(yesterdayStart)) &&
+                  date.isBefore(todayStart);
+            } else if (timeFilter == 'Last 7 Days') {
+              return date.isAfter(sevenDaysAgo) ||
+                  date.isAtSameMomentAs(sevenDaysAgo);
+            } else if (timeFilter == 'Last 30 Days') {
+              return date.isAfter(thirtyDaysAgo) ||
+                  date.isAtSameMomentAs(thirtyDaysAgo);
+            }
+            return true;
+          }).toList();
     }
 
     // 4. Filter by Search Query
     if (searchQuery.isNotEmpty) {
-      temp = temp.where((p) {
-        final name = (p['propertyName'] ?? p['title'] ?? p['name'])?.toString().toLowerCase() ?? '';
-        final owner = p['ownerName']?.toString().toLowerCase() ?? '';
-        final city = (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
-        final location = (p['location'] ?? p['address'])?.toString().toLowerCase() ?? '';
-        final type = p['type']?.toString().toLowerCase() ?? '';
-        final bhk = p['bhk']?.toString().toLowerCase() ?? '';
-        final landmark = p['landmark']?.toString().toLowerCase() ?? '';
-        
-        return name.contains(searchQuery) ||
-               owner.contains(searchQuery) ||
-               city.contains(searchQuery) ||
-               location.contains(searchQuery) ||
-               type.contains(searchQuery) ||
-               bhk.contains(searchQuery) ||
-               landmark.contains(searchQuery);
-      }).toList();
+      temp =
+          temp.where((p) {
+            final name =
+                (p['propertyName'] ?? p['title'] ?? p['name'])
+                    ?.toString()
+                    .toLowerCase() ??
+                '';
+            final owner = p['ownerName']?.toString().toLowerCase() ?? '';
+            final city =
+                (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
+            final location =
+                (p['location'] ?? p['address'])?.toString().toLowerCase() ?? '';
+            final type = p['type']?.toString().toLowerCase() ?? '';
+            final bhk = p['bhk']?.toString().toLowerCase() ?? '';
+            final landmark = p['landmark']?.toString().toLowerCase() ?? '';
+
+            return name.contains(searchQuery) ||
+                owner.contains(searchQuery) ||
+                city.contains(searchQuery) ||
+                location.contains(searchQuery) ||
+                type.contains(searchQuery) ||
+                bhk.contains(searchQuery) ||
+                landmark.contains(searchQuery);
+          }).toList();
     }
 
     _filteredProperties = temp;
@@ -918,7 +992,11 @@ class PaginatedRentalNotifier
     }
     if (_currentPage < 0) _currentPage = 0;
 
-    final paginatedList = _filteredProperties.skip(_currentPage * _pageSize).take(_pageSize).toList();
+    final paginatedList =
+        _filteredProperties
+            .skip(_currentPage * _pageSize)
+            .take(_pageSize)
+            .toList();
     state = AsyncValue.data(paginatedList);
   }
 
@@ -1388,11 +1466,12 @@ final collectionTodayCountProvider = FutureProvider.family<int, String>((
     final fieldType = dateFieldInfo.fieldType;
     final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection(collectionName)
-        .where(fieldName, isGreaterThanOrEqualTo: todayVal)
-        .count()
-        .get();
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where(fieldName, isGreaterThanOrEqualTo: todayVal)
+            .count()
+            .get();
     return snapshot.count ?? 0;
   }
 
