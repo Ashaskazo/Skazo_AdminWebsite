@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -84,18 +85,38 @@ final userCitiesProvider = FutureProvider<Set<String>>((ref) async {
   final snapshot =
       await FirebaseFirestore.instance.collection('users').limit(1000).get();
   final Set<String> cities = {};
+
+  String normalizeCityName(String name) {
+    final trimmed = name.trim().toLowerCase();
+    if (trimmed == 'vijayawada') return 'Vijayawada';
+    if (trimmed == 'hyderabad') return 'Hyderabad';
+    if (trimmed == 'bheemavaram') return 'Bheemavaram';
+    if (trimmed == 'bangalore' || trimmed == 'bengaluru') return 'Bangalore';
+    if (trimmed == 'tirupathi' || trimmed == 'tirupati') return 'Tirupathi';
+    if (trimmed == 'guntur') return 'Guntur';
+    if (trimmed == 'machilipatnam') return 'Machilipatnam';
+
+    if (trimmed.isEmpty) return '';
+    return trimmed.split(' ').map((word) {
+      if (word.isEmpty) return '';
+      return word[0].toUpperCase() + word.substring(1);
+    }).join(' ');
+  }
+
   for (var doc in snapshot.docs) {
     final data = doc.data();
     final city = (data['City'] ?? data['city'])?.toString();
-    if (city != null && city.isNotEmpty) cities.add(city);
+    if (city != null && city.trim().isNotEmpty) {
+      cities.add(normalizeCityName(city));
+    }
 
     // Also extract from address to populate the dropdown
     final address = data['businessaddress']?.toString() ?? '';
     if (address.contains('Machilipatnam')) cities.add('Machilipatnam');
     if (address.contains('Vijayawada')) cities.add('Vijayawada');
     if (address.contains('Hyderabad')) cities.add('Hyderabad');
-    if (address.contains('Bangalore')) cities.add('Bangalore');
-    if (address.contains('Tirupathi')) cities.add('Tirupathi');
+    if (address.contains('Bangalore') || address.contains('Bengaluru')) cities.add('Bangalore');
+    if (address.contains('Tirupathi') || address.contains('Tirupati')) cities.add('Tirupathi');
     if (address.contains('Guntur')) cities.add('Guntur');
     if (address.contains('Bheemavaram')) cities.add('Bheemavaram');
   }
@@ -118,7 +139,7 @@ class PaginatedUserNotifier
   int _verifiedCount = 0;
 
   Query _applyFilters(Query query) {
-    final searchQuery = ref.read(userSearchQueryProvider);
+    final searchQuery = ref.read(userSearchQueryProvider).trim();
     final selectedCity = ref.read(userSelectedCityProvider);
     final verifiedOnly = ref.read(userVerifiedOnlyProvider);
     final dateFilter = ref.read(userDateFilterProvider);
@@ -150,8 +171,6 @@ class PaginatedUserNotifier
         query = query.where('isverified', isEqualTo: true);
       }
       
-      // Skip dateFilter and selectedCity when searching to avoid missing composite index 
-      // or multiple inequality filters errors in Firestore.
       return query;
     }
 
@@ -185,7 +204,7 @@ class PaginatedUserNotifier
     return query;
   }
 
-  Future<void> fetchInitial() async {
+  Future<void> fetchInitial({bool forceRefresh = false}) async {
     _currentPage = 0;
     _pageCursors.clear();
     _pageCursors.add(null);
@@ -193,7 +212,7 @@ class PaginatedUserNotifier
     _verifiedCount = 0;
 
     try {
-      final searchQuery = ref.read(userSearchQueryProvider);
+      final searchQuery = ref.read(userSearchQueryProvider).trim();
       final selectedCity = ref.read(userSelectedCityProvider);
       final dateFilter = ref.read(userDateFilterProvider);
 
@@ -206,10 +225,11 @@ class PaginatedUserNotifier
 
       // Fallback for lowercase 'city' field if needed
       if (_filteredCount == 0 && selectedCity != null && searchQuery.isEmpty) {
+        final lowercaseCity = selectedCity.toLowerCase();
         query = FirebaseFirestore.instance
             .collection('users')
-            .where('city', isGreaterThanOrEqualTo: selectedCity)
-            .where('city', isLessThanOrEqualTo: '$selectedCity\uf8ff');
+            .where('city', isGreaterThanOrEqualTo: lowercaseCity)
+            .where('city', isLessThanOrEqualTo: '$lowercaseCity\uf8ff');
         if (dateFilter != null) {
           final now = DateTime.now();
           final todayStart = DateTime(now.year, now.month, now.day);
@@ -244,7 +264,7 @@ class PaginatedUserNotifier
   Future<void> fetchPage(int pageIndex) async {
     state = const AsyncValue.loading();
     try {
-      final searchQuery = ref.read(userSearchQueryProvider);
+      final searchQuery = ref.read(userSearchQueryProvider).trim();
       final selectedCity = ref.read(userSelectedCityProvider);
       final verifiedOnly = ref.read(userVerifiedOnlyProvider);
       final dateFilter = ref.read(userDateFilterProvider);
@@ -300,12 +320,17 @@ class PaginatedUserNotifier
     try {
       final verifiedOnly = ref.read(userVerifiedOnlyProvider);
       final dateFilter = ref.read(userDateFilterProvider);
+      final lowercaseCity = selectedCity.toLowerCase();
+      
       Query query = FirebaseFirestore.instance
           .collection('users')
-          .where('city', isEqualTo: selectedCity);
+          .where('city', isGreaterThanOrEqualTo: lowercaseCity)
+          .where('city', isLessThanOrEqualTo: '$lowercaseCity\uf8ff');
+          
       if (verifiedOnly) {
         query = query.where('isverified', isEqualTo: true);
       }
+      
       if (dateFilter != null) {
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
@@ -321,9 +346,11 @@ class PaginatedUserNotifier
         }
         query = query.orderBy('createdAt', descending: true);
       }
+      
       if (pageIndex < _pageCursors.length && _pageCursors[pageIndex] != null) {
         query = query.startAtDocument(_pageCursors[pageIndex]!);
       }
+      
       final snapshot = await query.limit(_pageSize).get();
       final users =
           snapshot.docs
@@ -334,6 +361,13 @@ class PaginatedUserNotifier
                 },
               )
               .toList();
+              
+      if (pageIndex + 1 == _pageCursors.length &&
+          snapshot.docs.length == _pageSize) {
+        _pageCursors.add(snapshot.docs.last);
+      }
+      
+      _currentPage = pageIndex;
       state = AsyncValue.data(users);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
@@ -342,7 +376,7 @@ class PaginatedUserNotifier
 
   Future<void> _fetchWithoutOrdering(int pageIndex) async {
     try {
-      final searchQuery = ref.read(userSearchQueryProvider);
+      final searchQuery = ref.read(userSearchQueryProvider).trim();
       final selectedCity = ref.read(userSelectedCityProvider);
 
       Query query = FirebaseFirestore.instance.collection('users');
@@ -661,6 +695,62 @@ final rentalSearchQueryProvider = StateProvider<String>((ref) => '');
 final rentalSelectedCityProvider = StateProvider<String?>((ref) => null);
 final rentalUnverifiedOnlyProvider = StateProvider<bool>((ref) => false);
 final rentalTodayOnlyProvider = StateProvider<bool>((ref) => false);
+final rentalTypeFilterProvider = StateProvider<String>((ref) => 'All');
+final rentalTimeFilterProvider = StateProvider<String>((ref) => 'All Time');
+
+// Helper to extract image URLs from property map
+List<String> extractPropertyImageUrls(Map<String, dynamic> prop) {
+  final List<String> urls = [];
+  
+  void addValue(dynamic value) {
+    if (value == null) return;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return;
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          final matches = RegExp(r'https?://[^\s",\]]+').allMatches(trimmed);
+          for (var match in matches) {
+            final url = match.group(0);
+            if (url != null) urls.add(url);
+          }
+        } catch (_) {}
+      } else if (trimmed.contains(',')) {
+        for (var part in trimmed.split(',')) {
+          final p = part.trim();
+          if (p.startsWith('http://') || p.startsWith('https://')) {
+            urls.add(p);
+          }
+        }
+      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        urls.add(trimmed);
+      }
+    } else if (value is List) {
+      for (var item in value) {
+        if (item is String) {
+          final trimmed = item.trim();
+          if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            urls.add(trimmed);
+          }
+        } else if (item != null) {
+          final trimmed = item.toString().trim();
+          if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            urls.add(trimmed);
+          }
+        }
+      }
+    }
+  }
+
+  if (prop['photoUrls'] != null) addValue(prop['photoUrls']);
+  if (prop['photoUrl'] != null) addValue(prop['photoUrl']);
+  if (prop['image'] != null) addValue(prop['image']);
+  if (prop['imageUrl'] != null) addValue(prop['imageUrl']);
+  if (prop['images'] != null) addValue(prop['images']);
+  if (prop['photos'] != null) addValue(prop['photos']);
+
+  return urls.toSet().toList();
+}
 
 // Provider to gather a comprehensive list of cities from rental properties
 final rentalCitiesProvider = FutureProvider<Set<String>>((ref) async {
@@ -678,140 +768,183 @@ final rentalCitiesProvider = FutureProvider<Set<String>>((ref) async {
   return cities;
 });
 
-// Paginated provider for the rental properties list
+// Paginated provider for the rental properties list utilizing real-time stream subscription
 class PaginatedRentalNotifier
     extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>> {
   final Ref ref;
-  PaginatedRentalNotifier(this.ref) : super(const AsyncValue.loading()) {
-    fetchInitial();
-  }
+  StreamSubscription? _subscription;
+  List<Map<String, dynamic>> _allProperties = [];
+  List<Map<String, dynamic>> _filteredProperties = [];
 
-  final List<DocumentSnapshot?> _pageCursors = [null];
   int _currentPage = 0;
   final int _pageSize = 50;
   int _totalCount = 0;
   int _filteredCount = 0;
-  int _unverifiedCount = 0;
 
-  Future<void> fetchInitial() async {
-    _currentPage = 0;
-    _pageCursors.clear();
-    _pageCursors.add(null);
+  PaginatedRentalNotifier(this.ref) : super(const AsyncValue.loading()) {
+    _initStream();
 
-    try {
-      final searchQuery = ref.read(rentalSearchQueryProvider);
-      final selectedCity = ref.read(rentalSelectedCityProvider);
-      final unverifiedOnly = ref.read(rentalUnverifiedOnlyProvider);
-      final todayOnly = ref.read(rentalTodayOnlyProvider);
-
-      Query query = FirebaseFirestore.instance.collection('rental_properties');
-
-      if (searchQuery.isNotEmpty) {
-        query = query
-            .where('propertyName', isGreaterThanOrEqualTo: searchQuery)
-            .where('propertyName', isLessThanOrEqualTo: '$searchQuery\uf8ff');
-      } else if (selectedCity != null) {
-        query = query.where('city', isEqualTo: selectedCity);
-      }
-
-      if (unverifiedOnly) {
-        query = query.where('isPropertyVerified', isEqualTo: false);
-      }
-
-      if (todayOnly) {
-        final now = DateTime.now();
-        final todayStart = DateTime(now.year, now.month, now.day);
-        query = query.where('createdAt', isGreaterThanOrEqualTo: todayStart);
-      }
-
-      final countSnapshot = await query.count().get();
-      _filteredCount = countSnapshot.count ?? 0;
-
-      if (searchQuery.isEmpty &&
-          selectedCity == null &&
-          !unverifiedOnly &&
-          !todayOnly) {
-        _totalCount = _filteredCount;
-      }
-    } catch (_) {}
-
-    await fetchPage(0);
+    // Listen to changes in filters and apply them in-memory
+    ref.listen(rentalSearchQueryProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(rentalSelectedCityProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(rentalTypeFilterProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(rentalTimeFilterProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
   }
 
-  Future<void> fetchPage(int pageIndex) async {
-    state = const AsyncValue.loading();
-    try {
-      final searchQuery = ref.read(rentalSearchQueryProvider);
-      final selectedCity = ref.read(rentalSelectedCityProvider);
-      final unverifiedOnly = ref.read(rentalUnverifiedOnlyProvider);
-      final todayOnly = ref.read(rentalTodayOnlyProvider);
+  void _initStream() {
+    _subscription?.cancel();
+    _subscription = FirebaseFirestore.instance
+        .collection('rental_properties')
+        .orderBy('createdAt', descending: true)
+        .limit(2000)
+        .snapshots()
+        .listen((snapshot) {
+          _allProperties = snapshot.docs.map((doc) => {
+            'id': doc.id,
+            ...doc.data(),
+          }).toList();
+          _applyFiltersAndNotify();
+        }, onError: (err, stack) {
+          state = AsyncValue.error(err, stack);
+        });
+  }
 
-      Query query = FirebaseFirestore.instance.collection('rental_properties');
+  void _applyFiltersAndNotify() {
+    final searchQuery = ref.read(rentalSearchQueryProvider).trim().toLowerCase();
+    final selectedCity = ref.read(rentalSelectedCityProvider);
+    final filterType = ref.read(rentalTypeFilterProvider);
+    final timeFilter = ref.read(rentalTimeFilterProvider);
 
-      if (searchQuery.isNotEmpty) {
-        query = query
-            .where('propertyName', isGreaterThanOrEqualTo: searchQuery)
-            .where('propertyName', isLessThanOrEqualTo: '$searchQuery\uf8ff');
-      } else if (selectedCity != null) {
-        query = query.where('city', isEqualTo: selectedCity);
-      }
+    _totalCount = _allProperties.length;
 
-      if (unverifiedOnly) {
-        query = query.where('isPropertyVerified', isEqualTo: false);
-      }
+    List<Map<String, dynamic>> temp = List.from(_allProperties);
 
-      if (todayOnly) {
-        final now = DateTime.now();
-        final todayStart = DateTime(now.year, now.month, now.day);
-        query = query.where('createdAt', isGreaterThanOrEqualTo: todayStart);
-      }
-
-      // Only apply ordering if no filters are active to avoid index errors
-      if (searchQuery.isEmpty &&
-          selectedCity == null &&
-          !unverifiedOnly &&
-          !todayOnly) {
-        query = query.orderBy('createdAt', descending: true);
-      }
-
-      if (pageIndex < _pageCursors.length && _pageCursors[pageIndex] != null) {
-        query = query.startAfterDocument(_pageCursors[pageIndex]!);
-      }
-
-      final snapshot = await query.limit(_pageSize).get();
-      final properties =
-          snapshot.docs
-              .map(
-                (doc) => {
-                  'id': doc.id,
-                  ...(doc.data() as Map<String, dynamic>),
-                },
-              )
-              .toList();
-
-      if (snapshot.docs.isNotEmpty && snapshot.docs.length == _pageSize) {
-        if (pageIndex + 1 == _pageCursors.length) {
-          _pageCursors.add(snapshot.docs.last);
-        }
-      }
-
-      _currentPage = pageIndex;
-      state = AsyncValue.data(properties);
-    } catch (e, stack) {
-      state = AsyncValue.error(e, stack);
+    // 1. Filter by City
+    if (selectedCity != null) {
+      temp = temp.where((p) {
+        final city = (p['city'] ?? p['City'])?.toString().toLowerCase();
+        return city == selectedCity.toLowerCase();
+      }).toList();
     }
+
+    // 2. Filter by Verification / Premium Type
+    if (filterType == 'Verified') {
+      temp = temp.where((p) => p['isPropertyVerified'] == true).toList();
+    } else if (filterType == 'Unverified') {
+      temp = temp.where((p) => p['isPropertyVerified'] != true).toList();
+    } else if (filterType == 'Premium') {
+      temp = temp.where((p) {
+        final plan = p['ownerPlan']?.toString().toLowerCase() ?? '';
+        final isBoosted = p['isBoosted'] == true;
+        final isPremium = p['isPremium'] == true;
+        return plan.contains('premium') || plan == 'paid' || plan == '599' || isBoosted || isPremium;
+      }).toList();
+    }
+
+    // 3. Filter by Time
+    if (timeFilter != 'All Time') {
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+      final sevenDaysAgo = todayStart.subtract(const Duration(days: 7));
+      final thirtyDaysAgo = todayStart.subtract(const Duration(days: 30));
+
+      temp = temp.where((p) {
+        final createdAtVal = p['createdAt'];
+        DateTime? date;
+        if (createdAtVal is Timestamp) {
+          date = createdAtVal.toDate();
+        } else if (createdAtVal is String) {
+          date = DateTime.tryParse(createdAtVal);
+        } else if (createdAtVal is int) {
+          date = DateTime.fromMillisecondsSinceEpoch(createdAtVal);
+        }
+
+        if (date == null) return false;
+
+        if (timeFilter == 'Today') {
+          return date.isAfter(todayStart) || date.isAtSameMomentAs(todayStart);
+        } else if (timeFilter == 'Yesterday') {
+          return (date.isAfter(yesterdayStart) || date.isAtSameMomentAs(yesterdayStart)) && date.isBefore(todayStart);
+        } else if (timeFilter == 'Last 7 Days') {
+          return date.isAfter(sevenDaysAgo) || date.isAtSameMomentAs(sevenDaysAgo);
+        } else if (timeFilter == 'Last 30 Days') {
+          return date.isAfter(thirtyDaysAgo) || date.isAtSameMomentAs(thirtyDaysAgo);
+        }
+        return true;
+      }).toList();
+    }
+
+    // 4. Filter by Search Query
+    if (searchQuery.isNotEmpty) {
+      temp = temp.where((p) {
+        final name = (p['propertyName'] ?? p['title'] ?? p['name'])?.toString().toLowerCase() ?? '';
+        final owner = p['ownerName']?.toString().toLowerCase() ?? '';
+        final city = (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
+        final location = (p['location'] ?? p['address'])?.toString().toLowerCase() ?? '';
+        final type = p['type']?.toString().toLowerCase() ?? '';
+        final bhk = p['bhk']?.toString().toLowerCase() ?? '';
+        final landmark = p['landmark']?.toString().toLowerCase() ?? '';
+        
+        return name.contains(searchQuery) ||
+               owner.contains(searchQuery) ||
+               city.contains(searchQuery) ||
+               location.contains(searchQuery) ||
+               type.contains(searchQuery) ||
+               bhk.contains(searchQuery) ||
+               landmark.contains(searchQuery);
+      }).toList();
+    }
+
+    _filteredProperties = temp;
+    _filteredCount = temp.length;
+
+    // Paginate
+    final int start = _currentPage * _pageSize;
+    if (start >= _filteredCount && _currentPage > 0) {
+      _currentPage = (_filteredCount - 1) ~/ _pageSize;
+    }
+    if (_currentPage < 0) _currentPage = 0;
+
+    final paginatedList = _filteredProperties.skip(_currentPage * _pageSize).take(_pageSize).toList();
+    state = AsyncValue.data(paginatedList);
   }
 
   void nextPage() {
     if ((_currentPage + 1) * _pageSize < _filteredCount) {
-      fetchPage(_currentPage + 1);
+      _currentPage++;
+      _applyFiltersAndNotify();
     }
   }
 
   void prevPage() {
     if (_currentPage > 0) {
-      fetchPage(_currentPage - 1);
+      _currentPage--;
+      _applyFiltersAndNotify();
     }
+  }
+
+  void fetchInitial() {
+    _currentPage = 0;
+    _applyFiltersAndNotify();
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
   int get currentPage => _currentPage;
@@ -1041,15 +1174,7 @@ class CollectionPeriodStats {
 }
 
 void _logToWorkspace(String message) {
-  try {
-    final file = File('/Users/skazo/Downloads/skazo_admin/firestore_debug.log');
-    file.writeAsStringSync(
-      '${DateTime.now().toIso8601String()}: $message\n',
-      mode: FileMode.append,
-    );
-  } catch (e) {
-    debugPrint('Failed to log to workspace: $e');
-  }
+  debugPrint('Workspace Log: $message');
 }
 
 Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
@@ -1247,36 +1372,31 @@ final collectionDateFieldInfoProvider =
       return _detectDateField(collectionName);
     });
 
-final collectionTodayCountProvider = StreamProvider.family<int, String>((
+final collectionTodayCountProvider = FutureProvider.family<int, String>((
   ref,
   collectionName,
-) {
-  final dateFieldInfoAsync = ref.watch(
-    collectionDateFieldInfoProvider(collectionName),
+) async {
+  final dateFieldInfo = await ref.watch(
+    collectionDateFieldInfoProvider(collectionName).future,
   );
 
-  return dateFieldInfoAsync.when(
-    data: (dateFieldInfo) {
-      final now = DateTime.now();
-      final todayStart = DateTime(now.year, now.month, now.day);
+  final now = DateTime.now();
+  final todayStart = DateTime(now.year, now.month, now.day);
 
-      if (dateFieldInfo != null) {
-        final fieldName = dateFieldInfo.fieldName;
-        final fieldType = dateFieldInfo.fieldType;
-        final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
+  if (dateFieldInfo != null) {
+    final fieldName = dateFieldInfo.fieldName;
+    final fieldType = dateFieldInfo.fieldType;
+    final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
 
-        return FirebaseFirestore.instance
-            .collection(collectionName)
-            .where(fieldName, isGreaterThanOrEqualTo: todayVal)
-            .snapshots()
-            .map((snapshot) => snapshot.size);
-      }
+    final snapshot = await FirebaseFirestore.instance
+        .collection(collectionName)
+        .where(fieldName, isGreaterThanOrEqualTo: todayVal)
+        .count()
+        .get();
+    return snapshot.count ?? 0;
+  }
 
-      return Stream.value(0);
-    },
-    loading: () => const Stream.empty(),
-    error: (err, stack) => Stream.value(0),
-  );
+  return 0;
 });
 
 final collectionPeriodStatsProvider = FutureProvider.family<
