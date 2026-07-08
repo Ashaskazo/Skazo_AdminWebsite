@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
+import 'dart:async';
 
 class UsersDataView extends ConsumerStatefulWidget {
   const UsersDataView({super.key});
@@ -15,6 +16,43 @@ class UsersDataView extends ConsumerStatefulWidget {
 
 class _UsersDataViewState extends ConsumerState<UsersDataView> {
   @override
+  void initState() {
+    super.initState();
+
+    Future.microtask(() {
+      final notifier = ref.read(paginatedUserProvider.notifier);
+
+      ref.listenManual(
+        userSearchQueryProvider,
+        (_, __) => notifier.fetchInitial(),
+      );
+
+      ref.listenManual(
+        userSelectedCityProvider,
+        (_, __) => notifier.fetchInitial(),
+      );
+
+      ref.listenManual(
+        userVerifiedOnlyProvider,
+        (_, __) => notifier.fetchInitial(),
+      );
+
+      ref.listenManual(
+        userDateFilterProvider,
+        (_, __) => notifier.fetchInitial(),
+      );
+    });
+  }
+
+  Timer? _searchDebounce;
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final dataAsync = ref.watch(paginatedUserProvider);
     final searchQuery = ref.watch(userSearchQueryProvider);
@@ -22,26 +60,6 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     final verifiedOnly = ref.watch(userVerifiedOnlyProvider);
     final dateFilter = ref.watch(userDateFilterProvider);
     final notifier = ref.watch(paginatedUserProvider.notifier);
-
-    // Listen for filter changes and refresh the list
-    ref.listen(userSearchQueryProvider, (_, __) => notifier.fetchInitial());
-    ref.listen(userSelectedCityProvider, (_, __) => notifier.fetchInitial());
-    ref.listen(userVerifiedOnlyProvider, (_, __) => notifier.fetchInitial());
-    ref.listen(userDateFilterProvider, (_, __) => notifier.fetchInitial());
-
-    // Listen for filter changes to reset pagination
-    ref.listen(
-      userSearchQueryProvider,
-      (_, __) => ref.read(paginatedUserProvider.notifier).fetchInitial(),
-    );
-    ref.listen(
-      userSelectedCityProvider,
-      (_, __) => ref.read(paginatedUserProvider.notifier).fetchInitial(),
-    );
-    ref.listen(
-      userDateFilterProvider,
-      (_, __) => ref.read(paginatedUserProvider.notifier).fetchInitial(),
-    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,11 +98,15 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: IconButton(
-                  onPressed: () {
+                  onPressed: () async {
                     ref.read(userSearchQueryProvider.notifier).state = '';
                     ref.read(userSelectedCityProvider.notifier).state = null;
+                    ref.read(userVerifiedOnlyProvider.notifier).state = false;
                     ref.read(userDateFilterProvider.notifier).state = null;
-                    ref.read(paginatedUserProvider.notifier).fetchInitial();
+
+                    await ref
+                        .read(paginatedUserProvider.notifier)
+                        .fetchInitial(forceRefresh: true);
                   },
                   icon: const Icon(
                     Icons.refresh_rounded,
@@ -408,8 +430,10 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                 children: [
                   Expanded(
                     child: ListView.builder(
+                      key: const PageStorageKey('users_list'),
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       itemCount: users.length,
+                      cacheExtent: 1000,
                       itemBuilder: (context, index) {
                         final user = users[index];
                         return _buildUserCard(context, user);
@@ -429,10 +453,13 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
   }
 
   Widget _buildPaginationFooter(PaginatedUserNotifier notifier) {
-    final int start = (notifier.currentPage * notifier.pageSize) + 1;
+    final int start =
+        notifier.filteredCount == 0
+            ? 0
+            : (notifier.currentPage * notifier.pageSize) + 1;
     final int end =
-        (notifier.currentPage + 1) * notifier.pageSize > notifier.totalCount
-            ? notifier.totalCount
+        (notifier.currentPage + 1) * notifier.pageSize > notifier.filteredCount
+            ? notifier.filteredCount
             : (notifier.currentPage + 1) * notifier.pageSize;
 
     return Container(
@@ -441,7 +468,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Text(
-            '$start–$end of ${notifier.totalCount}',
+            '$start–$end of ${notifier.filteredCount}',
             style: GoogleFonts.poppins(
               fontSize: 14,
               color: const Color(0xFF64748B),
@@ -455,7 +482,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
           ),
           IconButton(
             onPressed:
-                end < notifier.totalCount ? () => notifier.nextPage() : null,
+                end < notifier.filteredCount ? () => notifier.nextPage() : null,
             icon: const Icon(Icons.chevron_right_rounded),
           ),
         ],
@@ -474,105 +501,119 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
-      child: ListTile(
-        onTap:
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => BusinessProfilePage(businessData: user),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          onTap:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => BusinessProfilePage(businessData: user),
+                ),
               ),
+          leading: Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF1F5F9),
             ),
-        leading: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: const Color(0xFFF1F5F9),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child:
+                  imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 200,
+                        memCacheHeight: 200,
+                        maxWidthDiskCache: 400,
+                        placeholder:
+                            (_, __) => const Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                        errorWidget:
+                            (_, __, ___) => const Icon(
+                              Icons.business,
+                              color: Color(0xFF94A3B8),
+                            ),
+                      )
+                      : const Icon(Icons.business, color: Color(0xFF94A3B8)),
+            ),
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child:
-                imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder:
-                          (context, url) => const Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                      errorWidget:
-                          (context, url, error) => const Icon(
-                            Icons.business,
-                            color: Color(0xFF94A3B8),
-                          ),
-                    )
-                    : const Icon(Icons.business, color: Color(0xFF94A3B8)),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  user['businessname'] ??
+                      user['firstname'] ??
+                      user['name'] ??
+                      'Unknown User',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (isVerified) const SizedBox(width: 4),
+              if (isVerified)
+                const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 16,
+                ),
+            ],
           ),
-        ),
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                user['businessname'] ??
-                    user['firstname'] ??
-                    user['name'] ??
-                    'Unknown User',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                user['email'] ?? user['phone']?.toString() ?? 'No Contact Info',
+                style: GoogleFonts.poppins(fontSize: 12),
               ),
-            ),
-            if (isVerified) const SizedBox(width: 4),
-            if (isVerified)
-              const Icon(
-                Icons.verified_rounded,
-                color: Color(0xFF2563EB),
-                size: 16,
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_rounded,
+                    size: 12,
+                    color: Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    getSmartCity(user),
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Icon(
+                    Icons.calendar_today_rounded,
+                    size: 11,
+                    color: Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatRegistrationDate(user['createdAt']),
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
-          ],
+            ],
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              user['email'] ?? user['phone']?.toString() ?? 'No Contact Info',
-              style: GoogleFonts.poppins(fontSize: 12),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(
-                  Icons.location_on_rounded,
-                  size: 12,
-                  color: Color(0xFF64748B),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  getSmartCity(user),
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                const Icon(
-                  Icons.calendar_today_rounded,
-                  size: 11,
-                  color: Color(0xFF64748B),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _formatRegistrationDate(user['createdAt']),
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
@@ -595,12 +636,6 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         ],
       ),
     );
-  }
-
-  String? _extractPincode(String? address) {
-    if (address == null || address.isEmpty) return null;
-    final match = RegExp(r'\d{6}').firstMatch(address);
-    return match?.group(0);
   }
 
   String _formatRegistrationDate(dynamic createdAt) {

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 
 class PropertyDetailsPage extends StatefulWidget {
   final Map<String, dynamic> propertyData;
@@ -319,8 +320,8 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
   }
 
   Widget _buildImageSection() {
-    final urls = _editedData['photoUrls'] as List?;
-    if (urls == null || urls.isEmpty) {
+    final urls = extractPropertyImageUrls(_editedData);
+    if (urls.isEmpty) {
       return Container(
         height: 200,
         width: double.infinity,
