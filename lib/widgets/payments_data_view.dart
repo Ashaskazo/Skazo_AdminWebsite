@@ -968,6 +968,9 @@ class _PaymentsDataViewState extends ConsumerState<PaymentsDataView> {
                                         'totalAmount': FieldValue.increment(
                                           amount,
                                         ),
+                                        'overaltotalamount': FieldValue.increment(
+                                          amount,
+                                        ),
                                         'paymentPlanDuration': selectedDuration,
                                         'transactionId': txnId,
                                         'lastPaymentAt':
