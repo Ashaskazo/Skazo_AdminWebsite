@@ -15,9 +15,13 @@ class UsersDataView extends ConsumerStatefulWidget {
 }
 
 class _UsersDataViewState extends ConsumerState<UsersDataView> {
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
+    _searchController.text = ref.read(userSearchQueryProvider);
 
     Future.microtask(() {
       final notifier = ref.read(paginatedUserProvider.notifier);
@@ -41,15 +45,57 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         userDateFilterProvider,
         (_, __) => notifier.fetchInitial(),
       );
+
+      ref.listenManual(
+        userTypeFilterProvider,
+        (_, __) => notifier.fetchInitial(),
+      );
     });
   }
 
-  Timer? _searchDebounce;
-
   @override
   void dispose() {
+    _searchController.dispose();
     _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  Widget _buildTypeChips(WidgetRef ref, String currentType) {
+    final types = ['All', 'Customers', 'Service Providers'];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: types.map((type) {
+          final isActive = currentType == type;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: FilterChip(
+              label: Text(type),
+              selected: isActive,
+              onSelected: (v) {
+                if (v) {
+                  ref.read(userTypeFilterProvider.notifier).state = type;
+                }
+              },
+              selectedColor: const Color(0xFF2563EB).withValues(alpha: 0.1),
+              checkmarkColor: const Color(0xFF2563EB),
+              labelStyle: GoogleFonts.poppins(
+                fontSize: 12,
+                color: isActive ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              ),
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: isActive ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   @override
@@ -59,6 +105,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     final selectedCity = ref.watch(userSelectedCityProvider);
     final verifiedOnly = ref.watch(userVerifiedOnlyProvider);
     final dateFilter = ref.watch(userDateFilterProvider);
+    final selectedType = ref.watch(userTypeFilterProvider);
     final notifier = ref.watch(paginatedUserProvider.notifier);
 
     return Column(
@@ -99,10 +146,12 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                 ),
                 child: IconButton(
                   onPressed: () async {
+                    _searchController.clear();
                     ref.read(userSearchQueryProvider.notifier).state = '';
                     ref.read(userSelectedCityProvider.notifier).state = null;
                     ref.read(userVerifiedOnlyProvider.notifier).state = false;
                     ref.read(userDateFilterProvider.notifier).state = null;
+                    ref.read(userTypeFilterProvider.notifier).state = 'All';
 
                     await ref
                         .read(paginatedUserProvider.notifier)
@@ -148,17 +197,19 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ],
                       ),
                       child: TextField(
-                        onChanged:
-                            (value) =>
-                                ref
-                                    .read(userSearchQueryProvider.notifier)
-                                    .state = value,
+                        controller: _searchController,
+                        onChanged: (value) {
+                          setState(() {});
+                          _searchDebounce?.cancel();
+                          _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+                            ref.read(userSearchQueryProvider.notifier).state = value;
+                          });
+                        },
                         style: GoogleFonts.poppins(fontSize: 14),
                         decoration: InputDecoration(
-                          hintText:
-                              verifiedOnly
-                                  ? 'Search by business address...'
-                                  : 'Search by phone number...',
+                          hintText: selectedType == 'Service Providers'
+                              ? 'Search by business, phone, email, address...'
+                              : 'Search by name, phone, email...',
                           hintStyle: GoogleFonts.poppins(
                             color: const Color(0xFF94A3B8),
                             fontSize: 14,
@@ -168,6 +219,20 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                             color: Color(0xFF94A3B8),
                             size: 20,
                           ),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.clear_rounded,
+                                    color: Color(0xFF94A3B8),
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {});
+                                    ref.read(userSearchQueryProvider.notifier).state = '';
+                                  },
+                                )
+                              : null,
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
                             vertical: 16,
@@ -334,6 +399,33 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                 ],
               ),
               const SizedBox(height: 16),
+              // Type Chips and Verified Only Toggle
+              Row(
+                children: [
+                  Expanded(child: _buildTypeChips(ref, selectedType)),
+                  const SizedBox(width: 16),
+                  if (selectedType != 'Customers') ...[
+                    Text(
+                      'Verified Only',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                    Switch(
+                      value: verifiedOnly,
+                      activeThumbColor: const Color(0xFF16A34A),
+                      activeTrackColor: const Color(
+                        0xFF16A34A,
+                      ).withValues(alpha: 0.5),
+                      onChanged: (value) {
+                        ref.read(userVerifiedOnlyProvider.notifier).state = value;
+                      },
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
               // Filter Status & Service Provider Count
               Row(
                 children: [
@@ -350,12 +442,14 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                       ),
                       child: Text(
                         selectedCity != null
-                            ? 'Found ${notifier.filteredCount} ${verifiedOnly ? 'providers' : 'users'} in $selectedCity'
+                            ? 'Found ${notifier.filteredCount} ${selectedType == 'Service Providers' ? 'providers' : selectedType == 'Customers' ? 'customers' : 'accounts'} in $selectedCity'
                             : searchQuery.isNotEmpty
-                            ? 'Found ${notifier.filteredCount} matching ${verifiedOnly ? 'providers' : 'users'}'
-                            : verifiedOnly
+                            ? 'Found ${notifier.filteredCount} matching ${selectedType == 'Service Providers' ? 'providers' : selectedType == 'Customers' ? 'customers' : 'accounts'}'
+                            : selectedType == 'Service Providers'
                             ? 'Total Service Providers: ${notifier.verifiedCount}'
-                            : 'Total Users: ${notifier.totalCount}',
+                            : selectedType == 'Customers'
+                            ? 'Total Customers: ${notifier.totalCount - notifier.verifiedCount}'
+                            : 'Total Accounts: ${notifier.totalCount}',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -393,26 +487,6 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ),
                       ],
                     ),
-                  ),
-                  const Spacer(),
-                  // Verified Only Toggle
-                  Text(
-                    'Verified Only',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
-                  Switch(
-                    value: ref.watch(userVerifiedOnlyProvider),
-                    activeThumbColor: const Color(0xFF16A34A),
-                    activeTrackColor: const Color(
-                      0xFF16A34A,
-                    ).withValues(alpha: 0.5),
-                    onChanged: (value) {
-                      ref.read(userVerifiedOnlyProvider.notifier).state = value;
-                      notifier.fetchInitial();
-                    },
                   ),
                 ],
               ),

@@ -12,6 +12,7 @@ import 'package:skazo_admin/widgets/users_data_view.dart';
 import 'package:skazo_admin/widgets/orders_data_view.dart';
 import 'package:skazo_admin/widgets/service_posts_data_view.dart';
 import 'package:skazo_admin/widgets/rental_properties_data_view.dart';
+import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
 import 'package:skazo_admin/widgets/admins_data_view.dart';
 import 'package:skazo_admin/widgets/unverified_businesses_grid.dart';
 import 'package:skazo_admin/widgets/payments_data_view.dart';
@@ -36,7 +37,7 @@ class DashboardPage extends ConsumerWidget {
               Expanded(
                 child: Container(
                   color: const Color(0xFFF8FAFC),
-                  child: _buildMainContent(currentView),
+                  child: _buildMainContent(currentView, ref),
                 ),
               ),
             ],
@@ -50,7 +51,7 @@ class DashboardPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildMainContent(DashboardView view) {
+  Widget _buildMainContent(DashboardView view, WidgetRef ref) {
     switch (view) {
       case DashboardView.summary:
         return const _SummaryDashboard();
@@ -62,6 +63,8 @@ class DashboardPage extends ConsumerWidget {
         return const OrdersDataView();
       case DashboardView.rentalProperties:
         return const RentalPropertiesDataView();
+      case DashboardView.localPromotions:
+        return const LocalPromotionsDataView();
       case DashboardView.tickets:
         return const CollectionDataView(
           collectionName: 'tickets',
@@ -78,8 +81,30 @@ class DashboardPage extends ConsumerWidget {
           title: 'WhatsApp Logs',
         );
       case DashboardView.admin:
+        final isSuperAdmin = ref.watch(isSuperAdminProvider);
+        if (!isSuperAdmin) {
+          return const Scaffold(
+            body: Center(
+              child: Text(
+                'Access Denied: Super Admin Only',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+            ),
+          );
+        }
         return const AdminsDataView();
       case DashboardView.appConfig:
+        final isSuperAdmin = ref.watch(isSuperAdminProvider);
+        if (!isSuperAdmin) {
+          return const Scaffold(
+            body: Center(
+              child: Text(
+                'Access Denied: Super Admin Only',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+            ),
+          );
+        }
         return const CollectionDataView(
           collectionName: 'app_config',
           title: 'Application Config',
@@ -286,14 +311,19 @@ class _SummaryDashboard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'New Registered Businesses (Pending Verification)',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  'New Registered Businesses (Pending Verification)',
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
+              const SizedBox(width: 12),
+              const _DashboardCityFilterDropdown(),
+              const SizedBox(width: 12),
               const _DashboardDateFilterDropdown(),
             ],
           ),
@@ -495,6 +525,75 @@ class _SummaryDashboard extends ConsumerWidget {
     }
 
     return cardContent;
+  }
+}
+
+class _DashboardCityFilterDropdown extends ConsumerWidget {
+  const _DashboardCityFilterDropdown();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedCity = ref.watch(dashboardSelectedCityProvider);
+    final citiesAsync = ref.watch(unverifiedCitiesProvider);
+
+    return citiesAsync.when(
+      data: (cities) => Container(
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String?>(
+            value: selectedCity,
+            hint: Text(
+              'All Cities',
+              style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF64748B)),
+            ),
+            icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
+            onChanged: (value) {
+              ref.read(dashboardSelectedCityProvider.notifier).state = value;
+            },
+            items: [
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_city_rounded, size: 16, color: Color(0xFF64748B)),
+                    const SizedBox(width: 8),
+                    Text('All Cities', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+              ...cities.map(
+                (city) => DropdownMenuItem<String?>(
+                  value: city,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on_rounded, size: 16, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 8),
+                      Text(city, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      loading: () => const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+    );
   }
 }
 

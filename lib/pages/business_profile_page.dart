@@ -257,6 +257,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                         child: CachedNetworkImage(
                           imageUrl: data['businesspic'] ?? '',
                           fit: BoxFit.cover,
+                          memCacheWidth: 240,
+                          memCacheHeight: 240,
+                          maxWidthDiskCache: 480,
                           errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.white, size: 40),
                         ),
                       ),

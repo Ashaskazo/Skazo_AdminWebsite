@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/user_providers.dart';
 
 /// Provider that checks if a user's email is in the admins collection
 final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, email) async {
@@ -52,7 +54,12 @@ final isSuperAdminProvider = Provider<bool>((ref) {
   
   // Support both 'role' (new) and 'level' (existing) fields
   final role = profile['role'] ?? profile['level'];
-  return role == 'super_admin' || role == 'administrator';
+  return role == 'super_admin';
+});
+
+/// StreamProvider to fetch admins collection list (cached to prevent duplicate listeners on rebuild)
+final adminsStreamProvider = StreamProvider<QuerySnapshot>((ref) {
+  return FirebaseFirestore.instance.collection('admin').snapshots();
 });
 
 /// Provider to watch the Firebase Auth state
@@ -68,12 +75,22 @@ final currentAdminStatusProvider = FutureProvider<bool>((ref) async {
 
 /// Provider to handle logging out
 class AdminAuthNotifier extends StateNotifier<bool> {
-  AdminAuthNotifier() : super(false);
+  final Ref ref;
+  AdminAuthNotifier(this.ref) : super(false);
 
   Future<void> signOut() async {
     state = true; // Processing
     try {
       await FirebaseAuth.instance.signOut();
+      
+      // Invalidate all cached data providers to release resources and prevent stale access
+      ref.invalidate(usersStreamProvider);
+      ref.invalidate(propertyPincodesProvider);
+      ref.invalidate(unverifiedUsersProvider);
+      ref.invalidate(categoryCountsProvider);
+      ref.invalidate(adminsStreamProvider);
+      ref.invalidate(paginatedLocalPromotionsProvider);
+      // ref.invalidate(paginatedRentalPropertiesProvider);
     } catch (e) {
       print('Error signing out: $e');
     } finally {
@@ -83,5 +100,5 @@ class AdminAuthNotifier extends StateNotifier<bool> {
 }
 
 final adminAuthProvider = StateNotifierProvider<AdminAuthNotifier, bool>((ref) {
-  return AdminAuthNotifier();
+  return AdminAuthNotifier(ref);
 });

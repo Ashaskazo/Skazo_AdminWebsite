@@ -1,24 +1,77 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 
-// This provider will fetch all unverified business users
+// Helper to parse date times statically
+DateTime? _parseDateTimeStatic(dynamic val) {
+  if (val == null) return null;
+  if (val is DateTime) return val;
+  try {
+    return val.toDate();
+  } catch (_) {}
+  if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
+  if (val is String) {
+    final p = DateTime.tryParse(val);
+    if (p != null) return p;
+    return _parseCustomDateTimeStatic(val);
+  }
+  return null;
+}
+
+DateTime? _parseCustomDateTimeStatic(String val) {
+  try {
+    final clean = val.trim();
+    if (clean.isEmpty) return null;
+    final parts = clean.split(' ');
+    if (parts.length >= 5) {
+      final day = int.tryParse(parts[0]);
+      final monthStr = parts[1].toLowerCase();
+      final year = int.tryParse(parts[2]);
+      final timePart = parts[4];
+      final timeParts = timePart.split(':');
+      final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
+      final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+      final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
+
+      final months = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+        'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+      };
+      final month = months[monthStr];
+
+      if (day != null && month != null && year != null) {
+        if (parts.length >= 6 && parts[5].startsWith('UTC')) {
+          final offsetStr = parts[5].substring(3);
+          final isNegative = offsetStr.startsWith('-');
+          final cleanOffset = offsetStr.replaceAll('+', '').replaceAll('-', '');
+          final offsetParts = cleanOffset.split(':');
+          final offsetHours = offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
+          final offsetMinutes = offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
+          
+          final utcTime = DateTime.utc(year, month, day, hour, minute, second);
+          final duration = Duration(hours: offsetHours, minutes: offsetMinutes);
+          return isNegative ? utcTime.add(duration) : utcTime.subtract(duration);
+        }
+        return DateTime(year, month, day, hour, minute, second);
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+// This provider will fetch all unverified business users in-memory from the shared stream
 final unverifiedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   try {
-    // Only query by isverified to avoid the need for a composite index
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('isverified', isEqualTo: false)
-        .get();
+    final users = await ref.watch(usersStreamProvider.future);
 
-    final allUnverified = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-
-    // Filter locally: businessname not empty and not deactivated
-    var filtered = allUnverified.where((user) {
+    var filtered = users.where((user) {
+      final isVerified = user['isverified'] == true;
       final name = (user['businessname'] ?? '').toString();
       final isDeactivated = user['isDeactivated'] ?? false;
-      return name.trim().isNotEmpty && !isDeactivated;
+      return !isVerified && name.trim().isNotEmpty && !isDeactivated;
     }).toList();
 
     // Date filtering locally
@@ -26,17 +79,7 @@ final unverifiedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       filtered = filtered.where((user) {
-        final createdAt = user['createdAt'];
-        DateTime? dateTime;
-        if (createdAt is Timestamp) {
-          dateTime = createdAt.toDate();
-        } else if (createdAt is DateTime) {
-          dateTime = createdAt;
-        } else if (createdAt is int) {
-          dateTime = DateTime.fromMillisecondsSinceEpoch(createdAt);
-        } else if (createdAt is String) {
-          dateTime = DateTime.tryParse(createdAt);
-        }
+        final dateTime = _parseDateTimeStatic(user['createdAt']);
         if (dateTime == null) return false;
 
         if (dateFilter == 'today') {
@@ -55,8 +98,8 @@ final unverifiedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
 
     // Sort by newest first locally
     filtered.sort((a, b) {
-      final aDate = (a['updatedAt'] ?? a['createdAt'] as Timestamp?)?.toDate() ?? DateTime(2000);
-      final bDate = (b['updatedAt'] ?? b['createdAt'] as Timestamp?)?.toDate() ?? DateTime(2000);
+      final aDate = _parseDateTimeStatic(a['updatedAt'] ?? a['createdAt']) ?? DateTime(2000);
+      final bDate = _parseDateTimeStatic(b['updatedAt'] ?? b['createdAt']) ?? DateTime(2000);
       return bDate.compareTo(aDate);
     });
 
@@ -73,30 +116,20 @@ final dashboardSelectedCategoryProvider = StateProvider<String?>((ref) => null);
 // Provider to track selected city for filtering
 final dashboardSelectedCityProvider = StateProvider<String?>((ref) => null);
 
-// This provider will fetch unverified users by category and city
+// This provider will fetch unverified users by category and city in-memory
+// This provider will fetch unverified users by category and city in-memory
 final unverifiedUsersByCategoryProvider =
     FutureProvider.family<List<Map<String, dynamic>>, String>((
       ref,
       category,
     ) async {
+      final users = await ref.watch(unverifiedUsersProvider.future);
       final selectedCity = ref.watch(dashboardSelectedCityProvider);
-      final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
       
-      final snapshot =
-          await FirebaseFirestore.instance
-              .collection('users')
-              .where('isuser', isEqualTo: false)
-              .where('isverified', isEqualTo: false)
-              .get();
-
-      final users =
-          snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-
+      // Load city pincodes map
+      final pincodesMap = ref.watch(propertyPincodesProvider).value ?? {};
+      
       return users.where((user) {
-        // Deactivated check
-        final isDeactivated = user['isDeactivated'] ?? false;
-        if (isDeactivated) return false;
-
         // Category check
         final userCategories = user['category'];
         bool matchesCategory = false;
@@ -112,36 +145,22 @@ final unverifiedUsersByCategoryProvider =
 
         // City check
         if (selectedCity != null) {
-          final address = (user['address'] ?? '').toString().toLowerCase();
-          if (!address.contains(selectedCity.toLowerCase())) return false;
-        }
-
-        // Date check
-        if (dateFilter != null) {
-          final now = DateTime.now();
-          final todayStart = DateTime(now.year, now.month, now.day);
-          final createdAt = user['createdAt'];
-          DateTime? dateTime;
-          if (createdAt is Timestamp) {
-            dateTime = createdAt.toDate();
-          } else if (createdAt is DateTime) {
-            dateTime = createdAt;
-          } else if (createdAt is int) {
-            dateTime = DateTime.fromMillisecondsSinceEpoch(createdAt);
-          } else if (createdAt is String) {
-            dateTime = DateTime.tryParse(createdAt);
+          final address = (user['businessaddress'] ?? user['address'] ?? '').toString().toLowerCase();
+          final userCity = (user['city'] ?? user['City'] ?? '').toString().toLowerCase();
+          
+          // Match by property pincode array
+          final cityPins = pincodesMap[selectedCity];
+          if (cityPins != null && cityPins.isNotEmpty) {
+            final pinMatch = RegExp(r'\b\d{6}\b').firstMatch(address);
+            final userPin = pinMatch?.group(0);
+            if (userPin != null && cityPins.contains(userPin)) {
+              return true;
+            }
           }
-          if (dateTime == null) return false;
-
-          if (dateFilter == 'today') {
-            return dateTime.isAfter(todayStart) || dateTime.isAtSameMomentAs(todayStart);
-          } else if (dateFilter == 'yesterday') {
-            final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-            return (dateTime.isAfter(yesterdayStart) || dateTime.isAtSameMomentAs(yesterdayStart)) &&
-                   dateTime.isBefore(todayStart);
-          } else if (dateFilter == 'month') {
-            final monthStart = todayStart.subtract(const Duration(days: 30));
-            return dateTime.isAfter(monthStart) || dateTime.isAtSameMomentAs(monthStart);
+          
+          // Fallback to substring matching if pincode not matched or not found
+          if (!address.contains(selectedCity.toLowerCase()) && !userCity.contains(selectedCity.toLowerCase())) {
+            return false;
           }
         }
 
@@ -149,36 +168,19 @@ final unverifiedUsersByCategoryProvider =
       }).toList();
     });
 
-// Provider to get all unique cities from unverified users
+// Provider to get all unique cities from property_pincodes collection
 final unverifiedCitiesProvider = FutureProvider<List<String>>((ref) async {
-  final users = await ref.watch(unverifiedUsersProvider.future);
-  final Set<String> cities = {};
-  
-  for (final user in users) {
-    final address = (user['address'] ?? '').toString();
-    // Simple heuristic: take the last part of the address or look for common city names
-    // For now, we'll just extract what looks like a city if possible, 
-    // or the user can provide a dedicated city field in Firestore.
-    // Assuming 'city' field exists or extracting from address:
-    if (user['city'] != null) {
-      cities.add(user['city'].toString());
-    } else if (address.isNotEmpty) {
-      final parts = address.split(',');
-      if (parts.length > 1) {
-        cities.add(parts[parts.length - 2].trim());
-      } else {
-        cities.add(parts.last.trim());
-      }
-    }
-  }
-  
-  final sortedCities = cities.toList()..sort();
+  final pincodesMap = await ref.watch(propertyPincodesProvider.future);
+  final sortedCities = pincodesMap.keys.toList()..sort();
   return sortedCities;
 });
 
 // This provider will calculate category counts
 final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
   final users = await ref.watch(unverifiedUsersProvider.future);
+  final selectedCity = ref.watch(dashboardSelectedCityProvider);
+  final pincodesMap = ref.watch(propertyPincodesProvider).value ?? {};
+  
   final Map<String, int> counts = {};
 
   final List<String> categories = [
@@ -224,9 +226,30 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
     'Others',
   ];
 
+  // Helper to check if user matches selected city
+  bool matchesCity(Map<String, dynamic> user) {
+    if (selectedCity == null) return true;
+    final address = (user['businessaddress'] ?? user['address'] ?? '').toString().toLowerCase();
+    final userCity = (user['city'] ?? user['City'] ?? '').toString().toLowerCase();
+    
+    // Check property pincode array
+    final cityPins = pincodesMap[selectedCity];
+    if (cityPins != null && cityPins.isNotEmpty) {
+      final pinMatch = RegExp(r'\b\d{6}\b').firstMatch(address);
+      final userPin = pinMatch?.group(0);
+      if (userPin != null && cityPins.contains(userPin)) {
+        return true;
+      }
+    }
+    
+    return address.contains(selectedCity.toLowerCase()) || userCity.contains(selectedCity.toLowerCase());
+  }
+
   for (final category in categories) {
     counts[category] =
         users.where((user) {
+          if (!matchesCity(user)) return false;
+          
           final userCategories = user['category'];
           if (userCategories == null) return false;
           if (userCategories is String) return userCategories == category;
@@ -295,6 +318,7 @@ final userSearchQueryProvider = StateProvider<String>((ref) => '');
 final userSelectedCityProvider = StateProvider<String?>((ref) => null);
 final userVerifiedOnlyProvider = StateProvider<bool>((ref) => false);
 final userDateFilterProvider = StateProvider<String?>((ref) => null);
+final userTypeFilterProvider = StateProvider<String>((ref) => 'All');
 
 // Provider to track selected date filter for the dashboard unverified businesses
 final dashboardSelectedDateFilterProvider = StateProvider<String?>((ref) => null);

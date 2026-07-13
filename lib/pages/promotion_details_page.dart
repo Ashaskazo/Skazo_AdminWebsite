@@ -4,23 +4,26 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 
-class PropertyDetailsPage extends StatefulWidget {
-  final Map<String, dynamic> propertyData;
+class PromotionDetailsPage extends StatefulWidget {
+  final Map<String, dynamic> promotionData;
 
-  const PropertyDetailsPage({super.key, required this.propertyData});
+  const PromotionDetailsPage({super.key, required this.promotionData});
 
   @override
-  State<PropertyDetailsPage> createState() => _PropertyDetailsPageState();
+  State<PromotionDetailsPage> createState() => _PromotionDetailsPageState();
 }
 
-class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
+class _PromotionDetailsPageState extends State<PromotionDetailsPage> {
   late Map<String, dynamic> _editedData;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _editedData = Map<String, dynamic>.from(widget.propertyData);
+    _editedData = Map<String, dynamic>.from(widget.promotionData);
+    if (_editedData['brandName'] != null && _editedData['title'] == null) {
+      _editedData['title'] = _editedData['brandName'];
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -29,24 +32,28 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
       final docId = _editedData['id'];
       if (docId == null) throw 'Document ID not found';
 
+      if (_editedData['title'] != null) {
+        _editedData['brandName'] = _editedData['title'];
+      }
+
       final dataToSave = Map<String, dynamic>.from(_editedData);
-      dataToSave.remove('id'); // Don't save the ID back into the document fields
+      dataToSave.remove('id');
 
       await FirebaseFirestore.instance
-          .collection('rental_properties')
+          .collection('local_promotions')
           .doc(docId)
           .update(dataToSave);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Property updated successfully')),
+          const SnackBar(content: Text('Promotion updated successfully')),
         );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating property: $e')),
+          SnackBar(content: Text('Error updating promotion: $e')),
         );
       }
     } finally {
@@ -60,7 +67,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
-          'Edit Property Details',
+          'Edit Promotion Details',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 18),
         ),
         backgroundColor: Colors.white,
@@ -103,35 +110,18 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
             // Main Info Section
             _buildSectionHeader('Basic Information'),
             _buildGridFields([
-              _buildTextField('propertyName', 'Property Name'),
-              _buildTextField('type', 'Property Type'),
-              _buildTextField('rentAmount', 'Rent Amount (₹)'),
-              _buildTextField('bhk', 'BHK'),
-              _buildTextField('furnishingType', 'Furnishing'),
+              _buildTextField('title', 'Promotion Title/Brand'),
               _buildTextField('city', 'City'),
+              _buildTextField('address', 'Full Address'),
+              _buildTextField('mobileNumber', 'Mobile Number'),
+              _buildTextField('discount', 'Discount/Offer (Optional)'),
+              _buildTextField('price', 'Price/Fee (Optional)'),
+              _buildTextField('businessName', 'Business/Owner Name'),
             ]),
 
             const SizedBox(height: 32),
-            _buildSectionHeader('Location Details'),
-            _buildTextField('location', 'Full Address', maxLines: 2),
-            const SizedBox(height: 16),
-            _buildGridFields([
-              _buildTextField('landmark', 'Landmark'),
-              _buildTextField('area', 'Area/Plot No'),
-              _buildTextField('floor', 'Floor'),
-              _buildTextField('acOption', 'AC Availability'),
-            ]),
-
-            const SizedBox(height: 32),
-            _buildSectionHeader('Listing Details'),
-            _buildGridFields([
-              _buildTextField('availableFrom', 'Available From'),
-              _buildTextField('contactNumber', 'Contact Number'),
-              _buildTextField('ownerName', 'Owner Name'),
-              _buildTextField('ownerPlan', 'Owner Plan'),
-            ]),
-            const SizedBox(height: 16),
-            _buildTextField('description', 'Description', maxLines: 3),
+            _buildSectionHeader('Description'),
+            _buildTextField('description', 'Description Details', maxLines: 4),
 
             const SizedBox(height: 32),
             _buildSectionHeader('Status & Visibility'),
@@ -148,13 +138,12 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
                     'under_review',
                     'live',
                     'rejected',
-                    'sold',
-                    'rented',
+                    'hidden',
                   ]),
                   const Divider(height: 32),
-                  _buildSwitchTile('isPropertyVerified', 'Verified Property', 'Admin verification badge'),
-                  _buildSwitchTile('isVisible', 'Show on App', 'Visible to users'),
-                  _buildSwitchTile('isBoosted', 'Boosted Listing', 'Priority in search results'),
+                  _buildSwitchTile('isVerified', 'Verified Promotion', 'Admin verification badge'),
+                  _buildSwitchTile('isVisible', 'Show on App', 'Visible to app users'),
+                  _buildSwitchTile('isBoosted', 'Boosted ad', 'Priority highlight in home page'),
                 ],
               ),
             ),
@@ -163,7 +152,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
             _buildSectionHeader('Stats (Read Only)'),
             _buildGridFields([
               _buildReadOnlyField('viewsCount', 'Total Views'),
-              _buildReadOnlyField('interestedCount', 'Interested Users'),
+              _buildReadOnlyField('clicksCount', 'Click-Throughs'),
               _buildReadOnlyField('createdAt', 'Created Date'),
             ]),
             const SizedBox(height: 48),
@@ -321,7 +310,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
   }
 
   Widget _buildImageSection() {
-    final urls = extractPropertyImageUrls(_editedData);
+    final urls = extractPromotionImageUrls(_editedData);
     if (urls.isEmpty) {
       return Container(
         height: 200,
@@ -346,7 +335,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               image: DecorationImage(
-                image: CachedNetworkImageProvider(urls[index], maxWidth: 700),
+                image: CachedNetworkImageProvider(urls[index], ),
                 fit: BoxFit.cover,
               ),
             ),

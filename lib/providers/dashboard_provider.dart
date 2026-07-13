@@ -6,6 +6,7 @@ enum DashboardView {
   servicePosts,
   orders,
   rentalProperties,
+  localPromotions,
   tickets,
   verification,
   whatsappMessages,
@@ -19,3 +20,6 @@ enum DashboardView {
 final currentDashboardViewProvider = StateProvider<DashboardView>((ref) {
   return DashboardView.summary;
 });
+
+// StateProvider for sidebar collapse state
+final sidebarCollapsedProvider = StateProvider<bool>((ref) => false);

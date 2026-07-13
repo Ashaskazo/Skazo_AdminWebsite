@@ -377,6 +377,9 @@ class _UserListView extends ConsumerWidget {
                                 ? CachedNetworkImage(
                                   imageUrl: user['businesspic'],
                                   fit: BoxFit.cover,
+                                  memCacheWidth: 200,
+                                  memCacheHeight: 200,
+                                  maxWidthDiskCache: 400,
                                   placeholder:
                                       (context, url) => const Center(
                                         child: CircularProgressIndicator(

@@ -12,7 +12,7 @@ class AdminsDataView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSuperAdmin = ref.watch(isSuperAdminProvider);
-    final adminsStream = FirebaseFirestore.instance.collection('admin').snapshots();
+    final adminsAsync = ref.watch(adminsStreamProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,15 +65,9 @@ class AdminsDataView extends ConsumerWidget {
 
         // Admins List
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: adminsStream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              final docs = snapshot.data?.docs ?? [];
+          child: adminsAsync.when(
+            data: (snapshot) {
+              final docs = snapshot.docs;
               if (docs.isEmpty) return const Center(child: Text('No admins found'));
 
               return ListView.builder(
@@ -158,6 +152,8 @@ class AdminsDataView extends ConsumerWidget {
                 },
               );
             },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, stack) => Center(child: Text('Error: $err')),
           ),
         ),
       ],
