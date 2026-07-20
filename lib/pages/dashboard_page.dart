@@ -5,7 +5,11 @@ import 'package:skazo_admin/pages/auth_page.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/dashboard_provider.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/repositories/user_repository.dart';
+import 'package:skazo_admin/utils/property_pincodes_cache.dart';
+import 'package:skazo_admin/utils/time_filter.dart';
 import 'package:skazo_admin/widgets/sidebar_nav.dart';
 import 'package:skazo_admin/widgets/collection_data_view.dart';
 import 'package:skazo_admin/widgets/users_data_view.dart';
@@ -161,6 +165,13 @@ class _SummaryDashboard extends ConsumerWidget {
                 ),
                 child: IconButton(
                   onPressed: () {
+                    final selectedCategory = ref.read(dashboardSelectedCategoryProvider);
+                    ref.invalidate(unverifiedPaginationProvider(selectedCategory));
+                    ref.invalidate(unverifiedPendingCountProvider);
+                    ref.invalidate(categoryCountsProvider);
+                    ref.invalidate(userStatsProvider);
+                    clearPropertyPincodesCache();
+                    ref.invalidate(propertyPincodesProvider);
                     ref.invalidate(collectionCountProvider);
                     ref.invalidate(collectionTodayCountProvider);
                     ref.invalidate(collectionPeriodStatsProvider);
@@ -376,11 +387,17 @@ class _SummaryDashboard extends ConsumerWidget {
         onTap: isClickableUserStat
             ? () {
                 if (label == 'Today') {
-                  ref.read(userDateFilterProvider.notifier).state = 'today';
+                  ref.read(userDateFilterProvider.notifier).state =
+                      timeFilterToLegacyUserValue(TimeFilterOption.today);
                 } else if (label == 'Yesterday') {
-                  ref.read(userDateFilterProvider.notifier).state = 'yesterday';
+                  ref.read(userDateFilterProvider.notifier).state =
+                      timeFilterToLegacyUserValue(TimeFilterOption.yesterday);
+                } else if (label == '7d') {
+                  ref.read(userDateFilterProvider.notifier).state =
+                      timeFilterToLegacyUserValue(TimeFilterOption.last7Days);
                 } else if (label == '30d') {
-                  ref.read(userDateFilterProvider.notifier).state = 'month';
+                  ref.read(userDateFilterProvider.notifier).state =
+                      timeFilterToLegacyUserValue(TimeFilterOption.last30Days);
                 } else {
                   ref.read(userDateFilterProvider.notifier).state = null;
                 }
@@ -516,7 +533,9 @@ class _SummaryDashboard extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            ref.read(userDateFilterProvider.notifier).state = isToday ? 'today' : null;
+            ref.read(userDateFilterProvider.notifier).state = isToday
+                ? timeFilterToLegacyUserValue(TimeFilterOption.today)
+                : null;
             ref.read(currentDashboardViewProvider.notifier).state = DashboardView.users;
           },
           child: cardContent,
@@ -660,13 +679,57 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               ),
             ),
             DropdownMenuItem<String?>(
+              value: 'week',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.date_range_rounded, size: 16, color: Color(0xFF7C3AED)),
+                  const SizedBox(width: 8),
+                  Text('Last 7 Days', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
+            DropdownMenuItem<String?>(
               value: 'month',
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.calendar_month_rounded, size: 16, color: Color(0xFF16A34A)),
                   const SizedBox(width: 8),
-                  Text('Last 1 Month', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text('Last 30 Days', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
+            DropdownMenuItem<String?>(
+              value: '3months',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calendar_view_month_rounded, size: 16, color: Color(0xFF0284C7)),
+                  const SizedBox(width: 8),
+                  Text('Last 3 Months', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
+            DropdownMenuItem<String?>(
+              value: '6months',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.event_note_rounded, size: 16, color: Color(0xFF9333EA)),
+                  const SizedBox(width: 8),
+                  Text('Last 6 Months', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
+            DropdownMenuItem<String?>(
+              value: '1year',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.event_available_rounded, size: 16, color: Color(0xFFCA8A04)),
+                  const SizedBox(width: 8),
+                  Text('Last 1 Year', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
                 ],
               ),
             ),

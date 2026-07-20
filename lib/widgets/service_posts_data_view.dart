@@ -315,7 +315,7 @@ class ServicePostsDataView extends ConsumerWidget {
     final category = post['category']?.toString() ?? 'General';
     final userName = post['userName']?.toString() ?? 'Anonymous';
     final budget = post['budget']?.toString() ?? 'N/A';
-    final contactedCount = (post['contactedBy'] as List?)?.length ?? 0;
+    final contactedCount = (post['contactedBy'] is List) ? (post['contactedBy'] as List).length : 0;
     final status = post['status']?.toString() ?? 'pending';
 
     return Container(

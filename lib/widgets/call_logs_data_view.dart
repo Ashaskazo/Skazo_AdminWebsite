@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,7 +112,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         });
       }
     } catch (e) {
-      debugPrint('Error determining user role: $e');
+      if (kDebugMode) {
+        debugPrint('Error determining user role: $e');
+      }
     }
   }
 
@@ -185,7 +188,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
       setState(() {});
     } catch (e) {
-      debugPrint('Error fetching stats: $e');
+      if (kDebugMode) {
+        debugPrint('Error fetching stats: $e');
+      }
     }
   }
 
@@ -615,7 +620,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         'editedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      debugPrint('Failed to write audit log: $e');
+      if (kDebugMode) {
+        debugPrint('Failed to write audit log: $e');
+      }
     }
   }
 
@@ -769,7 +776,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         );
       }
     } catch (e) {
-      debugPrint('WhatsApp launch error: $e');
+      if (kDebugMode) {
+        debugPrint('WhatsApp launch error: $e');
+      }
     }
   }
 
@@ -787,7 +796,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         );
       }
     } catch (e) {
-      debugPrint('Dialer launch error: $e');
+      if (kDebugMode) {
+        debugPrint('Dialer launch error: $e');
+      }
     }
   }
 
@@ -1501,9 +1512,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.15)),
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
       ),
       child: Text(
         label,
@@ -2617,7 +2628,7 @@ class _EditFieldDialogState extends State<_EditFieldDialog> {
                 _value = val;
               });
             },
-            activeColor: const Color(0xFF2563EB),
+            activeThumbColor: const Color(0xFF2563EB),
           ),
           Text(
             _value.toString(),
@@ -2928,7 +2939,7 @@ class _AddFieldDialogState extends State<_AddFieldDialog> {
                 _boolValue = val;
               });
             },
-            activeColor: const Color(0xFF2563EB),
+            activeThumbColor: const Color(0xFF2563EB),
           ),
           Text(
             _boolValue.toString(),

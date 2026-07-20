@@ -314,8 +314,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
 
               _buildSectionHeader('Service Details'),
               // Category (Read only list for now)
-              _buildReadOnlyField('Categories', (data['category'] as List?)?.join(', ') ?? 'None', Icons.category_rounded),
-              _buildReadOnlyField('Service Rate Card', (data['ServiceRateCard'] as List?)?.map((e) => "${e['service']}: ₹${e['rate']}").join('\n') ?? 'None', Icons.payments_rounded),
+              _buildReadOnlyField('Categories', (data['category'] is List) ? (data['category'] as List).join(', ') : (data['category']?.toString() ?? 'None'), Icons.category_rounded),
+              _buildReadOnlyField('Service Rate Card', (data['ServiceRateCard'] is List) ? (data['ServiceRateCard'] as List).map((e) => "${e['service']}: ₹${e['rate']}").join('\n') : 'None', Icons.payments_rounded),
 
               _buildSectionHeader('Account & Subscription'),
               Row(
@@ -413,7 +413,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             child: Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: const Color(0xFF2563EB),
+              activeThumbColor: const Color(0xFF2563EB),
             ),
           ),
         ],

@@ -2,60 +2,10 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
-
-String getSmartCity(Map<String, dynamic> user) {
-  final cityField = (user['City'] ?? user['city'])?.toString();
-  final address = user['businessaddress']?.toString() ?? '';
-
-  // Extract 6-digit pincode
-  final pinMatch = RegExp(r'\d{6}').firstMatch(address);
-  final pincode = pinMatch?.group(0);
-
-  if (pincode != null) {
-    final pin = int.tryParse(pincode) ?? 0;
-
-    // Vijayawada: 520001 to 520099
-    if (pin >= 520001 && pin <= 520099) return 'Vijayawada';
-    // Hyderabad: 500001 to 500096
-    if (pin >= 500001 && pin <= 500096) return 'Hyderabad';
-    // Bheemavaram: 534201 to 534299
-    if (pin >= 534201 && pin <= 534299) return 'Bheemavaram';
-    // Bangalore: 560001 to 560111, or 562XXX
-    if ((pin >= 560001 && pin <= 560111) || (pin >= 562000 && pin <= 562999)) {
-      return 'Bangalore';
-    }
-    // Tirupathi: 517501 to 517599
-    if (pin >= 517501 && pin <= 517599) return 'Tirupathi';
-    // Guntur: 522001, 522007
-    if (pin == 522001 || pin == 522007) return 'Guntur';
-  }
-
-  if (cityField != null && cityField.isNotEmpty) return cityField;
-
-  final parts = address.split(',');
-
-  for (final part in parts) {
-    final value = part.trim();
-
-    // Skip pincodes
-    if (RegExp(r'^\d{6}$').hasMatch(value)) continue;
-
-    // Skip plus codes like 7CXG+44W
-    if (RegExp(r'^[A-Z0-9+]{4,}$').hasMatch(value)) continue;
-
-    // Skip house numbers
-    if (value.toLowerCase().startsWith('h.no')) continue;
-    if (value.toLowerCase().startsWith('d.no')) continue;
-
-    if (value.length > 2) {
-      return value;
-    }
-  }
-
-  return cityField ?? 'Unknown';
-}
+import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/utils/property_pincodes_cache.dart';
+export 'package:skazo_admin/utils/city_resolver.dart' show getSmartCity;
 
 // Generic provider for fetching data from any Firestore collection
 final collectionDataProvider = FutureProvider.family<
@@ -63,7 +13,6 @@ final collectionDataProvider = FutureProvider.family<
   String
 >((ref, collectionName) async {
   final searchQuery = ref.watch(userSearchQueryProvider);
-  final selectedCity = ref.watch(userSelectedCityProvider);
 
   Query query = FirebaseFirestore.instance.collection(collectionName);
 
@@ -83,8 +32,6 @@ final collectionDataProvider = FutureProvider.family<
           .where('name', isGreaterThanOrEqualTo: searchQuery)
           .where('name', isLessThanOrEqualTo: '$searchQuery\uf8ff');
     }
-  } else if (selectedCity != null) {
-    query = query.where('City', isEqualTo: selectedCity);
   }
 
   final snapshot = await query.limit(searchQuery.isNotEmpty ? 50 : 200).get();
@@ -94,377 +41,17 @@ final collectionDataProvider = FutureProvider.family<
       .toList();
 });
 
-// Provider to gather a comprehensive list of cities from the database
+// Shared provider for user-related city filters across User Management and dashboard.
+final userFilterCitiesProvider = FutureProvider<List<String>>((ref) async {
+  final pincodesMap = await ref.watch(propertyPincodesProvider.future);
+  final sortedCities = pincodesMap.keys.toList()..sort();
+  return sortedCities;
+});
+
+// Backward-compatible city set provider for existing users page code.
 final userCitiesProvider = FutureProvider<Set<String>>((ref) async {
-  final snapshot =
-      await FirebaseFirestore.instance.collection('users').limit(1000).get();
-
-  final Set<String> cities = {};
-
-  String normalizeCityName(String name) {
-    final trimmed = name.trim().toLowerCase();
-
-    if (trimmed == 'vijayawada') return 'Vijayawada';
-    if (trimmed == 'hyderabad') return 'Hyderabad';
-    if (trimmed == 'bheemavaram') return 'Bheemavaram';
-    if (trimmed == 'bangalore' || trimmed == 'bengaluru') {
-      return 'Bangalore';
-    }
-    if (trimmed == 'tirupathi' || trimmed == 'tirupati') {
-      return 'Tirupathi';
-    }
-    if (trimmed == 'guntur') return 'Guntur';
-    if (trimmed == 'machilipatnam') return 'Machilipatnam';
-    if (trimmed == 'khammam') return 'Khammam';
-
-    if (trimmed.isEmpty) return '';
-
-    return trimmed
-        .split(' ')
-        .map((word) {
-          if (word.isEmpty) return '';
-          return word[0].toUpperCase() + word.substring(1);
-        })
-        .join(' ');
-  }
-
-  for (final doc in snapshot.docs) {
-    final data = doc.data();
-
-    final city = getSmartCity(data);
-
-    if (city.isNotEmpty && city != 'Unknown') {
-      cities.add(normalizeCityName(city));
-    }
-  }
-
-  return cities;
-});
-
-// StreamProvider that broadcasts the entire users collection sorted by newest first
-final usersStreamProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  return FirebaseFirestore.instance
-      .collection('users')
-      .snapshots()
-      .map((snapshot) {
-        final list = snapshot.docs
-            .map((doc) => {'id': doc.id, ...doc.data()})
-            .toList();
-        // Sort by createdAt descending
-        list.sort((a, b) {
-          final aDate = _parseDateTimeStatic(a['createdAt']) ?? DateTime(2000);
-          final bDate = _parseDateTimeStatic(b['createdAt']) ?? DateTime(2000);
-          return bDate.compareTo(aDate);
-        });
-        return list;
-      });
-});
-
-DateTime? _parseDateTimeStatic(dynamic val) {
-  if (val == null) return null;
-  if (val is DateTime) return val;
-  try {
-    return val.toDate();
-  } catch (_) {}
-  if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
-  if (val is String) {
-    final p = DateTime.tryParse(val);
-    if (p != null) return p;
-    return _parseCustomDateTimeStatic(val);
-  }
-  return null;
-}
-
-DateTime? _parseCustomDateTimeStatic(String val) {
-  try {
-    final clean = val.trim();
-    if (clean.isEmpty) return null;
-    final parts = clean.split(' ');
-    if (parts.length >= 5) {
-      final day = int.tryParse(parts[0]);
-      final monthStr = parts[1].toLowerCase();
-      final year = int.tryParse(parts[2]);
-      final timePart = parts[4];
-      final timeParts = timePart.split(':');
-      final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
-      final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-      final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
-
-      final months = {
-        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-        'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-      };
-      final month = months[monthStr];
-
-      if (day != null && month != null && year != null) {
-        if (parts.length >= 6 && parts[5].startsWith('UTC')) {
-          final offsetStr = parts[5].substring(3);
-          final isNegative = offsetStr.startsWith('-');
-          final cleanOffset = offsetStr.replaceAll('+', '').replaceAll('-', '');
-          final offsetParts = cleanOffset.split(':');
-          final offsetHours = offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
-          final offsetMinutes = offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
-          
-          final utcTime = DateTime.utc(year, month, day, hour, minute, second);
-          final duration = Duration(hours: offsetHours, minutes: offsetMinutes);
-          return isNegative ? utcTime.add(duration) : utcTime.subtract(duration);
-        }
-        return DateTime(year, month, day, hour, minute, second);
-      }
-    }
-  } catch (_) {}
-  return null;
-}
-
-// Paginated provider for the users list with explicit page navigation utilizing real-time stream subscription
-class PaginatedUserNotifier
-    extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>> {
-  final Ref ref;
-  List<Map<String, dynamic>> _allUsers = [];
-  List<Map<String, dynamic>> _filteredUsers = [];
-
-  int _currentPage = 0;
-  final int _pageSize = 100;
-  int _totalCount = 0;
-  int _filteredCount = 0;
-  int _serviceProvidersCount = 0;
-
-  PaginatedUserNotifier(this.ref) : super(const AsyncValue.loading()) {
-    // Listen to usersStreamProvider and apply filters in-memory
-    ref.listen(usersStreamProvider, (prev, next) {
-      next.when(
-        data: (users) {
-          _allUsers = users;
-          _applyFiltersAndNotify();
-        },
-        loading: () {
-          state = const AsyncValue.loading();
-        },
-        error: (err, stack) {
-          state = AsyncValue.error(err, stack);
-        },
-      );
-    }, fireImmediately: true);
-
-    // Listen to changes in filters and apply them in-memory
-    ref.listen(userSearchQueryProvider, (prev, next) {
-      _currentPage = 0;
-      _applyFiltersAndNotify();
-    });
-    ref.listen(userSelectedCityProvider, (prev, next) {
-      _currentPage = 0;
-      _applyFiltersAndNotify();
-    });
-    ref.listen(userVerifiedOnlyProvider, (prev, next) {
-      _currentPage = 0;
-      _applyFiltersAndNotify();
-    });
-    ref.listen(userDateFilterProvider, (prev, next) {
-      _currentPage = 0;
-      _applyFiltersAndNotify();
-    });
-    ref.listen(userTypeFilterProvider, (prev, next) {
-      _currentPage = 0;
-      _applyFiltersAndNotify();
-    });
-  }
-
-  DateTime? _parseDateTime(dynamic val) {
-    if (val == null) return null;
-    if (val is DateTime) return val;
-    try {
-      return val.toDate();
-    } catch (_) {}
-    if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
-    if (val is String) {
-      final p = DateTime.tryParse(val);
-      if (p != null) return p;
-      return _parseCustomDateTime(val);
-    }
-    return null;
-  }
-
-  DateTime? _parseCustomDateTime(String val) {
-    try {
-      final clean = val.trim();
-      if (clean.isEmpty) return null;
-      final parts = clean.split(' ');
-      if (parts.length >= 5) {
-        final day = int.tryParse(parts[0]);
-        final monthStr = parts[1].toLowerCase();
-        final year = int.tryParse(parts[2]);
-        final timePart = parts[4];
-        final timeParts = timePart.split(':');
-        final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
-        final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-        final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
-
-        final months = {
-          'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-          'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-          'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-        };
-        final month = months[monthStr];
-
-        if (day != null && month != null && year != null) {
-          if (parts.length >= 6 && parts[5].startsWith('UTC')) {
-            final offsetStr = parts[5].substring(3);
-            final isNegative = offsetStr.startsWith('-');
-            final cleanOffset = offsetStr.replaceAll('+', '').replaceAll('-', '');
-            final offsetParts = cleanOffset.split(':');
-            final offsetHours = offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
-            final offsetMinutes = offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
-            
-            final utcTime = DateTime.utc(year, month, day, hour, minute, second);
-            final duration = Duration(hours: offsetHours, minutes: offsetMinutes);
-            return isNegative ? utcTime.add(duration) : utcTime.subtract(duration);
-          }
-          return DateTime(year, month, day, hour, minute, second);
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  void _applyFiltersAndNotify() {
-    final searchQuery = ref.read(userSearchQueryProvider).trim().toLowerCase();
-    final selectedCity = ref.read(userSelectedCityProvider);
-    final verifiedOnly = ref.read(userVerifiedOnlyProvider);
-    final dateFilter = ref.read(userDateFilterProvider);
-    final typeFilter = ref.read(userTypeFilterProvider);
-
-    _totalCount = _allUsers.length;
-
-    // Helper to check if a document represents a Service Provider
-    bool isServiceProvider(Map<String, dynamic> u) {
-      final hasBusinessName = u['businessname'] != null && u['businessname'].toString().trim().isNotEmpty;
-      final hasBusinessPic = u['businesspic'] != null && u['businesspic'].toString().trim().isNotEmpty;
-      return hasBusinessName || hasBusinessPic;
-    }
-
-    _serviceProvidersCount = _allUsers.where(isServiceProvider).length;
-
-    List<Map<String, dynamic>> temp = List.from(_allUsers);
-
-    // 1. Filter by User Type (Customers vs Service Providers)
-    if (typeFilter == 'Customers') {
-      temp = temp.where((u) => !isServiceProvider(u)).toList();
-    } else if (typeFilter == 'Service Providers') {
-      temp = temp.where(isServiceProvider).toList();
-    }
-
-    // 2. Filter by Verified Only (applicable to all or service providers)
-    if (verifiedOnly) {
-      temp = temp.where((u) => u['isverified'] == true).toList();
-    }
-
-    // 3. Filter by City (smart city extraction in memory)
-    if (selectedCity != null) {
-      temp = temp.where((u) {
-        final city = getSmartCity(u);
-        return city.trim().toLowerCase() == selectedCity.trim().toLowerCase();
-      }).toList();
-    }
-
-    // 4. Filter by Time/Date
-    if (dateFilter != null) {
-      final now = DateTime.now();
-      final todayStart = DateTime(now.year, now.month, now.day);
-      final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-      final thirtyDaysAgoStart = todayStart.subtract(const Duration(days: 30));
-
-      temp = temp.where((u) {
-        final date = _parseDateTime(u['createdAt']);
-        if (date == null) return false;
-
-        if (dateFilter == 'today') {
-          return date.isAfter(todayStart) || date.isAtSameMomentAs(todayStart);
-        } else if (dateFilter == 'yesterday') {
-          return (date.isAfter(yesterdayStart) || date.isAtSameMomentAs(yesterdayStart)) &&
-              date.isBefore(todayStart);
-        } else if (dateFilter == 'month') {
-          return date.isAfter(thirtyDaysAgoStart) || date.isAtSameMomentAs(thirtyDaysAgoStart);
-        }
-        return true;
-      }).toList();
-    }
-
-    // 5. Filter by Search Query
-    if (searchQuery.isNotEmpty) {
-      temp = temp.where((u) {
-        final businessName = (u['businessname'] ?? '').toString().toLowerCase();
-        final firstName = (u['firstname'] ?? '').toString().toLowerCase();
-        final lastName = (u['lastname'] ?? '').toString().toLowerCase();
-        final username = (u['username'] ?? '').toString().toLowerCase();
-        final phone = (u['phone'] ?? '').toString().toLowerCase();
-        final email = (u['email'] ?? '').toString().toLowerCase();
-        final businessAddress = (u['businessaddress'] ?? '').toString().toLowerCase();
-
-        return businessName.contains(searchQuery) ||
-            firstName.contains(searchQuery) ||
-            lastName.contains(searchQuery) ||
-            username.contains(searchQuery) ||
-            phone.contains(searchQuery) ||
-            email.contains(searchQuery) ||
-            businessAddress.contains(searchQuery);
-      }).toList();
-    }
-
-    _filteredUsers = temp;
-    _filteredCount = temp.length;
-
-    // Paginate
-    final int start = _currentPage * _pageSize;
-    if (start >= _filteredCount && _currentPage > 0) {
-      _currentPage = (_filteredCount - 1) ~/ _pageSize;
-    }
-    if (_currentPage < 0) _currentPage = 0;
-
-    final paginatedList = _filteredUsers
-        .skip(_currentPage * _pageSize)
-        .take(_pageSize)
-        .toList();
-    state = AsyncValue.data(paginatedList);
-  }
-
-  void nextPage() {
-    if ((_currentPage + 1) * _pageSize < _filteredCount) {
-      _currentPage++;
-      _applyFiltersAndNotify();
-    }
-  }
-
-  void prevPage() {
-    if (_currentPage > 0) {
-      _currentPage--;
-      _applyFiltersAndNotify();
-    }
-  }
-
-  Future<void> fetchInitial({bool forceRefresh = false}) async {
-    _currentPage = 0;
-    _applyFiltersAndNotify();
-  }
-
-  @override
-  void dispose() {
-    // _subscription?.cancel();
-    super.dispose();
-  }
-
-  int get currentPage => _currentPage;
-  int get pageSize => _pageSize;
-  int get totalCount => _totalCount;
-  int get filteredCount => _filteredCount;
-  int get verifiedCount => _serviceProvidersCount;
-}
-
-final paginatedUserProvider = StateNotifierProvider<
-  PaginatedUserNotifier,
-  AsyncValue<List<Map<String, dynamic>>>
->((ref) {
-  return PaginatedUserNotifier(ref);
+  final cities = await ref.watch(userFilterCitiesProvider.future);
+  return cities.toSet();
 });
 
 // Payments State Providers
@@ -1251,7 +838,9 @@ class CollectionPeriodStats {
 }
 
 void _logToWorkspace(String message) {
-  debugPrint('Workspace Log: $message');
+  if (kDebugMode) {
+    debugPrint('Workspace Log: $message');
+  }
 }
 
 Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
@@ -1321,7 +910,7 @@ Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
         if (data.containsKey(field) && data[field] != null) {
           final val = data[field];
           if (val is Timestamp) {
-            debugPrint(
+            _logToWorkspace(
               'Detected date field "$field" of type "Timestamp" for collection "$collectionName"',
             );
             return CollectionDateFieldInfo(
@@ -1337,16 +926,13 @@ Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
             } else if (val.contains('T')) {
               type = 'String_datetime_T'; // yyyy-MM-ddTHH:mm:ss
             }
-            debugPrint(
-              'Detected date field "$field" of type "$type" (sample: "$val") for collection "$collectionName"',
-            );
             _logToWorkspace(
               'Detected date field "$field" of type "$type" (sample: "$val") for collection "$collectionName"',
             );
             return CollectionDateFieldInfo(fieldName: field, fieldType: type);
           } else if (val is int) {
             if (val > 100000000000) {
-              debugPrint(
+              _logToWorkspace(
                 'Detected date field "$field" of type "int_ms" for collection "$collectionName"',
               );
               return CollectionDateFieldInfo(
@@ -1354,7 +940,7 @@ Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
                 fieldType: 'int_ms',
               );
             } else {
-              debugPrint(
+              _logToWorkspace(
                 'Detected date field "$field" of type "int_sec" for collection "$collectionName"',
               );
               return CollectionDateFieldInfo(
@@ -1372,9 +958,6 @@ Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
       final data = doc.data();
       for (final entry in data.entries) {
         if (entry.value is Timestamp) {
-          debugPrint(
-            'Fallback detected date field "${entry.key}" of type "Timestamp" for collection "$collectionName"',
-          );
           _logToWorkspace(
             'Fallback detected date field "${entry.key}" of type "Timestamp" for collection "$collectionName"',
           );
@@ -1386,7 +969,7 @@ Future<CollectionDateFieldInfo?> _detectDateField(String collectionName) async {
       }
     }
   } catch (e) {
-    debugPrint('Error detecting date field for $collectionName: $e');
+    _logToWorkspace('Error detecting date field for $collectionName: $e');
   }
   return null;
 }
@@ -1611,9 +1194,13 @@ final collectionPeriodStatsProvider = FutureProvider.family<
 
 // Local Promotions State Providers
 final localPromotionsSearchQueryProvider = StateProvider<String>((ref) => '');
-final localPromotionsSelectedCityProvider = StateProvider<String?>((ref) => null);
+final localPromotionsSelectedCityProvider = StateProvider<String?>(
+  (ref) => null,
+);
 final localPromotionsTypeFilterProvider = StateProvider<String>((ref) => 'All');
-final localPromotionsTimeFilterProvider = StateProvider<String>((ref) => 'All Time');
+final localPromotionsTimeFilterProvider = StateProvider<String>(
+  (ref) => 'All Time',
+);
 
 // Helper to extract image URLs from promotion map
 List<String> extractPromotionImageUrls(Map<String, dynamic> promo) {
@@ -1685,7 +1272,8 @@ final localPromotionsCitiesProvider = FutureProvider<Set<String>>((ref) async {
     final city = (data['city'] ?? data['City']);
     if (city != null && city.toString().isNotEmpty) {
       cities.add(city.toString());
-    } else if (data['address'] != null && data['address'].toString().isNotEmpty) {
+    } else if (data['address'] != null &&
+        data['address'].toString().isNotEmpty) {
       final parts = data['address'].toString().split(',');
       if (parts.length >= 2) {
         final possibleCity = parts[parts.length - 2].trim();
@@ -1709,7 +1297,8 @@ class PaginatedLocalPromotionsNotifier
   int _totalCount = 0;
   int _filteredCount = 0;
 
-  PaginatedLocalPromotionsNotifier(this.ref) : super(const AsyncValue.loading()) {
+  PaginatedLocalPromotionsNotifier(this.ref)
+    : super(const AsyncValue.loading()) {
     _initStream();
 
     // Listen to changes in filters and apply them in-memory
@@ -1745,8 +1334,12 @@ class PaginatedLocalPromotionsNotifier
 
             // Sort by createdAt descending in memory
             _allPromotions.sort((a, b) {
-              final aDate = _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
-              final bDate = _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
+              final aDate =
+                  _parseDateTime(a['createdAt'] ?? a['timestamp']) ??
+                  DateTime(2000);
+              final bDate =
+                  _parseDateTime(b['createdAt'] ?? b['timestamp']) ??
+                  DateTime(2000);
               return bDate.compareTo(aDate);
             });
 
@@ -1785,13 +1378,35 @@ class PaginatedLocalPromotionsNotifier
         final timePart = parts[4];
         final timeParts = timePart.split(':');
         final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
-        final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-        final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
+        final minute =
+            timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+        final second =
+            timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
 
         final months = {
-          'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-          'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-          'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+          'january': 1,
+          'february': 2,
+          'march': 3,
+          'april': 4,
+          'may': 5,
+          'june': 6,
+          'july': 7,
+          'august': 8,
+          'september': 9,
+          'october': 10,
+          'november': 11,
+          'december': 12,
+          'jan': 1,
+          'feb': 2,
+          'mar': 3,
+          'apr': 4,
+          'jun': 6,
+          'jul': 7,
+          'aug': 8,
+          'sep': 9,
+          'oct': 10,
+          'nov': 11,
+          'dec': 12,
         };
         final month = months[monthStr];
 
@@ -1799,14 +1414,30 @@ class PaginatedLocalPromotionsNotifier
           if (parts.length >= 6 && parts[5].startsWith('UTC')) {
             final offsetStr = parts[5].substring(3);
             final isNegative = offsetStr.startsWith('-');
-            final cleanOffset = offsetStr.replaceAll('+', '').replaceAll('-', '');
+            final cleanOffset = offsetStr
+                .replaceAll('+', '')
+                .replaceAll('-', '');
             final offsetParts = cleanOffset.split(':');
-            final offsetHours = offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
-            final offsetMinutes = offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
-            
-            final utcTime = DateTime.utc(year, month, day, hour, minute, second);
-            final duration = Duration(hours: offsetHours, minutes: offsetMinutes);
-            return isNegative ? utcTime.add(duration) : utcTime.subtract(duration);
+            final offsetHours =
+                offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
+            final offsetMinutes =
+                offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
+
+            final utcTime = DateTime.utc(
+              year,
+              month,
+              day,
+              hour,
+              minute,
+              second,
+            );
+            final duration = Duration(
+              hours: offsetHours,
+              minutes: offsetMinutes,
+            );
+            return isNegative
+                ? utcTime.add(duration)
+                : utcTime.subtract(duration);
           }
           return DateTime(year, month, day, hour, minute, second);
         }
@@ -1830,7 +1461,8 @@ class PaginatedLocalPromotionsNotifier
     if (selectedCity != null) {
       temp =
           temp.where((p) {
-            final city = (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
+            final city =
+                (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
             if (city == selectedCity.toLowerCase()) return true;
             if (p['address'] != null) {
               final addr = p['address'].toString().toLowerCase();
@@ -1842,9 +1474,25 @@ class PaginatedLocalPromotionsNotifier
 
     // 2. Filter by Verification Status Type
     if (filterType == 'Verified') {
-      temp = temp.where((p) => p['isVerified'] == true || p['isPropertyVerified'] == true || p['status'] == 'live').toList();
+      temp =
+          temp
+              .where(
+                (p) =>
+                    p['isVerified'] == true ||
+                    p['isPropertyVerified'] == true ||
+                    p['status'] == 'live',
+              )
+              .toList();
     } else if (filterType == 'Unverified') {
-      temp = temp.where((p) => p['isVerified'] != true && p['isPropertyVerified'] != true && p['status'] != 'live').toList();
+      temp =
+          temp
+              .where(
+                (p) =>
+                    p['isVerified'] != true &&
+                    p['isPropertyVerified'] != true &&
+                    p['status'] != 'live',
+              )
+              .toList();
     }
 
     // 3. Filter by Time
@@ -1883,7 +1531,11 @@ class PaginatedLocalPromotionsNotifier
       temp =
           temp.where((p) {
             final title =
-                (p['brandName'] ?? p['title'] ?? p['propertyName'] ?? p['name'] ?? p['businessName'])
+                (p['brandName'] ??
+                        p['title'] ??
+                        p['propertyName'] ??
+                        p['name'] ??
+                        p['businessName'])
                     ?.toString()
                     .toLowerCase() ??
                 '';
@@ -1960,24 +1612,9 @@ final paginatedLocalPromotionsProvider = StateNotifierProvider<
 });
 
 // Provider that fetches city to pincode lists mapping from Firestore 'property_pincodes' collection
-final propertyPincodesProvider = FutureProvider<Map<String, List<String>>>((ref) async {
-  try {
-    final snapshot = await FirebaseFirestore.instance.collection('property_pincodes').get();
-    final Map<String, List<String>> map = {};
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final pincodesList = data['pincodes'] as List?;
-      if (pincodesList != null) {
-        final List<String> pins = pincodesList.map((e) => e.toString().trim()).toList();
-        final cityName = (data['city'] ?? data['cityName'] ?? doc.id).toString().trim();
-        if (cityName.isNotEmpty) {
-          map[cityName] = pins;
-        }
-      }
-    }
-    return map;
-  } catch (e) {
-    debugPrint('Error fetching property pincodes: $e');
-    return {};
-  }
+final propertyPincodesProvider = FutureProvider<Map<String, List<String>>>((
+  ref,
+) async {
+  ref.keepAlive();
+  return loadPropertyPincodes();
 });

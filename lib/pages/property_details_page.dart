@@ -283,7 +283,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
         subtitle,
         style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
       ),
-      activeColor: const Color(0xFF2563EB),
+      activeThumbColor: const Color(0xFF2563EB),
       contentPadding: EdgeInsets.zero,
     );
   }

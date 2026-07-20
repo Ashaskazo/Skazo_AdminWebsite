@@ -866,7 +866,7 @@ class _PaymentsDataViewState extends ConsumerState<PaymentsDataView> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
-                        value: selectedDuration,
+                        initialValue: selectedDuration,
                         decoration: InputDecoration(
                           labelText: 'Plan Duration',
                           border: OutlineInputBorder(

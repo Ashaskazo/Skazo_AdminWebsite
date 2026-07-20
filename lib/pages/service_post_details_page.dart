@@ -313,7 +313,7 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
   }
 
   Widget _buildContactedList() {
-    final List? contacted = _editedData['contactedDetails'] as List?;
+    final contacted = _editedData['contactedDetails'] is List ? _editedData['contactedDetails'] as List : null;
     if (contacted == null || contacted.isEmpty) {
       return Container(
         width: double.infinity,

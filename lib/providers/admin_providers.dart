@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
+import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
 /// Provider that checks if a user's email is in the admins collection
 final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, email) async {
@@ -18,7 +22,7 @@ final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, emai
     return snapshot.docs.isNotEmpty;
   } catch (e) {
     // Log error and return false for safety
-    print('Error checking admin status: $e');
+    debugPrint('Error checking admin status: $e');
     return false;
   }
 });
@@ -42,7 +46,7 @@ final currentAdminProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) 
       };
     }
   } catch (e) {
-    print('Error fetching admin profile: $e');
+    debugPrint('Error fetching admin profile: $e');
   }
   return null;
 });
@@ -84,15 +88,18 @@ class AdminAuthNotifier extends StateNotifier<bool> {
       await FirebaseAuth.instance.signOut();
       
       // Invalidate all cached data providers to release resources and prevent stale access
-      ref.invalidate(usersStreamProvider);
+      final selectedCategory = ref.read(dashboardSelectedCategoryProvider);
+      ref.invalidate(userPaginationProvider);
+      clearPropertyPincodesCache();
       ref.invalidate(propertyPincodesProvider);
-      ref.invalidate(unverifiedUsersProvider);
+      ref.invalidate(unverifiedPaginationProvider(selectedCategory));
+      ref.invalidate(unverifiedPendingCountProvider);
       ref.invalidate(categoryCountsProvider);
       ref.invalidate(adminsStreamProvider);
       ref.invalidate(paginatedLocalPromotionsProvider);
       // ref.invalidate(paginatedRentalPropertiesProvider);
     } catch (e) {
-      print('Error signing out: $e');
+      debugPrint('Error signing out: $e');
     } finally {
       state = false; // Reset state
     }

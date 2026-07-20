@@ -17,8 +17,6 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _isLogin = true; // Changed to non-final to allow toggling
-  bool _isInitialized = false;
   bool _isCheckingAdminStatus = false;
 
   @override
@@ -31,7 +29,6 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
   void _checkAuthState() {
     if (!mounted) return;
-    setState(() => _isInitialized = true);
     FirebaseAuth.instance.authStateChanges().listen((User? user) async {
       if (user != null && mounted) {
         await _checkAdminAccess(user);
