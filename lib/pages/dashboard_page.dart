@@ -20,6 +20,7 @@ import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
 import 'package:skazo_admin/widgets/admins_data_view.dart';
 import 'package:skazo_admin/widgets/unverified_businesses_grid.dart';
 import 'package:skazo_admin/widgets/payments_data_view.dart';
+import '../widgets/call_logs_data_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -114,9 +115,7 @@ class DashboardPage extends ConsumerWidget {
           title: 'Application Config',
         );
       case DashboardView.logs:
-        return const CollectionDataView(
-          collectionName: 'callLogs',
-          title: 'System Logs',
+        return const CallLogsDataView(
         );
       case DashboardView.payments:
         return const PaymentsDataView();

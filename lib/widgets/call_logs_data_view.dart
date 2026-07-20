@@ -10,9 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 class CallLogsDataView extends ConsumerStatefulWidget {
   const CallLogsDataView({
-    super.key,
-    required String collectionName,
-    required String title,
+    super.key
   });
 
   @override
