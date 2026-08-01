@@ -155,6 +155,61 @@ class _PromotionDetailsPageState extends State<PromotionDetailsPage> {
               _buildReadOnlyField('clicksCount', 'Click-Throughs'),
               _buildReadOnlyField('createdAt', 'Created Date'),
             ]),
+
+            const SizedBox(height: 32),
+            _buildSectionHeader('Sales Feedback'),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Notes / Feedback from Sales Team',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: TextEditingController(
+                      text: _editedData['salesFeedback']?.toString() ?? '',
+                    ),
+                    maxLines: 5,
+                    onChanged: (val) => _editedData['salesFeedback'] = val,
+                    style: GoogleFonts.poppins(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText:
+                          'Enter sales notes, feedback, or follow-up details...',
+                      hintStyle: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: const Color(0xFFCBD5E1),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFF2563EB)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 48),
           ],
         ),

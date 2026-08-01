@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Typed user document from the Firestore `users` collection.
 class UserModel {
   final String id;
+  final Map<String, dynamic> rawData;
   final String? uid;
   final String? firstname;
   final String? lastname;
@@ -27,9 +28,19 @@ class UserModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? verifiedAt;
+  final int? activePlan;
+  final String? gender;
+  final int? ownerPropertyPaid;
+  final int? userPropertyPaid;
+  final String? fcmtoken;
+  final int? totalAmount;
+  final bool categoryBoostEnabled;
+  final bool paymentLinkSend;
+  final bool isonline;
 
   const UserModel({
     required this.id,
+    this.rawData = const {},
     this.uid,
     this.firstname,
     this.lastname,
@@ -54,6 +65,15 @@ class UserModel {
     this.createdAt,
     this.updatedAt,
     this.verifiedAt,
+    this.activePlan,
+    this.gender,
+    this.ownerPropertyPaid,
+    this.userPropertyPaid,
+    this.fcmtoken,
+    this.totalAmount,
+    this.categoryBoostEnabled = false,
+    this.paymentLinkSend = false,
+    this.isonline = false,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -67,6 +87,7 @@ class UserModel {
 
     return UserModel(
       id: id,
+      rawData: data,
       uid: data['uid']?.toString(),
       firstname: data['firstname']?.toString(),
       lastname: data['lastname']?.toString(),
@@ -91,12 +112,22 @@ class UserModel {
       createdAt: _parseDateTime(data['createdAt']),
       updatedAt: _parseDateTime(data['updatedAt']),
       verifiedAt: _parseDateTime(data['verifiedAt']),
+      activePlan: _parseInt(data['AtivePlan'] ?? data['ActivePlan']),
+      gender: data['gender']?.toString(),
+      ownerPropertyPaid: _parseInt(data['ownerPropertyPaid']),
+      userPropertyPaid: _parseInt(data['userPropertyPaid']),
+      fcmtoken: data['fcmtoken']?.toString(),
+      totalAmount: _parseInt(data['totalAmount']),
+      categoryBoostEnabled: _parseBool(data['categoryBoostEnabled']) ?? false,
+      paymentLinkSend: _parseBool(data['paymentLinkSend']) ?? false,
+      isonline: _parseBool(data['isonline']) ?? false,
     );
   }
 
   /// Backward-compatible map for existing UI pages (e.g. BusinessProfilePage).
   Map<String, dynamic> toMap() {
     return {
+      ...rawData,
       'id': id,
       if (uid != null) 'uid': uid,
       if (firstname != null) 'firstname': firstname,
@@ -122,6 +153,15 @@ class UserModel {
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
       if (verifiedAt != null) 'verifiedAt': Timestamp.fromDate(verifiedAt!),
+      if (activePlan != null) 'AtivePlan': activePlan,
+      if (gender != null) 'gender': gender,
+      if (ownerPropertyPaid != null) 'ownerPropertyPaid': ownerPropertyPaid,
+      if (userPropertyPaid != null) 'userPropertyPaid': userPropertyPaid,
+      if (fcmtoken != null) 'fcmtoken': fcmtoken,
+      if (totalAmount != null) 'totalAmount': totalAmount,
+      'categoryBoostEnabled': categoryBoostEnabled,
+      'paymentLinkSend': paymentLinkSend,
+      'isonline': isonline,
     };
   }
 

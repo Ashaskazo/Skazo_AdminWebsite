@@ -61,6 +61,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       (_, __) => _scheduleRefresh(),
     );
     ref.listen(userBusinessNameFilterProvider, (_, __) => _scheduleRefresh());
+    ref.listen(userSortAscendingProvider, (_, __) => _scheduleRefresh());
 
     Future.microtask(refresh);
     return UserPaginationState.initial();
@@ -73,6 +74,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     final priority = ref.read(userPriorityFilterProvider);
     final profileComplete = ref.read(userProfileCompleteFilterProvider);
     final businessName = ref.read(userBusinessNameFilterProvider);
+    final sortAscending = ref.read(userSortAscendingProvider);
 
     return UserFilters(
       timeFilter: timeFilterFromLegacyUserValue(dateFilter),
@@ -84,6 +86,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       profileComplete: profileComplete,
       businessNamePrefix:
           businessName?.trim().isEmpty == true ? null : businessName,
+      sortAscending: sortAscending,
     );
   }
 

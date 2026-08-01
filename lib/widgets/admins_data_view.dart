@@ -8,7 +8,7 @@ import 'package:skazo_admin/providers/admin_providers.dart';
 
 class AdminsDataView extends ConsumerWidget {
   const AdminsDataView({super.key});
-
+  
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSuperAdmin = ref.watch(isSuperAdminProvider);
@@ -48,7 +48,7 @@ class AdminsDataView extends ConsumerWidget {
                 ElevatedButton.icon(
                   onPressed: () => _showAddAdminDialog(context),
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add Admin'),
+                  label: const Text('Add Sales Admin'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
                     foregroundColor: Colors.white,

@@ -79,3 +79,4 @@ final userCategoryFilterProvider = StateProvider<String?>((ref) => null);
 final userPriorityFilterProvider = StateProvider<int?>((ref) => null);
 final userProfileCompleteFilterProvider = StateProvider<bool?>((ref) => null);
 final userBusinessNameFilterProvider = StateProvider<String?>((ref) => null);
+final userSortAscendingProvider = StateProvider<bool>((ref) => false);

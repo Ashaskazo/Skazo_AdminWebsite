@@ -66,6 +66,33 @@ class _RentalPropertiesDataViewState
                   color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final sortAsc = ref.watch(rentalSortAscendingProvider);
+                    return IconButton(
+                      onPressed: () {
+                        ref
+                            .read(rentalSortAscendingProvider.notifier)
+                            .state = !sortAsc;
+                      },
+                      icon: Icon(
+                        sortAsc
+                            ? Icons.arrow_upward_rounded
+                            : Icons.arrow_downward_rounded,
+                        color: const Color(0xFF2563EB),
+                        size: 22,
+                      ),
+                      tooltip: sortAsc ? 'Oldest First' : 'Newest First',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: IconButton(
                   onPressed: () {
                     _searchController.clear();

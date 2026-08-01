@@ -10,7 +10,6 @@ class ServicePostsDataView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dataAsync = ref.watch(paginatedServicePostProvider);
-    final searchQuery = ref.watch(serviceSearchQueryProvider);
     final selectedCategory = ref.watch(serviceSelectedCategoryProvider);
     final selectedStatus = ref.watch(serviceStatusFilterProvider);
     final todayOnly = ref.watch(serviceTodayOnlyProvider);

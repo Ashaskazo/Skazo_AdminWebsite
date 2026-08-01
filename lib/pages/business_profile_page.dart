@@ -35,6 +35,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   late TextEditingController _userPaidController;
   late TextEditingController _fcmTokenController;
   late TextEditingController _totalAmountController;
+  late TextEditingController _transactionIdController;
+late TextEditingController _paymentPlanController;
+late TextEditingController _paymentCountController;
 
   // Status variables
   late bool _isVerified;
@@ -64,14 +67,32 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _userPaidController = TextEditingController(text: data['userPropertyPaid']?.toString() ?? '0');
     _fcmTokenController = TextEditingController(text: data['fcmtoken'] ?? '');
     _totalAmountController = TextEditingController(text: data['totalAmount']?.toString() ?? '0');
+    _transactionIdController =
+    TextEditingController(text: data['transactionId'] ?? '');
 
-    _isVerified = data['isverified'] ?? false;
-    _isActive = data['isactive'] ?? false;
-    _isOnline = data['isonline'] ?? false;
-    _isUser = data['isuser'] ?? false;
-    _profileComplete = data['profileComplete'] ?? false;
-    _categoryBoostEnabled = data['categoryBoostEnabled'] ?? false;
-    _paymentLinkSend = data['paymentLinkSend'] ?? false;
+_paymentPlanController =
+    TextEditingController(text: data['paymentPlanDuration'] ?? '');
+
+_paymentCountController =
+    TextEditingController(
+        text: data['paymentCount']?.toString() ?? '0');
+
+    _isVerified = data['isverified'] == true || data['isverified'] == 1 || data['isverified'] == 'true';
+    _isActive = data['isactive'] == true || data['isactive'] == 1 || data['isactive'] == 'true';
+    _isOnline = data['isonline'] == true || data['isonline'] == 1 || data['isonline'] == 'true';
+    _profileComplete = data['profileComplete'] == true || data['profileComplete'] == 1 || data['profileComplete'] == 'true';
+    _categoryBoostEnabled = data['categoryBoostEnabled'] == true || data['categoryBoostEnabled'] == 1 || data['categoryBoostEnabled'] == 'true';
+    _paymentLinkSend = data['paymentLinkSend'] == true || data['paymentLinkSend'] == 1 || data['paymentLinkSend'] == 'true';
+
+    if (data.containsKey('isuser') && data['isuser'] != null) {
+      _isUser = data['isuser'] == true || data['isuser'] == 1 || data['isuser'] == 'true' || data['isuser'] == '1';
+    } else {
+      final bName = data['businessname']?.toString().trim() ?? '';
+      final bPic = data['businesspic']?.toString().trim() ?? '';
+      final cat = data['category'];
+      final looksLikeProvider = bName.isNotEmpty || bPic.isNotEmpty || (cat != null && cat.toString().isNotEmpty);
+      _isUser = !looksLikeProvider;
+    }
   }
 
   @override
@@ -91,6 +112,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _userPaidController.dispose();
     _fcmTokenController.dispose();
     _totalAmountController.dispose();
+    _transactionIdController.dispose();
+    _paymentPlanController.dispose();
+    _paymentCountController.dispose();
     super.dispose();
   }
 
@@ -99,9 +123,21 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     setState(() => _isLoading = true);
 
     try {
+      final docId = (widget.businessData['id'] ?? widget.businessData['uid'] ?? widget.businessData['docId'])?.toString().trim();
+      if (docId == null || docId.isEmpty) {
+        throw 'Document ID is missing. Cannot update profile in Firebase.';
+      }
+
       final adminProfile = ref.read(currentAdminProfileProvider).value;
       final senderId = adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
       final senderName = adminProfile?['name'] ?? 'Unknown';
+
+      final phoneText = _phoneController.text.trim();
+      final dynamic phoneValue = phoneText.isEmpty
+          ? null
+          : (int.tryParse(phoneText) ?? phoneText);
+
+      final planVal = int.tryParse(_planController.text.trim()) ?? 0;
 
       final Map<String, dynamic> updatedData = {
         'businessname': _nameController.text.trim(),
@@ -109,9 +145,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'businessaddress': _addressController.text.trim(),
         'firstname': _firstNameController.text.trim(),
         'lastname': _lastNameController.text.trim(),
-        'phone': int.tryParse(_phoneController.text.trim()) ?? 0,
         'email': _emailController.text.trim(),
-        'AtivePlan': int.tryParse(_planController.text.trim()) ?? 0,
+        'AtivePlan': planVal,
+        'ActivePlan': planVal,
         'priority': int.tryParse(_priorityController.text.trim()) ?? 0,
         'gender': _genderController.text.trim(),
         'username': _usernameController.text.trim(),
@@ -126,18 +162,25 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'profileComplete': _profileComplete,
         'categoryBoostEnabled': _categoryBoostEnabled,
         'paymentLinkSend': _paymentLinkSend,
+        'transactionId': _transactionIdController.text.trim(),
+        'paymentPlanDuration': _paymentPlanController.text.trim(),
+        'paymentCount': int.tryParse(_paymentCountController.text.trim()) ?? 0,
         'totalAmount': int.tryParse(_totalAmountController.text.trim()) ?? 0,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      final bool wasSent = widget.businessData['paymentLinkSend'] ?? false;
+      if (phoneValue != null) {
+        updatedData['phone'] = phoneValue;
+      }
+
+      final bool wasSent = widget.businessData['paymentLinkSend'] == true;
       if (_paymentLinkSend && !wasSent) {
         updatedData['paymentLinkSenderId'] = senderId;
         updatedData['paymentLinkSenderName'] = senderName;
         updatedData['paymentLinkSentAt'] = FieldValue.serverTimestamp();
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(widget.businessData['id']).update(updatedData);
+      await FirebaseFirestore.instance.collection('users').doc(docId).set(updatedData, SetOptions(merge: true));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated successfully'), backgroundColor: Colors.green));
@@ -355,12 +398,74 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 ],
               ),
 
+_buildSectionHeader('Service Rate Card'),
+
+...(data['ServiceRateCard'] as List? ?? []).map((item) {
+  return Card(
+    child: ListTile(
+      leading: const Icon(Icons.miscellaneous_services),
+      title: Text(item['service'] ?? ''),
+      trailing: Text("₹${item['rate']}"),
+    ),
+  );
+}),
+_buildSectionHeader('Payment Information'),
+
+TextFormField(
+  controller: _transactionIdController,
+  decoration: _buildInputDecoration(
+    'Transaction ID',
+    Icons.receipt_long_rounded,
+  ),
+),
+
+const SizedBox(height: 16),
+
+TextFormField(
+  controller: _paymentPlanController,
+  decoration: _buildInputDecoration(
+    'Payment Plan',
+    Icons.workspace_premium_rounded,
+  ),
+),
+
+const SizedBox(height: 16),
+
+Row(
+  children: [
+    Expanded(
+      child: TextFormField(
+        controller: _paymentCountController,
+        keyboardType: TextInputType.number,
+        decoration: _buildInputDecoration(
+          'Payment Count',
+          Icons.payments_rounded,
+        ),
+      ),
+    ),
+    const SizedBox(width: 16),
+    Expanded(
+      child: TextFormField(
+        controller: _totalAmountController,
+        keyboardType: TextInputType.number,
+        decoration: _buildInputDecoration(
+          'Total Amount',
+          Icons.currency_rupee,
+        ),
+      ),
+    ),
+  ],
+),
+
+
               _buildSectionHeader('Usage Statistics'),
               Row(
                 children: [
                   Expanded(child: _buildReadOnlyField('Total Calls', data['totalCallLogs']?.toString() ?? '0', Icons.call_rounded)),
                   const SizedBox(width: 12),
                   Expanded(child: _buildReadOnlyField('Today Calls', data['todayCallLogs']?.toString() ?? '0', Icons.today_rounded)),
+                    const SizedBox(width: 12),
+                  Expanded(child: _buildReadOnlyField('Calls after Payment', data['callsAfterLastPayment']?.toString() ?? '0', Icons.phone_callback_rounded)),
                 ],
               ),
               Row(

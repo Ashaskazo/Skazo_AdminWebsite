@@ -10,6 +10,7 @@ class UserFilters {
   final int? priority;
   final bool? profileComplete;
   final String? businessNamePrefix;
+  final bool sortAscending;
 
   const UserFilters({
     this.timeFilter = TimeFilterOption.all,
@@ -20,6 +21,7 @@ class UserFilters {
     this.priority,
     this.profileComplete,
     this.businessNamePrefix,
+    this.sortAscending = false,
   });
 
   UserFilters copyWith({
@@ -31,6 +33,7 @@ class UserFilters {
     int? priority,
     bool? profileComplete,
     String? businessNamePrefix,
+    bool? sortAscending,
     bool clearVerifiedOnly = false,
     bool clearCity = false,
     bool clearCategory = false,
@@ -50,6 +53,7 @@ class UserFilters {
       businessNamePrefix: clearBusinessNamePrefix
           ? null
           : (businessNamePrefix ?? this.businessNamePrefix),
+      sortAscending: sortAscending ?? this.sortAscending,
     );
   }
 
@@ -63,7 +67,8 @@ class UserFilters {
         other.category == category &&
         other.priority == priority &&
         other.profileComplete == profileComplete &&
-        other.businessNamePrefix == businessNamePrefix;
+        other.businessNamePrefix == businessNamePrefix &&
+        other.sortAscending == sortAscending;
   }
 
   @override
@@ -76,5 +81,6 @@ class UserFilters {
     priority,
     profileComplete,
     businessNamePrefix,
+    sortAscending,
   );
 }

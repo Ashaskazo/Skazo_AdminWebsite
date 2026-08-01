@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
 class CallLogsDataView extends ConsumerStatefulWidget {
   const CallLogsDataView({
@@ -18,6 +20,12 @@ class CallLogsDataView extends ConsumerStatefulWidget {
 }
 
 class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
+  // Stream & Data State
+  StreamSubscription<QuerySnapshot>? _logsSubscription;
+  List<Map<String, dynamic>> _allDocs = [];
+  Map<String, List<String>> _pincodesMap = {};
+  Map<String, String> _pincodeCityLookup = {};
+
   // Filters & Controllers
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
@@ -75,6 +83,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
   @override
   void dispose() {
+    _logsSubscription?.cancel();
     _searchController.dispose();
     _cityController.dispose();
     _categoryController.dispose();
@@ -129,8 +138,25 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       _selectedDocData = null;
     });
 
+    await _loadPincodesMap();
     await _fetchDashboardStats();
-    await _loadPage();
+    _subscribeToLogs();
+  }
+
+  Future<void> _loadPincodesMap() async {
+    try {
+      final map = await loadPropertyPincodes();
+      if (mounted) {
+        setState(() {
+          _pincodesMap = map;
+          _pincodeCityLookup = buildPincodeCityLookup(map);
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Error loading pincodes in call logs: $e');
+      }
+    }
   }
 
   Future<void> _fetchDashboardStats() async {
@@ -144,7 +170,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       // Total count
       final totalSnap = await baseCol.count().get();
       _statTotalLogs = totalSnap.count ?? 0;
-
       // Today calls
       final todaySnap =
           await baseCol
@@ -214,260 +239,250 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     return null;
   }
 
-  Future<void> _loadPage() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  /// Sets up a real-time Firestore stream for call logs, respecting the active
+  /// date filter. Whenever new documents arrive, in-memory filtering is
+  /// re-applied so the UI updates instantly without manual refresh.
+  void _subscribeToLogs() {
+    _logsSubscription?.cancel();
 
-    try {
-      final baseQuery = FirebaseFirestore.instance
-          .collection('callLogs')
-          .orderBy('timestamp', descending: true);
+    final baseQuery = FirebaseFirestore.instance
+        .collection('callLogs')
+        .orderBy('timestamp', descending: true);
 
-      final dateFilterDate = _getDateFilterDate();
-      Query query = baseQuery;
+    final dateFilterDate = _getDateFilterDate();
+    Query query = baseQuery;
 
-      if (dateFilterDate != null) {
-        query = query.where(
-          'timestamp',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(dateFilterDate),
-        );
-      } else {
-        // limit fetching to prevent loading everything if "All" is selected
-        query = query.limit(150);
-      }
+    if (dateFilterDate != null) {
+      query = query.where(
+        'timestamp',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(dateFilterDate),
+      );
+    }
 
-      final snapshot = await query.get();
-      final allDocs =
-          snapshot.docs.map((doc) => _buildCallLogRow(doc)).toList();
+    _logsSubscription = query.snapshots().listen(
+      (snapshot) {
+        _allDocs = snapshot.docs.map((doc) => _buildCallLogRow(doc)).toList();
+        _applyFilters();
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = e.toString();
+            _isLoading = false;
+          });
+        }
+      },
+    );
+  }
 
-      // Compute follow-up reminders on all loaded docs
-      final now = DateTime.now();
-      final todayStart = DateTime(now.year, now.month, now.day);
-      final tomorrowStart = todayStart.add(const Duration(days: 1));
-      final dayAfterTomorrowStart = todayStart.add(const Duration(days: 2));
+  /// Applies all active in-memory filters to [_allDocs] and updates the
+  /// paginated view. Called whenever the stream delivers new data or
+  /// a filter is changed by the user.
+  void _applyFilters() {
+    if (!mounted) return;
+final now = DateTime.now().toUtc();
+final todayStart = DateTime.utc(now.year, now.month, now.day);
+final tomorrowStart = todayStart.add(Duration(days: 1));
+    final dayAfterTomorrowStart = todayStart.add(const Duration(days: 2));
 
-      _countFollowUpToday = 0;
-      _countFollowUpOverdue = 0;
-      _countFollowUpTomorrow = 0;
+    _countFollowUpToday = 0;
+    _countFollowUpOverdue = 0;
+    _countFollowUpTomorrow = 0;
 
-      for (final log in allDocs) {
-        final raw = log['rawData'] ?? {};
-        if (raw['salesStatus'] == 'follow_up' &&
-            raw['followUpDate'] is Timestamp) {
-          final date = (raw['followUpDate'] as Timestamp).toDate();
-          if (date.isBefore(todayStart)) {
-            _countFollowUpOverdue++;
-          } else if (date.isBefore(tomorrowStart)) {
-            _countFollowUpToday++;
-          } else if (date.isBefore(dayAfterTomorrowStart)) {
-            _countFollowUpTomorrow++;
-          }
+    for (final log in _allDocs) {
+      final raw = log['rawData'] ?? {};
+      if (raw['salesStatus'] == 'follow_up' &&
+          raw['followUpDate'] is Timestamp) {
+        final date = (raw['followUpDate'] as Timestamp).toDate();
+        if (date.isBefore(todayStart)) {
+          _countFollowUpOverdue++;
+        } else if (date.isBefore(tomorrowStart)) {
+          _countFollowUpToday++;
+        } else if (date.isBefore(dayAfterTomorrowStart)) {
+          _countFollowUpTomorrow++;
         }
       }
+    }
 
-      // Perform CRM client-side filtering on all fetched docs
-      _filteredLogs =
-          allDocs.where((log) {
-            final raw = log['rawData'] ?? {};
+    _filteredLogs =
+        _allDocs.where((log) {
+          final raw = log['rawData'] ?? {};
 
-            // 1. One Quick search box
-            if (_searchController.text.trim().isNotEmpty) {
-              final sQuery = _searchController.text.trim().toLowerCase();
-              final deepSearchStr = _getDeepSearchString(raw, log['id']);
-              if (!deepSearchStr.contains(sQuery)) {
-                return false;
-              }
+          // 1. Quick search
+          if (_searchController.text.trim().isNotEmpty) {
+            final sQuery = _searchController.text.trim().toLowerCase();
+            final deepSearchStr = _getDeepSearchString(raw, log['id']);
+            if (!deepSearchStr.contains(sQuery)) return false;
+          }
+
+          // 2. City filter
+          if (_cityController.text.trim().isNotEmpty) {
+            final filterCity = _cityController.text.trim();
+            final matchesCity = userMatchesCity(
+              raw,
+              filterCity,
+              _pincodesMap,
+              _pincodeCityLookup,
+            );
+            final cityVal = _normalizeString(log['city']);
+            final fallbackMatches = cityVal.contains(filterCity.toLowerCase());
+            if (!matchesCity && !fallbackMatches) {
+              return false;
             }
+          }
 
-            // 2. City filter
-            if (_cityController.text.trim().isNotEmpty) {
-              final cityVal = _normalizeString(log['city']);
-              if (!cityVal.contains(
-                _cityController.text.trim().toLowerCase(),
-              )) {
-                return false;
-              }
+          // 3. Category filter
+          if (_categoryController.text.trim().isNotEmpty) {
+            final catVal = _normalizeString(raw['category']);
+            if (!catVal.contains(
+              _categoryController.text.trim().toLowerCase(),
+            )) {
+              return false;
             }
+          }
 
-            // 3. Category filter
-            if (_categoryController.text.trim().isNotEmpty) {
-              final catVal = _normalizeString(raw['category']);
-              if (!catVal.contains(
-                _categoryController.text.trim().toLowerCase(),
-              )) {
-                return false;
-              }
+          // 4. Business name filter
+          if (_businessNameController.text.trim().isNotEmpty) {
+            final bNameVal = _normalizeString(log['businessName']);
+            if (!bNameVal.contains(
+              _businessNameController.text.trim().toLowerCase(),
+            )) {
+              return false;
             }
+          }
 
-            // 4. Business name filter
-            if (_businessNameController.text.trim().isNotEmpty) {
-              final bNameVal = _normalizeString(log['businessName']);
-              if (!bNameVal.contains(
-                _businessNameController.text.trim().toLowerCase(),
-              )) {
-                return false;
-              }
+          // 5. Customer Phone filter
+          if (_customerPhoneController.text.trim().isNotEmpty) {
+            final cPhone = _normalizeString(
+              log['customerNumber'] ?? log['callerPhone'],
+            );
+            if (!cPhone.contains(_customerPhoneController.text.trim())) {
+              return false;
             }
+          }
 
-            // 5. Customer Phone filter
-            if (_customerPhoneController.text.trim().isNotEmpty) {
-              final cPhone = _normalizeString(
-                log['customerNumber'] ?? log['callerPhone'],
-              );
-              if (!cPhone.contains(_customerPhoneController.text.trim())) {
-                return false;
-              }
+          // 6. Provider Phone filter
+          if (_providerPhoneController.text.trim().isNotEmpty) {
+            final pPhone = _normalizeString(log['businessNumber']);
+            if (!pPhone.contains(_providerPhoneController.text.trim())) {
+              return false;
             }
+          }
 
-            // 6. Provider Phone filter
-            if (_providerPhoneController.text.trim().isNotEmpty) {
-              final pPhone = _normalizeString(log['businessNumber']);
-              if (!pPhone.contains(_providerPhoneController.text.trim())) {
-                return false;
-              }
+          // 7. Assigned Sales Person filter
+          if (_assignedPersonController.text.trim().isNotEmpty) {
+            final assigned = _normalizeString(raw['assignedTo']);
+            if (!assigned.contains(
+              _assignedPersonController.text.trim().toLowerCase(),
+            )) {
+              return false;
             }
+          }
 
-            // 7. Assigned Sales Person filter
-            if (_assignedPersonController.text.trim().isNotEmpty) {
-              final assigned = _normalizeString(raw['assignedTo']);
-              if (!assigned.contains(
-                _assignedPersonController.text.trim().toLowerCase(),
-              )) {
-                return false;
-              }
+          // 8. Call Status
+          if (_filterCallStatus != 'All') {
+            final status = _normalizeString(raw['callType'] ?? raw['status']);
+            if (status != _filterCallStatus.toLowerCase()) return false;
+          }
+
+          // 9. Payment Status
+          if (_filterPaymentStatus != 'All') {
+            final payStatus = _normalizeString(raw['paymentStatus']);
+            if (payStatus != _filterPaymentStatus.toLowerCase()) return false;
+          }
+
+          // 10. Follow-up Status
+          if (_filterFollowUpStatus != 'All') {
+            final salesStatus = _normalizeString(raw['salesStatus']);
+            if (salesStatus != _filterFollowUpStatus.toLowerCase()) return false;
+          }
+
+          // 11. Boost Sent
+          if (_filterBoostSent != 'All') {
+            final boostSent =
+                raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
+            final expected = _filterBoostSent == 'Sent';
+            if (boostSent != expected) return false;
+          }
+
+          // 12. Plan Type
+          if (_filterPlan != 'All') {
+            final plan = _normalizeString(raw['plan']);
+            if (plan != _filterPlan.toLowerCase()) return false;
+          }
+
+          // Apply Saved Views
+          if (_activeSavedView != null) {
+            switch (_activeSavedView) {
+              case 'Today Calls':
+                final logDate = log['timestamp'] as DateTime;
+                final today = DateTime.now();
+                if (logDate.year != today.year ||
+                    logDate.month != today.month ||
+                    logDate.day != today.day) {
+                  return false;
+                }
+                break;
+              case 'Pending Follow-ups':
+                if (raw['salesStatus'] != 'follow_up') return false;
+                break;
+              case 'Interested Leads':
+                if (raw['salesStatus'] != 'interested') return false;
+                break;
+              case 'Not Called':
+                final status = raw['salesStatus'];
+                if (status != null && status != 'new' && status != '') {
+                  return false;
+                }
+                break;
+              case 'Converted':
+                if (raw['salesStatus'] != 'converted') return false;
+                break;
+              case 'Boost Calls':
+                final boost =
+                    raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
+                if (boost != true) return false;
+                break;
+              case 'Paid Providers':
+                final plan = _normalizeString(raw['plan']);
+                if (plan != 'paid' && plan != '599' && plan != 'premium') {
+                  return false;
+                }
+                break;
+              case 'City-wise Leads':
+                if (_normalizeString(log['city']).isEmpty) return false;
+                break;
             }
+          }
 
-            // 8. Call Status
-            if (_filterCallStatus != 'All') {
-              final status = _normalizeString(raw['callType'] ?? raw['status']);
-              if (status != _filterCallStatus.toLowerCase()) {
-                return false;
-              }
-            }
+          return true;
+        }).toList();
 
-            // 9. Payment Status
-            if (_filterPaymentStatus != 'All') {
-              final payStatus = _normalizeString(raw['paymentStatus']);
-              if (payStatus != _filterPaymentStatus.toLowerCase()) {
-                return false;
-              }
-            }
+    _totalMatches = _filteredLogs.length;
+    _hasNextPage = (_currentPage + 1) * _pageSize < _totalMatches;
 
-            // 10. Follow-up Status (Sales CRM status)
-            if (_filterFollowUpStatus != 'All') {
-              final salesStatus = _normalizeString(raw['salesStatus']);
-              if (salesStatus != _filterFollowUpStatus.toLowerCase()) {
-                return false;
-              }
-            }
+    final startIndex = _currentPage * _pageSize;
+    _currentPageLogs = _filteredLogs.skip(startIndex).take(_pageSize).toList();
 
-            // 11. Category Boost Sent
-            if (_filterBoostSent != 'All') {
-              final boostSent =
-                  raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-              final expected = _filterBoostSent == 'Sent';
-              if (boostSent != expected) {
-                return false;
-              }
-            }
-
-            // 12. Plan Type
-            if (_filterPlan != 'All') {
-              final plan = _normalizeString(raw['plan']);
-              if (plan != _filterPlan.toLowerCase()) {
-                return false;
-              }
-            }
-
-            // Apply Saved Views
-            if (_activeSavedView != null) {
-              switch (_activeSavedView) {
-                case 'Today Calls':
-                  final logDate = log['timestamp'] as DateTime;
-                  final today = DateTime.now();
-                  if (logDate.year != today.year ||
-                      logDate.month != today.month ||
-                      logDate.day != today.day) {
-                    return false;
-                  }
-                  break;
-                case 'Pending Follow-ups':
-                  if (raw['salesStatus'] != 'follow_up') {
-                    return false;
-                  }
-                  break;
-                case 'Interested Leads':
-                  if (raw['salesStatus'] != 'interested') {
-                    return false;
-                  }
-                  break;
-                case 'Not Called':
-                  final status = raw['salesStatus'];
-                  if (status != null && status != 'new' && status != '') {
-                    return false;
-                  }
-                  break;
-                case 'Converted':
-                  if (raw['salesStatus'] != 'converted') {
-                    return false;
-                  }
-                  break;
-                case 'Boost Calls':
-                  final boost =
-                      raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-                  if (boost != true) return false;
-                  break;
-                case 'Paid Providers':
-                  final plan = _normalizeString(raw['plan']);
-                  if (plan != 'paid' && plan != '599' && plan != 'premium') {
-                    return false;
-                  }
-                  break;
-                case 'City-wise Leads':
-                  if (_normalizeString(log['city']).isEmpty) return false;
-                  break;
-              }
-            }
-
-            return true;
-          }).toList();
-
-      _totalMatches = _filteredLogs.length;
-      _hasNextPage = (_currentPage + 1) * _pageSize < _totalMatches;
-
-      final startIndex = _currentPage * _pageSize;
-      _currentPageLogs =
-          _filteredLogs.skip(startIndex).take(_pageSize).toList();
-
-      // Highlight selected log
-      if (_currentPageLogs.isNotEmpty) {
-        final found = _currentPageLogs.any(
+    if (_currentPageLogs.isNotEmpty) {
+      final found = _currentPageLogs.any((log) => log['id'] == _selectedDocId);
+      if (!found) {
+        _selectedDocId = _currentPageLogs.first['id'];
+        _selectedDocData = _currentPageLogs.first;
+      } else {
+        _selectedDocData = _currentPageLogs.firstWhere(
           (log) => log['id'] == _selectedDocId,
         );
-        if (!found) {
-          _selectedDocId = _currentPageLogs.first['id'];
-          _selectedDocData = _currentPageLogs.first;
-        } else {
-          _selectedDocData = _currentPageLogs.firstWhere(
-            (log) => log['id'] == _selectedDocId,
-          );
-        }
-      } else {
-        _selectedDocId = null;
-        _selectedDocData = null;
       }
-    } catch (e) {
-      _errorMessage = e.toString();
-      _currentPageLogs = [];
-      _totalMatches = 0;
-      _hasNextPage = false;
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+    } else {
+      _selectedDocId = null;
+      _selectedDocData = null;
     }
+
+    setState(() {
+      _isLoading = false;
+      _errorMessage = null;
+    });
   }
 
   String _normalizeString(dynamic value) {
@@ -500,7 +515,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     final city =
         _normalizeString(explicitCity ?? '').isNotEmpty
             ? explicitCity.toString()
-            : _extractCityFromAddress(address);
+            : (resolveUserCityName(data, _pincodesMap, _pincodeCityLookup) ??
+               _extractCityFromAddress(address));
     values.add(city.toLowerCase());
 
     return values.join(' ');
@@ -574,7 +590,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     final city =
         _normalizeString(explicitCity ?? '').isNotEmpty
             ? explicitCity.toString()
-            : _extractCityFromAddress(address);
+            : (resolveUserCityName(data, _pincodesMap, _pincodeCityLookup) ??
+               _extractCityFromAddress(address));
 
     return {
       'id': doc.id,
@@ -670,7 +687,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         ),
       );
 
-      _loadPage();
+      _applyFilters();
       _fetchDashboardStats();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -743,7 +760,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         ),
       );
 
-      _loadPage();
+      _applyFilters();
       _fetchDashboardStats();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -755,50 +772,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     }
   }
 
-  Future<void> _launchWhatsApp(String phone) async {
-    final sanitizedPhone = phone.replaceAll(RegExp(r'\D'), '');
-    if (sanitizedPhone.isEmpty) return;
 
-    String finalPhone = sanitizedPhone;
-    if (sanitizedPhone.length == 10) {
-      finalPhone = '91$sanitizedPhone';
-    }
 
-    final url = Uri.parse('https://wa.me/$finalPhone');
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch WhatsApp')),
-        );
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('WhatsApp launch error: $e');
-      }
-    }
-  }
-
-  Future<void> _launchPhoneDialer(String phone) async {
-    final sanitizedPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    if (sanitizedPhone.isEmpty) return;
-
-    final url = Uri.parse('tel:$sanitizedPhone');
-    try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch dialer')),
-        );
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Dialer launch error: $e');
-      }
-    }
-  }
 
   void _showEditFieldDialog(String fieldName, dynamic currentValue) {
     if (!_canEditField(fieldName)) {
@@ -840,7 +815,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 ),
               );
 
-              await _loadPage();
+              _applyFilters();
               _fetchDashboardStats();
             } catch (e) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -892,7 +867,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 ),
               );
 
-              await _loadPage();
+              _applyFilters();
               _fetchDashboardStats();
             } catch (e) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -985,7 +960,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _dateFilter = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _subscribeToLogs();
             },
           ),
           const SizedBox(height: 12),
@@ -1030,7 +1005,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _filterCallStatus = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
           ),
           const SizedBox(height: 12),
@@ -1043,7 +1018,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _filterPaymentStatus = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
           ),
           const SizedBox(height: 12),
@@ -1064,7 +1039,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _filterFollowUpStatus = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
           ),
           const SizedBox(height: 12),
@@ -1077,7 +1052,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _filterBoostSent = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
           ),
           const SizedBox(height: 12),
@@ -1090,7 +1065,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _filterPlan = val;
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
           ),
           const SizedBox(height: 20),
@@ -1104,7 +1079,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _customerPhoneController.clear();
                 _providerPhoneController.clear();
                 _assignedPersonController.clear();
-                _dateFilter = 'Last 7 Days';
+                _dateFilter = 'All';
                 _filterCallStatus = 'All';
                 _filterPaymentStatus = 'All';
                 _filterFollowUpStatus = 'All';
@@ -1113,7 +1088,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 _activeSavedView = null;
                 _currentPage = 0;
               });
-              _loadPage();
+              _subscribeToLogs();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFF1F5F9),
@@ -1139,7 +1114,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           _activeSavedView = isSelected ? null : label;
           _currentPage = 0;
         });
-        _loadPage();
+        _applyFilters();
       },
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
@@ -1250,7 +1225,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             setState(() {
               _currentPage = 0;
             });
-            _loadPage();
+            _applyFilters();
           },
         ),
       ],
@@ -1331,8 +1306,34 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               setState(() {
                 _currentPage = 0;
               });
-              _loadPage();
+              _applyFilters();
             },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _cityController.text.trim().isNotEmpty
+                    ? 'Calls for "${_cityController.text.trim()}": $_totalMatches'
+                    : 'Matching Calls: $_totalMatches',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              if (_totalMatches > 0)
+                Text(
+                  'Showing ${_currentPageLogs.length} of $_totalMatches',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+            ],
           ),
         ),
         const Divider(height: 1),
@@ -1601,7 +1602,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                               setState(() {
                                 _currentPage -= 1;
                               });
-                              _loadPage();
+                              _applyFilters();
                             },
                     icon: const Icon(Icons.chevron_left, size: 20),
                     padding: EdgeInsets.zero,
@@ -1616,7 +1617,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                               setState(() {
                                 _currentPage += 1;
                               });
-                              _loadPage();
+                              _applyFilters();
                             },
                     icon: const Icon(Icons.chevron_right, size: 20),
                     padding: EdgeInsets.zero,
@@ -1695,7 +1696,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 setState(() {
                   _currentPage = pageIndex;
                 });
-                _loadPage();
+                _applyFilters();
               },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1741,13 +1742,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
     final rawData = _selectedDocData!['rawData'] as Map<String, dynamic>? ?? {};
     final sortedKeys = rawData.keys.toList()..sort();
-
-    final customerNumber =
-        _selectedDocData!['customerNumber']?.toString() ?? '';
-    final callerPhone = _selectedDocData!['callerPhone']?.toString() ?? '';
-    final businessNumber =
-        _selectedDocData!['businessNumber']?.toString() ?? '';
-    final cPhone = customerNumber.isNotEmpty ? customerNumber : callerPhone;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1873,68 +1867,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                     Colors.green,
                     () => _changeCRMStatus('converted'),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  if (cPhone.isNotEmpty) ...[
-                    ElevatedButton.icon(
-                      onPressed: () => _launchPhoneDialer(cPhone),
-                      icon: const Icon(Icons.phone, size: 14),
-                      label: const Text('Call Customer'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        textStyle: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () => _launchWhatsApp(cPhone),
-                      icon: const Icon(Icons.message, size: 14),
-                      label: const Text('WhatsApp'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        foregroundColor: Colors.white,
-                        textStyle: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (businessNumber.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () => _launchPhoneDialer(businessNumber),
-                      icon: const Icon(Icons.business, size: 14),
-                      label: const Text('Call Provider'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        textStyle: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ],
@@ -2107,6 +2039,23 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 const Color(0xFFEFF6FF),
               ),
               const SizedBox(width: 16),
+              if (_cityController.text.trim().isNotEmpty) ...[
+                _buildStatBadge(
+                  '${_cityController.text.trim()} Calls',
+                  _totalMatches,
+                  const Color(0xFF0284C7),
+                  const Color(0xFFE0F2FE),
+                ),
+                const SizedBox(width: 16),
+              ] else if (_hasActiveFilters()) ...[
+                _buildStatBadge(
+                  'Matching Calls',
+                  _totalMatches,
+                  const Color(0xFF0D9488),
+                  const Color(0xFFCCFBF1),
+                ),
+                const SizedBox(width: 16),
+              ],
               _buildStatBadge(
                 'Today Calls',
                 _statTodayCalls,
@@ -2145,6 +2094,22 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         ],
       ),
     );
+  }
+
+  bool _hasActiveFilters() {
+    return _searchController.text.trim().isNotEmpty ||
+        _cityController.text.trim().isNotEmpty ||
+        _categoryController.text.trim().isNotEmpty ||
+        _businessNameController.text.trim().isNotEmpty ||
+        _customerPhoneController.text.trim().isNotEmpty ||
+        _providerPhoneController.text.trim().isNotEmpty ||
+        _assignedPersonController.text.trim().isNotEmpty ||
+        _filterCallStatus != 'All' ||
+        _filterPaymentStatus != 'All' ||
+        _filterFollowUpStatus != 'All' ||
+        _filterBoostSent != 'All' ||
+        _filterPlan != 'All' ||
+        _activeSavedView != null;
   }
 
   Widget _buildStatBadge(

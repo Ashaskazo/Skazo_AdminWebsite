@@ -3,11 +3,26 @@
 String _normalizeCityKey(String city) =>
     city.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-String _addressSource(Map<String, dynamic> user) =>
-    (user['businessaddress'] ?? user['address'] ?? '').toString().trim();
+String _addressSource(Map<String, dynamic> user) {
+  final addr = user['businessAddress'] ??
+      user['businessaddress'] ??
+      user['customerAddress'] ??
+      user['address'] ??
+      user['business_address'] ??
+      user['customer_address'] ??
+      '';
+  return addr.toString().trim();
+}
 
 String? _explicitCityField(Map<String, dynamic> user) {
-  final raw = (user['City'] ?? user['city'])?.toString().trim();
+  final raw = (user['City'] ??
+          user['city'] ??
+          user['businessCity'] ??
+          user['customerCity'] ??
+          user['business_city'] ??
+          user['customer_city'])
+      ?.toString()
+      .trim();
   if (raw == null || raw.isEmpty) {
     return null;
   }
@@ -172,6 +187,18 @@ Map<String, String> buildPincodeCityLookup(
 }
 
 String? extractUserPincode(Map<String, dynamic> user) {
+  final explicitPin = (user['pincode'] ??
+          user['businessPincode'] ??
+          user['customerPincode'] ??
+          user['pinCode'] ??
+          user['business_pincode'] ??
+          user['customer_pincode'] ??
+          user['pin'])
+      ?.toString()
+      .trim();
+  final normExplicit = _normalizePincode(explicitPin);
+  if (normExplicit != null) return normExplicit;
+
   final address = _addressSource(user);
   final pinMatch = RegExp(r'\b\d{6}\b').firstMatch(address);
   return _normalizePincode(pinMatch?.group(0));
@@ -227,18 +254,24 @@ bool userMatchesCity(
   Set<String>? cityPins,
 }) {
   final targetCity = normalizedTargetCity ?? _normalizeCityKey(selectedCity);
-  final directCityKey = user['cityKey']?.toString().trim();
+  if (targetCity.isEmpty) return true;
 
-  if (directCityKey != null &&
-      directCityKey.isNotEmpty &&
-      _normalizeCityKey(directCityKey) == targetCity) {
-    return true;
+  final directCityKey = (user['cityKey'] ?? user['city'] ?? user['businessCity'] ?? user['customerCity'])?.toString().trim();
+
+  if (directCityKey != null && directCityKey.isNotEmpty) {
+    final normDirect = _normalizeCityKey(directCityKey);
+    if (normDirect == targetCity || normDirect.contains(targetCity) || targetCity.contains(normDirect)) {
+      return true;
+    }
   }
 
   final pins =
       cityPins ??
       pincodesMap.entries
-          .where((entry) => _normalizeCityKey(entry.key) == targetCity)
+          .where((entry) {
+            final k = _normalizeCityKey(entry.key);
+            return k == targetCity || k.contains(targetCity) || targetCity.contains(k);
+          })
           .expand((entry) => entry.value)
           .map(_normalizePincode)
           .whereType<String>()
@@ -250,26 +283,42 @@ bool userMatchesCity(
   }
 
   final resolved = resolveUserCityName(user, pincodesMap, pincodeCityLookup);
-  if (resolved != null && _normalizeCityKey(resolved) == targetCity) {
-    return true;
+  if (resolved != null) {
+    final normResolved = _normalizeCityKey(resolved);
+    if (normResolved == targetCity || normResolved.contains(targetCity) || targetCity.contains(normResolved)) {
+      return true;
+    }
   }
 
   final addressCity = extractUserCityFromAddress(user);
-  if (addressCity != null && _normalizeCityKey(addressCity) == targetCity) {
-    return true;
+  if (addressCity != null) {
+    final normAddrCity = _normalizeCityKey(addressCity);
+    if (normAddrCity == targetCity || normAddrCity.contains(targetCity) || targetCity.contains(normAddrCity)) {
+      return true;
+    }
   }
 
   final explicitCity = _explicitCityField(user);
-  if (explicitCity != null && _normalizeCityKey(explicitCity) == targetCity) {
-    return true;
+  if (explicitCity != null) {
+    final normExpCity = _normalizeCityKey(explicitCity);
+    if (normExpCity == targetCity || normExpCity.contains(targetCity) || targetCity.contains(normExpCity)) {
+      return true;
+    }
   }
 
   final address = _addressSource(user);
   if (address.isNotEmpty) {
+    final normAddress = address.toLowerCase();
+    if (normAddress.contains(targetCity)) {
+      return true;
+    }
     for (final segment in _addressSegments(address)) {
       final candidate = _cleanCitySegment(segment);
-      if (candidate != null && _normalizeCityKey(candidate) == targetCity) {
-        return true;
+      if (candidate != null) {
+        final normCand = _normalizeCityKey(candidate);
+        if (normCand == targetCity || normCand.contains(targetCity) || targetCity.contains(normCand)) {
+          return true;
+        }
       }
     }
   }

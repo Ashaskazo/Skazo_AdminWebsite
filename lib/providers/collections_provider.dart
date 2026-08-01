@@ -333,6 +333,7 @@ final rentalUnverifiedOnlyProvider = StateProvider<bool>((ref) => false);
 final rentalTodayOnlyProvider = StateProvider<bool>((ref) => false);
 final rentalTypeFilterProvider = StateProvider<String>((ref) => 'All');
 final rentalTimeFilterProvider = StateProvider<String>((ref) => 'All Time');
+final rentalSortAscendingProvider = StateProvider<bool>((ref) => false);
 
 // Helper to extract image URLs from property map
 List<String> extractPropertyImageUrls(Map<String, dynamic> prop) {
@@ -435,6 +436,10 @@ class PaginatedRentalNotifier
       _applyFiltersAndNotify();
     });
     ref.listen(rentalTimeFilterProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(rentalSortAscendingProvider, (prev, next) {
       _currentPage = 0;
       _applyFiltersAndNotify();
     });
@@ -567,6 +572,13 @@ class PaginatedRentalNotifier
                 landmark.contains(searchQuery);
           }).toList();
     }
+
+    final sortAscending = ref.read(rentalSortAscendingProvider);
+    temp.sort((a, b) {
+      final aDate = _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
+      final bDate = _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
+      return sortAscending ? aDate.compareTo(bDate) : bDate.compareTo(aDate);
+    });
 
     _filteredProperties = temp;
     _filteredCount = temp.length;
@@ -1201,6 +1213,7 @@ final localPromotionsTypeFilterProvider = StateProvider<String>((ref) => 'All');
 final localPromotionsTimeFilterProvider = StateProvider<String>(
   (ref) => 'All Time',
 );
+final localPromotionsSortAscendingProvider = StateProvider<bool>((ref) => false);
 
 // Helper to extract image URLs from promotion map
 List<String> extractPromotionImageUrls(Map<String, dynamic> promo) {
@@ -1318,6 +1331,10 @@ class PaginatedLocalPromotionsNotifier
       _currentPage = 0;
       _applyFiltersAndNotify();
     });
+    ref.listen(localPromotionsSortAscendingProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
   }
 
   void _initStream() {
@@ -1351,100 +1368,7 @@ class PaginatedLocalPromotionsNotifier
         );
   }
 
-  DateTime? _parseDateTime(dynamic val) {
-    if (val == null) return null;
-    if (val is DateTime) return val;
-    try {
-      return val.toDate();
-    } catch (_) {}
-    if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
-    if (val is String) {
-      final p = DateTime.tryParse(val);
-      if (p != null) return p;
-      return _parseCustomDateTime(val);
-    }
-    return null;
-  }
 
-  DateTime? _parseCustomDateTime(String val) {
-    try {
-      final clean = val.trim();
-      if (clean.isEmpty) return null;
-      final parts = clean.split(' ');
-      if (parts.length >= 5) {
-        final day = int.tryParse(parts[0]);
-        final monthStr = parts[1].toLowerCase();
-        final year = int.tryParse(parts[2]);
-        final timePart = parts[4];
-        final timeParts = timePart.split(':');
-        final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
-        final minute =
-            timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-        final second =
-            timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
-
-        final months = {
-          'january': 1,
-          'february': 2,
-          'march': 3,
-          'april': 4,
-          'may': 5,
-          'june': 6,
-          'july': 7,
-          'august': 8,
-          'september': 9,
-          'october': 10,
-          'november': 11,
-          'december': 12,
-          'jan': 1,
-          'feb': 2,
-          'mar': 3,
-          'apr': 4,
-          'jun': 6,
-          'jul': 7,
-          'aug': 8,
-          'sep': 9,
-          'oct': 10,
-          'nov': 11,
-          'dec': 12,
-        };
-        final month = months[monthStr];
-
-        if (day != null && month != null && year != null) {
-          if (parts.length >= 6 && parts[5].startsWith('UTC')) {
-            final offsetStr = parts[5].substring(3);
-            final isNegative = offsetStr.startsWith('-');
-            final cleanOffset = offsetStr
-                .replaceAll('+', '')
-                .replaceAll('-', '');
-            final offsetParts = cleanOffset.split(':');
-            final offsetHours =
-                offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
-            final offsetMinutes =
-                offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
-
-            final utcTime = DateTime.utc(
-              year,
-              month,
-              day,
-              hour,
-              minute,
-              second,
-            );
-            final duration = Duration(
-              hours: offsetHours,
-              minutes: offsetMinutes,
-            );
-            return isNegative
-                ? utcTime.add(duration)
-                : utcTime.subtract(duration);
-          }
-          return DateTime(year, month, day, hour, minute, second);
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
 
   void _applyFiltersAndNotify() {
     final searchQuery =
@@ -1555,6 +1479,13 @@ class PaginatedLocalPromotionsNotifier
           }).toList();
     }
 
+    final sortAscending = ref.read(localPromotionsSortAscendingProvider);
+    temp.sort((a, b) {
+      final aDate = _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
+      final bDate = _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
+      return sortAscending ? aDate.compareTo(bDate) : bDate.compareTo(aDate);
+    });
+
     _filteredPromotions = temp;
     _filteredCount = temp.length;
 
@@ -1618,3 +1549,98 @@ final propertyPincodesProvider = FutureProvider<Map<String, List<String>>>((
   ref.keepAlive();
   return loadPropertyPincodes();
 });
+
+DateTime? _parseDateTime(dynamic val) {
+  if (val == null) return null;
+  if (val is DateTime) return val;
+  try {
+    return val.toDate();
+  } catch (_) {}
+  if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
+  if (val is String) {
+    final p = DateTime.tryParse(val);
+    if (p != null) return p;
+    return _parseCustomDateTime(val);
+  }
+  return null;
+}
+
+DateTime? _parseCustomDateTime(String val) {
+  try {
+    final clean = val.trim();
+    if (clean.isEmpty) return null;
+    final parts = clean.split(' ');
+    if (parts.length >= 5) {
+      final day = int.tryParse(parts[0]);
+      final monthStr = parts[1].toLowerCase();
+      final year = int.tryParse(parts[2]);
+      final timePart = parts[4];
+      final timeParts = timePart.split(':');
+      final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
+      final minute =
+          timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+      final second =
+          timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
+
+      final months = {
+        'january': 1,
+        'february': 2,
+        'march': 3,
+        'april': 4,
+        'may': 5,
+        'june': 6,
+        'july': 7,
+        'august': 8,
+        'september': 9,
+        'october': 10,
+        'november': 11,
+        'december': 12,
+        'jan': 1,
+        'feb': 2,
+        'mar': 3,
+        'apr': 4,
+        'jun': 6,
+        'jul': 7,
+        'aug': 8,
+        'sep': 9,
+        'oct': 10,
+        'nov': 11,
+        'dec': 12,
+      };
+      final month = months[monthStr];
+
+      if (day != null && month != null && year != null) {
+        if (parts.length >= 6 && parts[5].startsWith('UTC')) {
+          final offsetStr = parts[5].substring(3);
+          final isNegative = offsetStr.startsWith('-');
+          final cleanOffset = offsetStr
+              .replaceAll('+', '')
+              .replaceAll('-', '');
+          final offsetParts = cleanOffset.split(':');
+          final offsetHours =
+              offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
+          final offsetMinutes =
+              offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
+
+          final utcTime = DateTime.utc(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+          );
+          final duration = Duration(
+            hours: offsetHours,
+            minutes: offsetMinutes,
+          );
+          return isNegative
+              ? utcTime.add(duration)
+              : utcTime.subtract(duration);
+        }
+        return DateTime(year, month, day, hour, minute, second);
+      }
+    }
+  } catch (_) {}
+  return null;
+}
