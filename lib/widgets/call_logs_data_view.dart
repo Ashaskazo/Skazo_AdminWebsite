@@ -438,11 +438,11 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
               case 'Converted':
                 if (raw['salesStatus'] != 'converted') return false;
                 break;
-              case 'Boost Calls':
-                final boost =
-                    raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-                if (boost != true) return false;
-                break;
+              // case 'Boost Calls':
+              //   final boost =
+              //       raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
+              //   if (boost != true) return false;
+              //   break;
               case 'Paid Providers':
                 final plan = _normalizeString(raw['plan']);
                 if (plan != 'paid' && plan != '599' && plan != 'premium') {
@@ -907,9 +907,9 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
           _buildSavedViewButton('Interested Leads', Icons.star),
           _buildSavedViewButton('Not Called', Icons.phone_callback),
           _buildSavedViewButton('Converted', Icons.check_circle),
-          _buildSavedViewButton('Boost Calls', Icons.bolt),
-          _buildSavedViewButton('Paid Providers', Icons.payment),
-          _buildSavedViewButton('City-wise Leads', Icons.location_city),
+          // _buildSavedViewButton('Boost Calls', Icons.bolt),
+          // _buildSavedViewButton('Paid Providers', Icons.payment),
+          // _buildSavedViewButton('City-wise Leads', Icons.location_city),
           const SizedBox(height: 24),
 
           // Section: Follow-up Reminders
@@ -1022,26 +1022,26 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
             },
           ),
           const SizedBox(height: 12),
-          _buildLeftDropdownFilter(
-            'CRM Sales Status',
-            _filterFollowUpStatus,
-            [
-              'All',
-              'New',
-              'Called',
-              'Interested',
-              'Not_Interested',
-              'Converted',
-              'Follow_up',
-            ],
-            (val) {
-              setState(() {
-                _filterFollowUpStatus = val;
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
-          ),
+          // _buildLeftDropdownFilter(
+          //   'CRM Sales Status',
+          //   _filterFollowUpStatus,
+          //   [
+          //     'All',
+          //     'New',
+          //     'Called',
+          //     'Interested',
+          //     'Not_Interested',
+          //     'Converted',
+          //     'Follow_up',
+          //   ],
+          //   (val) {
+          //     setState(() {
+          //       _filterFollowUpStatus = val;
+          //       _currentPage = 0;
+          //     });
+          //     _applyFilters();
+          //   },
+          // ),
           const SizedBox(height: 12),
           _buildLeftDropdownFilter(
             'Category Boost',
@@ -1056,18 +1056,18 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
             },
           ),
           const SizedBox(height: 12),
-          _buildLeftDropdownFilter(
-            'Plan',
-            _filterPlan,
-            ['All', 'Free', 'Paid', '599', 'Premium'],
-            (val) {
-              setState(() {
-                _filterPlan = val;
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
-          ),
+          // _buildLeftDropdownFilter(
+          //   'Plan',
+          //   _filterPlan,
+          //   ['All', 'Free', 'Paid', '599', 'Premium'],
+          //   (val) {
+          //     setState(() {
+          //       _filterPlan = val;
+          //       _currentPage = 0;
+          //     });
+          //     _applyFilters();
+          //   },
+          // ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
@@ -1377,9 +1377,9 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
     final timeStr = _formatTimestamp(log['timestamp']);
     final raw = log['rawData'] ?? {};
 
-    final salesStatus = raw['salesStatus'] ?? 'new';
+    // final salesStatus = raw['salesStatus'] ?? 'new';
     final leadQuality = raw['leadQuality'];
-    final plan = raw['plan'] ?? 'free';
+    // final plan = raw['plan'] ?? 'free';
 
     return InkWell(
       onTap: () {
@@ -1486,19 +1486,20 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
               spacing: 6,
               runSpacing: 4,
               children: [
-                _buildBadge(
-                  salesStatus.toString().toUpperCase(),
-                  _getSalesStatusColor(salesStatus),
-                ),
+                // _buildBadge(
+                //   salesStatus.toString().toUpperCase(),
+                //   _getSalesStatusColor(salesStatus),
+                // ),
                 if (leadQuality != null)
                   _buildBadge(
                     '${leadQuality.toString().toUpperCase()} LEAD',
                     _getLeadQualityColor(leadQuality),
                   ),
-                _buildBadge(
-                  '${plan.toString().toUpperCase()} PLAN',
-                  _getPlanColor(plan),
-                ),
+                // _buildBadge(
+                  // '${plan.toString().toUpperCase()} PLAN',
+                  // _getPlanColor(plan),
+                // )
+                // ,
               ],
             ),
           ],

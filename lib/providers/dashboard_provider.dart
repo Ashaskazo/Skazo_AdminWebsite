@@ -4,7 +4,7 @@ enum DashboardView {
   summary,
   users,
   servicePosts,
-  orders,
+  // orders,
   rentalProperties,
   localPromotions,
   tickets,

@@ -132,14 +132,14 @@ class SidebarNav extends ConsumerWidget {
                   currentView,
                   isCollapsed,
                 ),
-                _buildNavItem(
-                  ref,
-                  'Orders',
-                  Icons.shopping_cart_outlined,
-                  DashboardView.orders,
-                  currentView,
-                  isCollapsed,
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'Orders',
+                //   Icons.shopping_cart_outlined,
+                //   DashboardView.orders,
+                //   currentView,
+                //   isCollapsed,
+                // ),
                 _buildNavItem(
                   ref,
                   'Payments',
