@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 
 class AddAdminPage extends ConsumerStatefulWidget {
   const AddAdminPage({super.key});
@@ -61,45 +63,81 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
     setState(() => _isLoading = true);
 
     try {
-      // Check if admin already exists
-      final existingAdmin =
-          await FirebaseFirestore.instance
-              .collection('admin')
-              .where(
-                'email',
-                isEqualTo: _emailController.text.trim().toLowerCase(),
-              )
-              .get();
+      final name = _nameController.text.trim();
+      final email = _emailController.text.trim().toLowerCase();
+      final password = _passwordController.text.trim();
+
+      // 1. Check if admin already exists in the Firestore 'admin' collection
+      final existingAdmin = await FirebaseFirestore.instance
+          .collection('admin')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
 
       if (existingAdmin.docs.isNotEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('An admin with this email already exists'),
+            content: Text('An admin account with this email already exists'),
             backgroundColor: Colors.orange,
           ),
         );
-        setState(() => _isLoading = false);
         return;
       }
 
-      // Create the user account in Firebase Auth
-      final userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
+      // 2. Attempt Firebase Auth user creation using secondary app
+      FirebaseApp? secondaryApp;
+      String? createdUid;
+
+      try {
+        try {
+          secondaryApp = Firebase.app('AdminCreationApp');
+        } catch (_) {
+          secondaryApp = await Firebase.initializeApp(
+            name: 'AdminCreationApp',
+            options: Firebase.app().options,
           );
+        }
 
-      // Add admin to the admins collection
-      await FirebaseFirestore.instance.collection('admin').add({
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim().toLowerCase(),
-        'uid': userCredential.user!.uid,
+        final tempAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+        try {
+          final userCredential = await tempAuth.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+          createdUid = userCredential.user?.uid;
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'email-already-in-use') {
+            debugPrint('Auth user already exists for $email, granting admin status in Firestore.');
+          } else {
+            rethrow;
+          }
+        }
+      } finally {
+        await secondaryApp?.delete();
+      }
+
+      // 3. Add to Firestore admin collection
+      final countSnapshot = await FirebaseFirestore.instance.collection('admin').count().get();
+      final count = countSnapshot.count ?? 0;
+      final adminId = 'ADM${(count + 1).toString().padLeft(3, '0')}';
+
+      final newAdminData = <String, dynamic>{
+        'name': name,
+        'email': email,
+        'role': 'admin',
+        'level': 'staff',
+        'admin_id': adminId,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (createdUid != null) {
+        newAdminData['uid'] = createdUid;
+      }
 
-      // Sign out the newly created admin user and sign back in with the current admin
-      await FirebaseAuth.instance.signOut();
+      await FirebaseFirestore.instance.collection('admin').add(newAdminData);
+
+      // Invalidate non-stream cached admins provider
+      ref.invalidate(adminsListProvider);
 
       // Show success message
       if (!mounted) return;
@@ -118,9 +156,7 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
       if (!mounted) return;
       String errorMessage = 'Failed to create admin account';
 
-      if (e.code == 'email-already-in-use') {
-        errorMessage = 'An account already exists with this email';
-      } else if (e.code == 'weak-password') {
+      if (e.code == 'weak-password') {
         errorMessage = 'The password provided is too weak';
       } else if (e.code == 'invalid-email') {
         errorMessage = 'The email address is not valid';

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 
 class AdminsDataView extends ConsumerWidget {
   const AdminsDataView({super.key});
@@ -46,7 +47,7 @@ class AdminsDataView extends ConsumerWidget {
               ),
               if (isSuperAdmin)
                 ElevatedButton.icon(
-                  onPressed: () => _showAddAdminDialog(context),
+                  onPressed: () => _showAddAdminDialog(context, ref),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Add Sales Admin'),
                   style: ElevatedButton.styleFrom(
@@ -137,10 +138,38 @@ class AdminsDataView extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          if (isSuperAdmin && role != 'super_admin') ...[
-                            const SizedBox(width: 8),
+                          if (isSuperAdmin) ...[
                             IconButton(
-                              onPressed: () => _deleteAdmin(context, id, name),
+                              onPressed: () async {
+                                try {
+                                  await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Password reset email sent to $email.'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Failed to send reset email: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.lock_reset, color: Color(0xFF2563EB), size: 20),
+                              tooltip: 'Send Password Reset Email',
+                            ),
+                          ],
+                          if (isSuperAdmin && role != 'super_admin') ...[
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _deleteAdmin(context, ref, id, name),
                               icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                               tooltip: 'Remove Admin',
                             ),
@@ -160,7 +189,7 @@ class AdminsDataView extends ConsumerWidget {
     );
   }
 
-  Future<void> _showAddAdminDialog(BuildContext context) async {
+  Future<void> _showAddAdminDialog(BuildContext context, WidgetRef ref) async {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
@@ -187,6 +216,7 @@ class AdminsDataView extends ConsumerWidget {
               const SizedBox(height: 16),
               TextField(
                 controller: emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   labelText: 'Email',
                   hintText: 'admin@example.com',
@@ -231,7 +261,11 @@ class AdminsDataView extends ConsumerWidget {
             ),
             ElevatedButton(
               onPressed: isCreating ? null : () async {
-                if (nameController.text.isEmpty || emailController.text.isEmpty || passwordController.text.isEmpty) {
+                final name = nameController.text.trim();
+                final email = emailController.text.trim().toLowerCase();
+                final password = passwordController.text.trim();
+
+                if (name.isEmpty || email.isEmpty || password.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please fill all fields')),
                   );
@@ -241,41 +275,107 @@ class AdminsDataView extends ConsumerWidget {
                 setState(() => isCreating = true);
 
                 try {
-                  // 1. Create the Firebase Auth account using a secondary app instance
-                  // This prevents the current super admin from being logged out
-                  final secondaryApp = await Firebase.initializeApp(
-                    name: 'AdminCreationApp',
-                    options: Firebase.app().options,
-                  );
-                  
-                  final tempAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-                  
-                  await tempAuth.createUserWithEmailAndPassword(
-                    email: emailController.text.trim().toLowerCase(),
-                    password: passwordController.text.trim(),
-                  );
-                  
-                  await secondaryApp.delete();
+                  // 1. Check if admin already exists in the Firestore 'admin' collection
+                  final existingAdminDoc = await FirebaseFirestore.instance
+                      .collection('admin')
+                      .where('email', isEqualTo: email)
+                      .limit(1)
+                      .get();
 
-                  // 2. Add to Firestore whitelist
+                  if (existingAdminDoc.docs.isNotEmpty) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('An admin account with this email already exists in Admin Management.'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+
+                  // 2. Attempt Firebase Auth user creation using a secondary FirebaseApp instance
+                  // This prevents the current super admin from being logged out
+                  FirebaseApp? secondaryApp;
+                  String? createdUid;
+                  bool isExistingAuthUser = false;
+
+                  try {
+                    try {
+                      secondaryApp = Firebase.app('AdminCreationApp');
+                    } catch (_) {
+                      secondaryApp = await Firebase.initializeApp(
+                        name: 'AdminCreationApp',
+                        options: Firebase.app().options,
+                      );
+                    }
+
+                    final tempAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+                    try {
+                      final userCred = await tempAuth.createUserWithEmailAndPassword(
+                        email: email,
+                        password: password,
+                      );
+                      createdUid = userCred.user?.uid;
+                    } on FirebaseAuthException catch (authErr) {
+                      if (authErr.code == 'email-already-in-use') {
+                        isExistingAuthUser = true;
+                        debugPrint('Auth account already exists for $email, proceeding to add admin document.');
+                      } else {
+                        rethrow;
+                      }
+                    }
+                  } finally {
+                    await secondaryApp?.delete();
+                  }
+
+                  // 3. Add to Firestore admin collection
                   final countSnapshot = await FirebaseFirestore.instance.collection('admin').count().get();
                   final count = countSnapshot.count ?? 0;
                   final adminId = 'ADM${(count + 1).toString().padLeft(3, '0')}';
 
-                  await FirebaseFirestore.instance.collection('admin').add({
-                    'name': nameController.text.trim(),
-                    'email': emailController.text.toLowerCase().trim(),
+                  final newAdminData = <String, dynamic>{
+                    'name': name,
+                    'email': email,
                     'role': selectedRole,
                     'level': selectedRole == 'super_admin' ? 'administrator' : 'staff',
                     'admin_id': adminId,
                     'createdAt': FieldValue.serverTimestamp(),
-                  });
-                  
-                  if (context.mounted) Navigator.pop(context);
+                  };
+                  if (createdUid != null) {
+                    newAdminData['uid'] = createdUid;
+                  }
+
+                  await FirebaseFirestore.instance.collection('admin').add(newAdminData);
+
+                  // Invalidate non-stream cached admins provider
+                  ref.invalidate(adminsListProvider);
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    final successMessage = isExistingAuthUser
+                        ? 'Admin added! (Note: Email already existed in Firebase Auth — existing password preserved. Click "Forgot Password" to reset if needed.)'
+                        : 'Admin account added successfully!';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(successMessage),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 6),
+                      ),
+                    );
+                  }
                 } catch (e) {
                   if (context.mounted) {
+                    String errorMsg = 'Failed to create admin account: $e';
+                    if (e is FirebaseAuthException) {
+                      if (e.code == 'weak-password') {
+                        errorMsg = 'The password provided is too weak.';
+                      } else if (e.code == 'invalid-email') {
+                        errorMsg = 'The email address is invalid.';
+                      }
+                    }
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                      SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
                     );
                   }
                 } finally {
@@ -295,7 +395,7 @@ class AdminsDataView extends ConsumerWidget {
     );
   }
 
-  Future<void> _deleteAdmin(BuildContext context, String id, String name) async {
+  Future<void> _deleteAdmin(BuildContext context, WidgetRef ref, String id, String name) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -314,6 +414,7 @@ class AdminsDataView extends ConsumerWidget {
 
     if (confirm == true) {
       await FirebaseFirestore.instance.collection('admin').doc(id).delete();
+      ref.invalidate(adminsListProvider);
     }
   }
 }

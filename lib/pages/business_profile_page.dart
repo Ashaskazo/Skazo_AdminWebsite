@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
@@ -12,7 +13,8 @@ class BusinessProfilePage extends ConsumerStatefulWidget {
   const BusinessProfilePage({super.key, required this.businessData});
 
   @override
-  ConsumerState<BusinessProfilePage> createState() => _BusinessProfilePageState();
+  ConsumerState<BusinessProfilePage> createState() =>
+      _BusinessProfilePageState();
 }
 
 class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
@@ -36,8 +38,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   late TextEditingController _fcmTokenController;
   late TextEditingController _totalAmountController;
   late TextEditingController _transactionIdController;
-late TextEditingController _paymentPlanController;
-late TextEditingController _paymentCountController;
+  late TextEditingController _paymentPlanController;
+  late TextEditingController _paymentCountController;
 
   // Status variables
   late bool _isVerified;
@@ -54,43 +56,84 @@ late TextEditingController _paymentCountController;
     final data = widget.businessData;
     _nameController = TextEditingController(text: data['businessname'] ?? '');
     _bioController = TextEditingController(text: data['businessbio'] ?? '');
-    _addressController = TextEditingController(text: data['businessaddress'] ?? '');
+    _addressController = TextEditingController(
+      text: data['businessaddress'] ?? '',
+    );
     _firstNameController = TextEditingController(text: data['firstname'] ?? '');
     _lastNameController = TextEditingController(text: data['lastname'] ?? '');
-    _phoneController = TextEditingController(text: data['phone']?.toString() ?? '');
+    _phoneController = TextEditingController(
+      text: data['phone']?.toString() ?? '',
+    );
     _emailController = TextEditingController(text: data['email'] ?? '');
-    _planController = TextEditingController(text: data['AtivePlan']?.toString() ?? '0');
-    _priorityController = TextEditingController(text: data['priority']?.toString() ?? '0');
+    _planController = TextEditingController(
+      text: data['AtivePlan']?.toString() ?? '0',
+    );
+    _priorityController = TextEditingController(
+      text: data['priority']?.toString() ?? '0',
+    );
     _genderController = TextEditingController(text: data['gender'] ?? '');
     _usernameController = TextEditingController(text: data['username'] ?? '');
-    _ownerPaidController = TextEditingController(text: data['ownerPropertyPaid']?.toString() ?? '0');
-    _userPaidController = TextEditingController(text: data['userPropertyPaid']?.toString() ?? '0');
+    _ownerPaidController = TextEditingController(
+      text: data['ownerPropertyPaid']?.toString() ?? '0',
+    );
+    _userPaidController = TextEditingController(
+      text: data['userPropertyPaid']?.toString() ?? '0',
+    );
     _fcmTokenController = TextEditingController(text: data['fcmtoken'] ?? '');
-    _totalAmountController = TextEditingController(text: data['totalAmount']?.toString() ?? '0');
-    _transactionIdController =
-    TextEditingController(text: data['transactionId'] ?? '');
+    _totalAmountController = TextEditingController(
+      text: data['totalAmount']?.toString() ?? '0',
+    );
+    _transactionIdController = TextEditingController(
+      text: data['transactionId'] ?? '',
+    );
 
-_paymentPlanController =
-    TextEditingController(text: data['paymentPlanDuration'] ?? '');
+    _paymentPlanController = TextEditingController(
+      text: data['paymentPlanDuration'] ?? '',
+    );
 
-_paymentCountController =
-    TextEditingController(
-        text: data['paymentCount']?.toString() ?? '0');
+    _paymentCountController = TextEditingController(
+      text: data['paymentCount']?.toString() ?? '0',
+    );
 
-    _isVerified = data['isverified'] == true || data['isverified'] == 1 || data['isverified'] == 'true';
-    _isActive = data['isactive'] == true || data['isactive'] == 1 || data['isactive'] == 'true';
-    _isOnline = data['isonline'] == true || data['isonline'] == 1 || data['isonline'] == 'true';
-    _profileComplete = data['profileComplete'] == true || data['profileComplete'] == 1 || data['profileComplete'] == 'true';
-    _categoryBoostEnabled = data['categoryBoostEnabled'] == true || data['categoryBoostEnabled'] == 1 || data['categoryBoostEnabled'] == 'true';
-    _paymentLinkSend = data['paymentLinkSend'] == true || data['paymentLinkSend'] == 1 || data['paymentLinkSend'] == 'true';
+    _isVerified =
+        data['isverified'] == true ||
+        data['isverified'] == 1 ||
+        data['isverified'] == 'true';
+    _isActive =
+        data['isactive'] == true ||
+        data['isactive'] == 1 ||
+        data['isactive'] == 'true';
+    _isOnline =
+        data['isonline'] == true ||
+        data['isonline'] == 1 ||
+        data['isonline'] == 'true';
+    _profileComplete =
+        data['profileComplete'] == true ||
+        data['profileComplete'] == 1 ||
+        data['profileComplete'] == 'true';
+    _categoryBoostEnabled =
+        data['categoryBoostEnabled'] == true ||
+        data['categoryBoostEnabled'] == 1 ||
+        data['categoryBoostEnabled'] == 'true';
+    _paymentLinkSend =
+        data['paymentLinkSend'] == true ||
+        data['paymentLinkSend'] == 1 ||
+        data['paymentLinkSend'] == 'true';
 
     if (data.containsKey('isuser') && data['isuser'] != null) {
-      _isUser = data['isuser'] == true || data['isuser'] == 1 || data['isuser'] == 'true' || data['isuser'] == '1';
+      _isUser =
+          data['isuser'] == true ||
+          data['isuser'] == 1 ||
+          data['isuser'] == 'true' ||
+          data['isuser'] == '1';
     } else {
       final bName = data['businessname']?.toString().trim() ?? '';
       final bPic = data['businesspic']?.toString().trim() ?? '';
       final cat = data['category'];
-      final looksLikeProvider = bName.isNotEmpty || bPic.isNotEmpty || (cat != null && cat.toString().isNotEmpty);
+      final looksLikeProvider =
+          bName.isNotEmpty ||
+          bPic.isNotEmpty ||
+          (cat != null && cat.toString().isNotEmpty);
       _isUser = !looksLikeProvider;
     }
   }
@@ -123,19 +166,24 @@ _paymentCountController =
     setState(() => _isLoading = true);
 
     try {
-      final docId = (widget.businessData['id'] ?? widget.businessData['uid'] ?? widget.businessData['docId'])?.toString().trim();
+      final docId =
+          (widget.businessData['id'] ??
+                  widget.businessData['uid'] ??
+                  widget.businessData['docId'])
+              ?.toString()
+              .trim();
       if (docId == null || docId.isEmpty) {
         throw 'Document ID is missing. Cannot update profile in Firebase.';
       }
 
       final adminProfile = ref.read(currentAdminProfileProvider).value;
-      final senderId = adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
+      final senderId =
+          adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
       final senderName = adminProfile?['name'] ?? 'Unknown';
 
       final phoneText = _phoneController.text.trim();
-      final dynamic phoneValue = phoneText.isEmpty
-          ? null
-          : (int.tryParse(phoneText) ?? phoneText);
+      final dynamic phoneValue =
+          phoneText.isEmpty ? null : (int.tryParse(phoneText) ?? phoneText);
 
       final planVal = int.tryParse(_planController.text.trim()) ?? 0;
 
@@ -151,7 +199,8 @@ _paymentCountController =
         'priority': int.tryParse(_priorityController.text.trim()) ?? 0,
         'gender': _genderController.text.trim(),
         'username': _usernameController.text.trim(),
-        'ownerPropertyPaid': int.tryParse(_ownerPaidController.text.trim()) ?? 0,
+        'ownerPropertyPaid':
+            int.tryParse(_ownerPaidController.text.trim()) ?? 0,
         'userPropertyPaid': int.tryParse(_userPaidController.text.trim()) ?? 0,
         'fcmtoken': _fcmTokenController.text.trim(),
         'isverified': _isVerified,
@@ -180,15 +229,29 @@ _paymentCountController =
         updatedData['paymentLinkSentAt'] = FieldValue.serverTimestamp();
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(docId).set(updatedData, SetOptions(merge: true));
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(docId)
+          .set(updatedData, SetOptions(merge: true));
+      await ref.read(userPaginationProvider.notifier).refresh();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated successfully'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating profile: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating profile: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -199,18 +262,34 @@ _paymentCountController =
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
-      labelStyle: GoogleFonts.poppins(color: const Color(0xFF64748B), fontSize: 13),
+      labelStyle: GoogleFonts.poppins(
+        color: const Color(0xFF64748B),
+        fontSize: 13,
+      ),
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 2),
+      ),
     );
   }
 
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(top: 32, bottom: 16),
-      child: Text(title, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+      child: Text(
+        title,
+        style: GoogleFonts.poppins(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
     );
   }
 
@@ -219,7 +298,10 @@ _paymentCountController =
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: const Color(0xFFF1F5F9).withValues(alpha: 0.5), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9).withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
             Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
@@ -227,8 +309,22 @@ _paymentCountController =
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: GoogleFonts.poppins(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w500)),
-                Text(value, style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF0F172A), fontWeight: FontWeight.w600)),
+                Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: const Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ],
@@ -254,11 +350,20 @@ _paymentCountController =
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text('User Profile Editor', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF0F172A))),
+        title: Text(
+          'User Profile Editor',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF0F172A),
+          ),
+        ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [
           if (_isLoading)
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
           else
             Padding(
               padding: const EdgeInsets.only(right: 12),
@@ -270,7 +375,9 @@ _paymentCountController =
                   backgroundColor: const Color(0xFF2563EB),
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
               ),
@@ -288,14 +395,23 @@ _paymentCountController =
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [const Color(0xFF2563EB), const Color(0xFF1E40AF)]),
+                  gradient: LinearGradient(
+                    colors: [const Color(0xFF2563EB), const Color(0xFF1E40AF)],
+                  ),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 4)),
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 4,
+                        ),
+                      ),
                       child: ClipOval(
                         child: CachedNetworkImage(
                           imageUrl: data['businesspic'] ?? '',
@@ -303,7 +419,12 @@ _paymentCountController =
                           memCacheWidth: 240,
                           memCacheHeight: 240,
                           maxWidthDiskCache: 480,
-                          errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.white, size: 40),
+                          errorWidget:
+                              (context, url, error) => const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 40,
+                              ),
                         ),
                       ),
                     ),
@@ -312,13 +433,41 @@ _paymentCountController =
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(data['businessname'] ?? 'No Name', style: GoogleFonts.poppins(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
-                          Text(data['uid'] ?? 'No UID', style: GoogleFonts.poppins(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                          Text(
+                            data['businessname'] ?? 'No Name',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            data['uid'] ?? 'No UID',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
-                            child: Text(data['isverified'] == true ? 'Verified' : 'Unverified', style: GoogleFonts.poppins(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              data['isverified'] == true
+                                  ? 'Verified'
+                                  : 'Unverified',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -328,167 +477,385 @@ _paymentCountController =
               ),
 
               _buildSectionHeader('Business Information'),
-              TextFormField(controller: _nameController, decoration: _buildInputDecoration('Business Name', Icons.business_rounded)),
+              TextFormField(
+                controller: _nameController,
+                decoration: _buildInputDecoration(
+                  'Business Name',
+                  Icons.business_rounded,
+                ),
+              ),
               const SizedBox(height: 16),
-              TextFormField(controller: _bioController, maxLines: 2, decoration: _buildInputDecoration('Business Bio', Icons.description_rounded)),
+              TextFormField(
+                controller: _bioController,
+                maxLines: 2,
+                decoration: _buildInputDecoration(
+                  'Business Bio',
+                  Icons.description_rounded,
+                ),
+              ),
               const SizedBox(height: 16),
-              TextFormField(controller: _addressController, maxLines: 2, decoration: _buildInputDecoration('Business Address', Icons.location_on_rounded)),
-              
+              TextFormField(
+                controller: _addressController,
+                maxLines: 2,
+                decoration: _buildInputDecoration(
+                  'Business Address',
+                  Icons.location_on_rounded,
+                ),
+              ),
+
               _buildSectionHeader('Personal Information'),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _firstNameController, decoration: _buildInputDecoration('First Name', Icons.person_outline))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _firstNameController,
+                      decoration: _buildInputDecoration(
+                        'First Name',
+                        Icons.person_outline,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: TextFormField(controller: _lastNameController, decoration: _buildInputDecoration('Last Name', Icons.person_outline))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _lastNameController,
+                      decoration: _buildInputDecoration(
+                        'Last Name',
+                        Icons.person_outline,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _usernameController, decoration: _buildInputDecoration('Username', Icons.alternate_email_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _usernameController,
+                      decoration: _buildInputDecoration(
+                        'Username',
+                        Icons.alternate_email_rounded,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: TextFormField(controller: _genderController, decoration: _buildInputDecoration('Gender', Icons.wc_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _genderController,
+                      decoration: _buildInputDecoration(
+                        'Gender',
+                        Icons.wc_rounded,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
-              TextFormField(controller: _phoneController, keyboardType: TextInputType.phone, decoration: _buildInputDecoration('Phone Number', Icons.phone_android_rounded)),
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: _buildInputDecoration(
+                  'Phone Number',
+                  Icons.phone_android_rounded,
+                ),
+              ),
               const SizedBox(height: 16),
-              TextFormField(controller: _emailController, keyboardType: TextInputType.emailAddress, decoration: _buildInputDecoration('Email', Icons.email_rounded)),
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: _buildInputDecoration('Email', Icons.email_rounded),
+              ),
 
               _buildSectionHeader('Service Details'),
               // Category (Read only list for now)
-              _buildReadOnlyField('Categories', (data['category'] is List) ? (data['category'] as List).join(', ') : (data['category']?.toString() ?? 'None'), Icons.category_rounded),
-              _buildReadOnlyField('Service Rate Card', (data['ServiceRateCard'] is List) ? (data['ServiceRateCard'] as List).map((e) => "${e['service']}: ₹${e['rate']}").join('\n') : 'None', Icons.payments_rounded),
+              _buildReadOnlyField(
+                'Categories',
+                (data['category'] is List)
+                    ? (data['category'] as List).join(', ')
+                    : (data['category']?.toString() ?? 'None'),
+                Icons.category_rounded,
+              ),
+              _buildReadOnlyField(
+                'Service Rate Card',
+                (data['ServiceRateCard'] is List)
+                    ? (data['ServiceRateCard'] as List)
+                        .map((e) => "${e['service']}: ₹${e['rate']}")
+                        .join('\n')
+                    : 'None',
+                Icons.payments_rounded,
+              ),
 
               _buildSectionHeader('Account & Subscription'),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _planController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Active Plan', Icons.card_membership_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _planController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Active Plan',
+                        Icons.card_membership_rounded,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: TextFormField(controller: _priorityController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Priority', Icons.low_priority_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _priorityController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Priority',
+                        Icons.low_priority_rounded,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _ownerPaidController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Owner Paid', Icons.monetization_on_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _ownerPaidController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Owner Paid',
+                        Icons.monetization_on_rounded,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 16),
-                  Expanded(child: TextFormField(controller: _userPaidController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('User Paid', Icons.account_balance_wallet_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _userPaidController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'User Paid',
+                        Icons.account_balance_wallet_rounded,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: TextFormField(controller: _totalAmountController, keyboardType: TextInputType.number, decoration: _buildInputDecoration('Total Amount Paid (₹)', Icons.payments_rounded))),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _totalAmountController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Total Amount Paid (₹)',
+                        Icons.payments_rounded,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 16),
                   const Expanded(child: SizedBox.shrink()),
                 ],
               ),
               const SizedBox(height: 24),
               Wrap(
-                spacing: 12, runSpacing: 12,
+                spacing: 12,
+                runSpacing: 12,
                 children: [
-                  _buildToggle('Verified', _isVerified, (v) => setState(() => _isVerified = v)),
-                  _buildToggle('Active', _isActive, (v) => setState(() => _isActive = v)),
-                  _buildToggle('Online', _isOnline, (v) => setState(() => _isOnline = v)),
-                  _buildToggle('Is User', _isUser, (v) => setState(() => _isUser = v)),
-                  _buildToggle('Profile Complete', _profileComplete, (v) => setState(() => _profileComplete = v)),
-                  _buildToggle('Category Boost', _categoryBoostEnabled, (v) => setState(() => _categoryBoostEnabled = v)),
-                  _buildToggle('Payment Link Sent', _paymentLinkSend, (v) => setState(() => _paymentLinkSend = v)),
+                  _buildToggle(
+                    'Verified',
+                    _isVerified,
+                    (v) => setState(() => _isVerified = v),
+                  ),
+                  _buildToggle(
+                    'Active',
+                    _isActive,
+                    (v) => setState(() => _isActive = v),
+                  ),
+                  _buildToggle(
+                    'Online',
+                    _isOnline,
+                    (v) => setState(() => _isOnline = v),
+                  ),
+                  _buildToggle(
+                    'Is User',
+                    _isUser,
+                    (v) => setState(() => _isUser = v),
+                  ),
+                  _buildToggle(
+                    'Profile Complete',
+                    _profileComplete,
+                    (v) => setState(() => _profileComplete = v),
+                  ),
+                  _buildToggle(
+                    'Category Boost',
+                    _categoryBoostEnabled,
+                    (v) => setState(() => _categoryBoostEnabled = v),
+                  ),
+                  _buildToggle(
+                    'Payment Link Sent',
+                    _paymentLinkSend,
+                    (v) => setState(() => _paymentLinkSend = v),
+                  ),
                 ],
               ),
 
-_buildSectionHeader('Service Rate Card'),
+              _buildSectionHeader('Service Rate Card'),
 
-...(data['ServiceRateCard'] as List? ?? []).map((item) {
-  return Card(
-    child: ListTile(
-      leading: const Icon(Icons.miscellaneous_services),
-      title: Text(item['service'] ?? ''),
-      trailing: Text("₹${item['rate']}"),
-    ),
-  );
-}),
-_buildSectionHeader('Payment Information'),
+              ...(data['ServiceRateCard'] as List? ?? []).map((item) {
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.miscellaneous_services),
+                    title: Text(item['service'] ?? ''),
+                    trailing: Text("₹${item['rate']}"),
+                  ),
+                );
+              }),
+              _buildSectionHeader('Payment Information'),
 
-TextFormField(
-  controller: _transactionIdController,
-  decoration: _buildInputDecoration(
-    'Transaction ID',
-    Icons.receipt_long_rounded,
-  ),
-),
+              TextFormField(
+                controller: _transactionIdController,
+                decoration: _buildInputDecoration(
+                  'Transaction ID',
+                  Icons.receipt_long_rounded,
+                ),
+              ),
 
-const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-TextFormField(
-  controller: _paymentPlanController,
-  decoration: _buildInputDecoration(
-    'Payment Plan',
-    Icons.workspace_premium_rounded,
-  ),
-),
+              TextFormField(
+                controller: _paymentPlanController,
+                decoration: _buildInputDecoration(
+                  'Payment Plan',
+                  Icons.workspace_premium_rounded,
+                ),
+              ),
 
-const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-Row(
-  children: [
-    Expanded(
-      child: TextFormField(
-        controller: _paymentCountController,
-        keyboardType: TextInputType.number,
-        decoration: _buildInputDecoration(
-          'Payment Count',
-          Icons.payments_rounded,
-        ),
-      ),
-    ),
-    const SizedBox(width: 16),
-    Expanded(
-      child: TextFormField(
-        controller: _totalAmountController,
-        keyboardType: TextInputType.number,
-        decoration: _buildInputDecoration(
-          'Total Amount',
-          Icons.currency_rupee,
-        ),
-      ),
-    ),
-  ],
-),
-
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _paymentCountController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Payment Count',
+                        Icons.payments_rounded,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _totalAmountController,
+                      keyboardType: TextInputType.number,
+                      decoration: _buildInputDecoration(
+                        'Total Amount',
+                        Icons.currency_rupee,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
 
               _buildSectionHeader('Usage Statistics'),
               Row(
                 children: [
-                  Expanded(child: _buildReadOnlyField('Total Calls', data['totalCallLogs']?.toString() ?? '0', Icons.call_rounded)),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      'Total Calls',
+                      data['totalCallLogs']?.toString() ?? '0',
+                      Icons.call_rounded,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _buildReadOnlyField('Today Calls', data['todayCallLogs']?.toString() ?? '0', Icons.today_rounded)),
-                    const SizedBox(width: 12),
-                  Expanded(child: _buildReadOnlyField('Calls after Payment', data['callsAfterLastPayment']?.toString() ?? '0', Icons.phone_callback_rounded)),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      'Today Calls',
+                      data['todayCallLogs']?.toString() ?? '0',
+                      Icons.today_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      'Calls after Payment',
+                      data['callsAfterLastPayment']?.toString() ?? '0',
+                      Icons.phone_callback_rounded,
+                    ),
+                  ),
                 ],
               ),
               Row(
                 children: [
-                  Expanded(child: _buildReadOnlyField('Avg Rating', data['avgRating']?.toString() ?? '0.0', Icons.star_rounded)),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      'Avg Rating',
+                      data['avgRating']?.toString() ?? '0.0',
+                      Icons.star_rounded,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _buildReadOnlyField('Total Ratings', data['totalRatings']?.toString() ?? '0', Icons.reviews_rounded)),
+                  Expanded(
+                    child: _buildReadOnlyField(
+                      'Total Ratings',
+                      data['totalRatings']?.toString() ?? '0',
+                      Icons.reviews_rounded,
+                    ),
+                  ),
                 ],
               ),
-              _buildReadOnlyField('Total Calls Generated', data['totalCallsGenerated']?.toString() ?? '0', Icons.trending_up_rounded),
+              _buildReadOnlyField(
+                'Total Calls Generated',
+                data['totalCallsGenerated']?.toString() ?? '0',
+                Icons.trending_up_rounded,
+              ),
 
               _buildSectionHeader('Activity Timestamps'),
-              _buildReadOnlyField('Verified At', _formatTimestamp(data['verifiedAt']), Icons.verified_user_rounded),
-              _buildReadOnlyField('Last Call At', _formatTimestamp(data['lastCallAt']), Icons.history_rounded),
-              _buildReadOnlyField('Last Payment At', _formatTimestamp(data['lastPaymentAt']), Icons.payment_rounded),
-              _buildReadOnlyField('Category Boost Updated', _formatTimestamp(data['categoryBoostUpdatedAt']), Icons.auto_awesome_rounded),
+              _buildReadOnlyField(
+                'Verified At',
+                _formatTimestamp(data['verifiedAt']),
+                Icons.verified_user_rounded,
+              ),
+              _buildReadOnlyField(
+                'Last Call At',
+                _formatTimestamp(data['lastCallAt']),
+                Icons.history_rounded,
+              ),
+              _buildReadOnlyField(
+                'Last Payment At',
+                _formatTimestamp(data['lastPaymentAt']),
+                Icons.payment_rounded,
+              ),
+              _buildReadOnlyField(
+                'Category Boost Updated',
+                _formatTimestamp(data['categoryBoostUpdatedAt']),
+                Icons.auto_awesome_rounded,
+              ),
 
               _buildSectionHeader('Technical Metadata'),
-              TextFormField(controller: _fcmTokenController, decoration: _buildInputDecoration('FCM Token', Icons.key_rounded)),
+              TextFormField(
+                controller: _fcmTokenController,
+                decoration: _buildInputDecoration(
+                  'FCM Token',
+                  Icons.key_rounded,
+                ),
+              ),
               const SizedBox(height: 16),
-              _buildReadOnlyField('Location (Geopoint)', data['location']?['geopoint']?.toString() ?? 'N/A', Icons.map_rounded),
-              _buildReadOnlyField('Coordinates', "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}", Icons.gps_fixed_rounded),
-              _buildReadOnlyField('Geohash 5/7', "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}", Icons.language_rounded),
+              _buildReadOnlyField(
+                'Location (Geopoint)',
+                data['location']?['geopoint']?.toString() ?? 'N/A',
+                Icons.map_rounded,
+              ),
+              _buildReadOnlyField(
+                'Coordinates',
+                "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}",
+                Icons.gps_fixed_rounded,
+              ),
+              _buildReadOnlyField(
+                'Geohash 5/7',
+                "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
+                Icons.language_rounded,
+              ),
             ],
           ),
         ),
@@ -503,7 +870,10 @@ Row(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: value ? const Color(0xFF2563EB).withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.1),
+          color:
+              value
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.2)
+                  : Colors.grey.withValues(alpha: 0.1),
         ),
       ),
       child: Row(
@@ -511,7 +881,11 @@ Row(
         children: [
           Text(
             label,
-            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: const Color(0xFF0F172A)),
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF0F172A),
+            ),
           ),
           Transform.scale(
             scale: 0.8,

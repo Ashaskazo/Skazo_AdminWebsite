@@ -94,7 +94,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       setState(() => _isLoading = true);
       try {
         final email = _emailController.text.trim().toLowerCase();
-        final password = _passwordController.text;
+        final password = _passwordController.text.trim();
 
         final userCredential = await FirebaseAuth.instance
             .signInWithEmailAndPassword(email: email, password: password);
@@ -114,14 +114,45 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim().toLowerCase();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your email address to reset password.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Password reset email sent to $email. Please check your inbox/spam folder.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e is FirebaseAuthException ? (e.message ?? e.code) : e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   String _getErrorMessage(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
         return 'No user found with this email.';
       case 'wrong-password':
-        return 'Wrong password provided.';
+        return 'Wrong password provided. Try clicking "Forgot Password?" below.';
       case 'invalid-credential':
-        return 'Invalid credentials. Please check your email and password.';
+        return 'Invalid credentials. Please check your email and password or reset your password.';
       case 'email-already-in-use':
         return 'An account already exists with this email.';
       case 'invalid-email':
@@ -230,7 +261,22 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                                         : null,
                             enabled: !isProcessing,
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: isProcessing ? null : _resetPassword,
+                              child: Text(
+                                'Forgot Password?',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  color: const Color(0xFF2563EB),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
                             height: 54,

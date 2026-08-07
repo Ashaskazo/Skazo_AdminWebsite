@@ -56,9 +56,15 @@ final isSuperAdminProvider = Provider<bool>((ref) {
   final profile = ref.watch(currentAdminProfileProvider).value;
   if (profile == null) return false;
   
-  // Support both 'role' (new) and 'level' (existing) fields
-  final role = profile['role'] ?? profile['level'];
-  return role == 'super_admin';
+  final role = (profile['role'] ?? '').toString().toLowerCase().trim();
+  final level = (profile['level'] ?? '').toString().toLowerCase().trim();
+  
+  // If role is 'admin' or level is 'staff', the user is not a super admin
+  if (role == 'admin' || role == 'staff' || level == 'staff') {
+    return false;
+  }
+  
+  return role == 'super_admin' || level == 'administrator';
 });
 
 /// StreamProvider to fetch admins collection list (cached to prevent duplicate listeners on rebuild)
