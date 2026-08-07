@@ -28,44 +28,95 @@ final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, emai
 });
 
 /// Provider to get the current admin profile data
-final currentAdminProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null || user.email == null) return null;
+// final currentAdminProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+//   final user = FirebaseAuth.instance.currentUser;
+//   if (user == null || user.email == null) return null;
 
-  try {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('admin')
-        .where('email', isEqualTo: user.email!.toLowerCase().trim())
-        .limit(1)
-        .get();
+//   try {
+//     final snapshot = await FirebaseFirestore.instance
+//         .collection('admin')
+//         .where('email', isEqualTo: user.email!.toLowerCase().trim())
+//         .limit(1)
+//         .get();
 
-    if (snapshot.docs.isNotEmpty) {
-      return {
-        'id': snapshot.docs.first.id,
-        ...snapshot.docs.first.data(),
-      };
-    }
-  } catch (e) {
-    debugPrint('Error fetching admin profile: $e');
+//     if (snapshot.docs.isNotEmpty) {
+//       return {
+//         'id': snapshot.docs.first.id,
+//         ...snapshot.docs.first.data(),
+//       };
+//     }
+//   } catch (e) {
+//     debugPrint('Error fetching admin profile: $e');
+//   }
+//   return null;
+// });
+
+final currentAdminProfileProvider =
+    FutureProvider<Map<String, dynamic>?>((ref) async {
+  final user = ref.watch(authStateProvider).value;
+
+  if (user == null || user.email == null) {
+    return null;
   }
-  return null;
+
+  final snapshot = await FirebaseFirestore.instance
+      .collection('admin')
+      .where('email', isEqualTo: user.email!.toLowerCase().trim())
+      .limit(1)
+      .get();
+
+  if (snapshot.docs.isEmpty) return null;
+
+  return {
+    'id': snapshot.docs.first.id,
+    ...snapshot.docs.first.data(),
+  };
 });
+final isSuperAdminProvider = Provider<bool>((ref) {
+  final profileAsync = ref.watch(currentAdminProfileProvider);
+
+  return profileAsync.when(
+    data: (profile) {
+      if (profile == null) return false;
+
+      final level = (profile['level'] ?? '')
+          .toString()
+          .toLowerCase()
+          .trim();
+
+      return level == 'super_admin';
+    },
+    loading: () => false,
+    error: (_, __) => false,
+  );
+});
+// final isSuperAdminProvider = Provider<bool>((ref) {
+//   final profile = ref.watch(currentAdminProfileProvider).value;
+//   if (profile == null) return false;
+
+//   final level = (profile['level'] ?? '')
+//       .toString()
+//       .toLowerCase()
+//       .trim();
+
+//   return level == 'super_admin';
+// });
 
 /// Provider to check if current user is a super admin
-final isSuperAdminProvider = Provider<bool>((ref) {
-  final profile = ref.watch(currentAdminProfileProvider).value;
-  if (profile == null) return false;
+// final isSuperAdminProvider = Provider<bool>((ref) {
+//   final profile = ref.watch(currentAdminProfileProvider).value;
+//   if (profile == null) return false;
   
-  final role = (profile['role'] ?? '').toString().toLowerCase().trim();
-  final level = (profile['level'] ?? '').toString().toLowerCase().trim();
+//   final role = (profile['role'] ?? '').toString().toLowerCase().trim();
+//   final level = (profile['level'] ?? '').toString().toLowerCase().trim();
   
-  // If role is 'admin' or level is 'staff', the user is not a super admin
-  if (role == 'admin' || role == 'staff' || level == 'staff') {
-    return false;
-  }
+//   // If role is 'admin' or level is 'staff', the user is not a super admin
+//   if (role == 'admin' || role == 'staff' || level == 'staff') {
+//     return false;
+//   }
   
-  return role == 'super_admin' || level == 'administrator';
-});
+//   return role == 'super_admin' || level == 'administrator';
+// });
 
 /// StreamProvider to fetch admins collection list (cached to prevent duplicate listeners on rebuild)
 final adminsStreamProvider = StreamProvider<QuerySnapshot>((ref) {
@@ -103,6 +154,7 @@ class AdminAuthNotifier extends StateNotifier<bool> {
       ref.invalidate(categoryCountsProvider);
       ref.invalidate(adminsStreamProvider);
       ref.invalidate(paginatedLocalPromotionsProvider);
+      ref.invalidate(adminsStreamProvider);
       // ref.invalidate(paginatedRentalPropertiesProvider);
     } catch (e) {
       debugPrint('Error signing out: $e');
