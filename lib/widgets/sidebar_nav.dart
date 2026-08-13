@@ -9,6 +9,9 @@ class SidebarNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+       print("************************************************************************");
+                print('Current Admin Profile: ${ref.watch(currentAdminProfileProvider).value}');
+print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
     final currentView = ref.watch(currentDashboardViewProvider);
     final isCollapsed = ref.watch(sidebarCollapsedProvider);
 
@@ -258,6 +261,7 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
                 ),
+             
 
                 if (ref.watch(isSuperAdminProvider)) ...[
                   const SizedBox(height: 16),
