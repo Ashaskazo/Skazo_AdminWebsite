@@ -723,15 +723,60 @@ class _UserListTileState extends State<_UserListTile>
               Flexible(
                 child: Text(
                   user.displayName,
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
               if (user.isverified) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
                 const Icon(
                   Icons.verified_rounded,
-                  color: Color(0xFF2563EB),
-                  size: 16,
+                  color: Color(0xFF10B981),
+                  size: 17,
+                ),
+              ],
+              if (user.StarServiceprovider == 'true' ||
+                  user.rawData['StarServiceprovider'] == 'true') ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Colors.white,
+                        size: 11,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        'STAR PROVIDER',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -739,47 +784,108 @@ class _UserListTileState extends State<_UserListTile>
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const SizedBox(height: 2),
               Text(
                 user.email ?? user.phone?.toString() ?? 'No Contact Info',
-                style: GoogleFonts.poppins(fontSize: 12),
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF475569),
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              const SizedBox(height: 4),
-              Row(
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
                 children: [
-                  const Icon(
-                    Icons.location_on_rounded,
-                    size: 12,
-                    color: Color(0xFF64748B),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.location_on_rounded,
+                        size: 13,
+                        color: Color(0xFF6366F1),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        getSmartCity(user.toMap()),
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    getSmartCity(user.toMap()),
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: const Color(0xFF64748B),
-                      fontWeight: FontWeight.w500,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_rounded,
+                        size: 12,
+                        color: Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatRegistrationDate(user.createdAt),
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (user.payperLeadCharge != null &&
+                      user.payperLeadCharge! > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.monetization_on_rounded,
+                            size: 12,
+                            color: Color(0xFF059669),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '₹${user.payperLeadCharge}/lead',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF059669),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(
-                    Icons.calendar_today_rounded,
-                    size: 11,
-                    color: Color(0xFF64748B),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _formatRegistrationDate(user.createdAt),
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: const Color(0xFF64748B),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
                 ],
               ),
             ],
           ),
-          trailing: const Icon(Icons.chevron_right_rounded),
+          trailing: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF6366F1),
+              size: 20,
+            ),
+          ),
         ),
       ),
     );

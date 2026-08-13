@@ -61,46 +61,68 @@ class _CategoryGridView extends ConsumerWidget {
               },
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  gradient:
+                      count > 0
+                          ? const LinearGradient(
+                            colors: [Color(0xFFFFFFFF), Color(0xFFEFF6FF)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                          : null,
+                  color: count > 0 ? null : Colors.white,
+                  borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 10,
+                      color:
+                          count > 0
+                              ? const Color(0xFF3B82F6).withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
                   ],
                   border: Border.all(
                     color:
                         count > 0
-                            ? const Color(0xFF2563EB).withValues(alpha: 0.3)
-                            : const Color(0xFFF1F5F9),
-                    width: count > 0 ? 2 : 1,
+                            ? const Color(0xFF3B82F6).withValues(alpha: 0.4)
+                            : const Color(0xFFE2E8F0),
+                    width: count > 0 ? 1.8 : 1,
                   ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      _getCategoryIcon(category),
-                      size: 32,
-                      color:
-                          count > 0
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFF94A3B8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color:
+                            count > 0
+                                ? const Color(0xFF3B82F6).withValues(alpha: 0.1)
+                                : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _getCategoryIcon(category),
+                        size: 28,
+                        color:
+                            count > 0
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFF94A3B8),
+                      ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
                         category,
                         style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          fontWeight:
+                              count > 0 ? FontWeight.w700 : FontWeight.w600,
                           color:
                               count > 0
-                                  ? const Color(0xFF1E293B)
+                                  ? const Color(0xFF0F172A)
                                   : const Color(0xFF64748B),
                         ),
                         textAlign: TextAlign.center,
@@ -111,25 +133,36 @@ class _CategoryGridView extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
+                        horizontal: 10,
+                        vertical: 3,
                       ),
                       decoration: BoxDecoration(
                         color:
                             count > 0
-                                ? const Color(0xFFEFF6FF)
-                                : const Color(0xFFF8FAFC),
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(20),
+                        boxShadow:
+                            count > 0
+                                ? [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF2563EB,
+                                    ).withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                  ),
+                                ]
+                                : null,
                       ),
                       child: Text(
-                        '$count unverified',
+                        count > 0 ? '$count PENDING 🛡️' : 'CLEAN ✨',
                         style: GoogleFonts.poppins(
                           color:
                               count > 0
-                                  ? const Color(0xFF2563EB)
+                                  ? Colors.white
                                   : const Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w500,
-                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
                         ),
                       ),
                     ),
