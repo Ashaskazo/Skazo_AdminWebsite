@@ -13,7 +13,6 @@ import 'package:skazo_admin/utils/time_filter.dart';
 import 'package:skazo_admin/widgets/sidebar_nav.dart';
 import 'package:skazo_admin/widgets/collection_data_view.dart';
 import 'package:skazo_admin/widgets/users_data_view.dart';
-// import 'package:skazo_admin/widgets/orders_data_view.dart';
 import 'package:skazo_admin/widgets/service_posts_data_view.dart';
 import 'package:skazo_admin/widgets/rental_properties_data_view.dart';
 import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
@@ -42,7 +41,12 @@ class DashboardPage extends ConsumerWidget {
               Expanded(
                 child: Container(
                   color: const Color(0xFFF8FAFC),
-                  child: _buildMainContent(currentView, ref),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    switchInCurve: Curves.easeInOut,
+                    switchOutCurve: Curves.easeInOut,
+                    child: _buildMainContent(currentView, ref),
+                  ),
                 ),
               ),
             ],
@@ -64,8 +68,6 @@ class DashboardPage extends ConsumerWidget {
         return const UsersDataView();
       case DashboardView.servicePosts:
         return const ServicePostsDataView();
-      // case DashboardView.orders:
-      //   return const OrdersDataView();
       case DashboardView.rentalProperties:
         return const RentalPropertiesDataView();
       case DashboardView.localPromotions:
@@ -73,17 +75,17 @@ class DashboardPage extends ConsumerWidget {
       case DashboardView.tickets:
         return const CollectionDataView(
           collectionName: 'tickets',
-          title: 'Support Tickets',
+          title: 'Support Tickets 🎟️',
         );
       case DashboardView.verification:
         return const CollectionDataView(
           collectionName: 'verification',
-          title: 'Verification Requests',
+          title: 'Verification Requests 🛡️',
         );
       case DashboardView.whatsappMessages:
         return const CollectionDataView(
           collectionName: 'whatsappMessages',
-          title: 'WhatsApp Logs',
+          title: 'WhatsApp Logs 💬',
         );
       case DashboardView.admin:
         final isSuperAdmin = ref.watch(isSuperAdminProvider);
@@ -91,8 +93,12 @@ class DashboardPage extends ConsumerWidget {
           return const Scaffold(
             body: Center(
               child: Text(
-                'Access Denied: Super Admin Only',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+                'Access Denied: Super Admin Only 🛑',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
             ),
           );
@@ -104,19 +110,22 @@ class DashboardPage extends ConsumerWidget {
           return const Scaffold(
             body: Center(
               child: Text(
-                'Access Denied: Super Admin Only',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red),
+                'Access Denied: Super Admin Only 🛑',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
             ),
           );
         }
         return const CollectionDataView(
           collectionName: 'app_config',
-          title: 'Application Config',
+          title: 'Application Configurations ⚙️',
         );
       case DashboardView.logs:
-        return const CallLogsDataView(
-        );
+        return const CallLogsDataView();
       case DashboardView.payments:
         return const PaymentsDataView();
     }
@@ -128,207 +137,309 @@ class _SummaryDashboard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final adminProfile = ref.watch(currentAdminProfileProvider).value;
+    final adminName = adminProfile?['name'] ?? 'Super Boss';
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(32.0),
+      padding: const EdgeInsets.fromLTRB(32, 28, 32, 48),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Admin Dashboard',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Welcome back! Here is an overview of your platform.',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
+          // Banner Welcome Header - Serene Midnight Sapphire Theme
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF1E1B4B),
+                  Color(0xFF312E81),
+                  Color(0xFF4338CA),
                 ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF312E81).withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-                child: IconButton(
-                  onPressed: () {
-                    final selectedCategory = ref.read(dashboardSelectedCategoryProvider);
-                    ref.invalidate(unverifiedPaginationProvider(selectedCategory));
-                    ref.invalidate(unverifiedPendingCountProvider);
-                    ref.invalidate(categoryCountsProvider);
-                    ref.invalidate(userStatsProvider);
-                    clearPropertyPincodesCache();
-                    ref.invalidate(propertyPincodesProvider);
-                    ref.invalidate(collectionCountProvider);
-                    ref.invalidate(collectionTodayCountProvider);
-                    ref.invalidate(collectionPeriodStatsProvider);
-                    ref.invalidate(collectionDateFieldInfoProvider);
-                  },
-                  icon: const Icon(
-                    Icons.refresh_rounded,
-                    color: Color(0xFF2563EB),
-                    size: 22,
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Welcome Back, $adminName! 👑',
+                            style: GoogleFonts.poppins(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            // child: Text(
+                            //   'COMMAND CENTER 🚀',
+                            //   style: GoogleFonts.poppins(
+                            //     color: Colors.white,
+                            //     fontSize: 10,
+                            //     fontWeight: FontWeight.w800,
+                            //     letterSpacing: 0.5,
+                            //   ),
+                            // ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Close the Deal, Own the Win.✨',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
-                  tooltip: 'Refresh Stats',
                 ),
-              ),
-            ],
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: IconButton(
+                    onPressed: () {
+                      final selectedCategory = ref.read(
+                        dashboardSelectedCategoryProvider,
+                      );
+                      ref.invalidate(
+                        unverifiedPaginationProvider(selectedCategory),
+                      );
+                      ref.invalidate(unverifiedPendingCountProvider);
+                      ref.invalidate(categoryCountsProvider);
+                      ref.invalidate(userStatsProvider);
+                      clearPropertyPincodesCache();
+                      ref.invalidate(propertyPincodesProvider);
+                      ref.invalidate(collectionCountProvider);
+                      ref.invalidate(collectionTodayCountProvider);
+                      ref.invalidate(collectionPeriodStatsProvider);
+                      ref.invalidate(collectionDateFieldInfoProvider);
+                    },
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    tooltip: 'Sync & Refresh Dashboard Stats ⚡',
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 32),
 
           // Overall Summary Header
           Row(
             children: [
-              const Icon(
-                Icons.analytics_outlined,
-                color: Color(0xFF2563EB),
-                size: 24,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.auto_graph_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Text(
-                'Overall Summary',
+                'Overall Platform Summary ✨',
                 style: GoogleFonts.poppins(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
                   color: const Color(0xFF0F172A),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
           // Overall Stats Grid
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
-            childAspectRatio: 1.3,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            childAspectRatio: 1.35,
             children: [
               _buildStatCard(
                 ref,
                 'Total Users',
                 'users',
-                Icons.people,
-                Colors.blue,
+                Icons.people_alt_rounded,
+                const [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                badgeLabel: '👑 VIP USERS',
               ),
               _buildStatCard(
                 ref,
-                'Call Logs',
+                'Call & Lead Logs',
                 'callLogs',
-                Icons.phone_callback,
-                Colors.orange,
+                Icons.phone_in_talk_rounded,
+                const [Color(0xFFF59E0B), Color(0xFFB45309)],
+                badgeLabel: '🔥 HOTLINE',
               ),
               _buildStatCard(
                 ref,
                 'Service Posts',
                 'service_posts',
-                Icons.work,
-                Colors.green,
+                Icons.auto_stories_rounded,
+                const [Color(0xFF10B981), Color(0xFF047857)],
+                badgeLabel: '⚡ SERVICES',
               ),
               _buildStatCard(
                 ref,
-                'Properties',
+                'Rental Properties',
                 'rental_properties',
-                Icons.home,
-                Colors.purple,
+                Icons.holiday_village_rounded,
+                const [Color(0xFF8B5CF6), Color(0xFF5B21B6)],
+                badgeLabel: '🏡 ESTATES',
               ),
             ],
           ),
 
-          const SizedBox(height: 40),
+          const SizedBox(height: 36),
 
           // Today Summary Header
           Row(
             children: [
-              const Icon(
-                Icons.summarize_rounded,
-                color: Color(0xFF16A34A),
-                size: 24,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.bolt_rounded,
+                  color: Color(0xFF10B981),
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Text(
-                'Today Summary',
+                "Today's Live Action Highlights 🚀",
                 style: GoogleFonts.poppins(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
                   color: const Color(0xFF0F172A),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
           // Today Stats Grid
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
-            childAspectRatio: 1.5,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            childAspectRatio: 1.45,
             children: [
               _buildStatCard(
                 ref,
-                'Total Users',
+                'Users Registered',
                 'users',
-                Icons.people,
-                Colors.blue,
+                Icons.person_add_rounded,
+                const [Color(0xFF0EA5E9), Color(0xFF0284C7)],
                 isToday: true,
+                badgeLabel: 'NEW TODAY ⚡',
               ),
               _buildStatCard(
                 ref,
-                'Call Logs',
+                'Calls Made Today',
                 'callLogs',
-                Icons.phone_callback,
-                Colors.orange,
+                Icons.phone_callback_rounded,
+                const [Color(0xFFEC4899), Color(0xFFBE185D)],
                 isToday: true,
+                badgeLabel: 'TALK TIME 📞',
               ),
               _buildStatCard(
                 ref,
-                'Service Posts',
+                'Service Posts Added',
                 'service_posts',
-                Icons.work,
-                Colors.green,
+                Icons.post_add_rounded,
+                const [Color(0xFF06B6D4), Color(0xFF0E7490)],
                 isToday: true,
+                badgeLabel: 'FRESH POSTS 📝',
               ),
               _buildStatCard(
                 ref,
-                'Properties',
+                'Properties Listed',
                 'rental_properties',
-                Icons.home,
-                Colors.purple,
+                Icons.add_location_alt_rounded,
+                const [Color(0xFFA855F7), Color(0xFF7E22CE)],
                 isToday: true,
+                badgeLabel: 'NEW HOMES 🔑',
               ),
             ],
           ),
 
           const SizedBox(height: 40),
-          const SizedBox(height: 40),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  'New Registered Businesses (Pending Verification)',
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF0F172A),
-                  ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.verified_user_rounded,
+                        color: Color(0xFFF59E0B),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Unverified Businesses Queue 🛡️',
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),
@@ -337,7 +448,7 @@ class _SummaryDashboard extends ConsumerWidget {
               const _DashboardDateFilterDropdown(),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           _buildPendingVerifications(context, ref),
         ],
       ),
@@ -353,8 +464,9 @@ class _SummaryDashboard extends ConsumerWidget {
     String title,
     String collection,
     IconData icon,
-    Color color, {
+    List<Color> gradientColors, {
     bool isToday = false,
+    String? badgeLabel,
   }) {
     final countAsync =
         isToday
@@ -362,9 +474,7 @@ class _SummaryDashboard extends ConsumerWidget {
             : ref.watch(collectionCountProvider(collection));
 
     final statsAsync =
-        isToday
-            ? null
-            : ref.watch(collectionPeriodStatsProvider(collection));
+        isToday ? null : ref.watch(collectionPeriodStatsProvider(collection));
 
     Widget buildDotDivider() {
       return Padding(
@@ -383,35 +493,43 @@ class _SummaryDashboard extends ConsumerWidget {
 
     Widget buildPeriodStat(String label, int value) {
       return InkWell(
-        onTap: isClickableUserStat
-            ? () {
-                if (label == 'Today') {
-                  ref.read(userDateFilterProvider.notifier).state =
-                      timeFilterToLegacyUserValue(TimeFilterOption.today);
-                } else if (label == 'Yesterday') {
-                  ref.read(userDateFilterProvider.notifier).state =
-                      timeFilterToLegacyUserValue(TimeFilterOption.yesterday);
-                } else if (label == '7d') {
-                  ref.read(userDateFilterProvider.notifier).state =
-                      timeFilterToLegacyUserValue(TimeFilterOption.last7Days);
-                } else if (label == '30d') {
-                  ref.read(userDateFilterProvider.notifier).state =
-                      timeFilterToLegacyUserValue(TimeFilterOption.last30Days);
-                } else {
-                  ref.read(userDateFilterProvider.notifier).state = null;
+        onTap:
+            isClickableUserStat
+                ? () {
+                  if (label == 'Today') {
+                    ref.read(userDateFilterProvider.notifier).state =
+                        timeFilterToLegacyUserValue(TimeFilterOption.today);
+                  } else if (label == 'Yesterday') {
+                    ref.read(userDateFilterProvider.notifier).state =
+                        timeFilterToLegacyUserValue(TimeFilterOption.yesterday);
+                  } else if (label == '7d') {
+                    ref.read(userDateFilterProvider.notifier).state =
+                        timeFilterToLegacyUserValue(TimeFilterOption.last7Days);
+                  } else if (label == '30d') {
+                    ref
+                        .read(userDateFilterProvider.notifier)
+                        .state = timeFilterToLegacyUserValue(
+                      TimeFilterOption.last30Days,
+                    );
+                  } else {
+                    ref.read(userDateFilterProvider.notifier).state = null;
+                  }
+                  ref.read(currentDashboardViewProvider.notifier).state =
+                      DashboardView.users;
                 }
-                ref.read(currentDashboardViewProvider.notifier).state = DashboardView.users;
-              }
-            : null,
-        borderRadius: BorderRadius.circular(4),
+                : null,
+        borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           child: Text(
             '$label: $value',
             style: GoogleFonts.poppins(
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isClickableUserStat ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+              color:
+                  isClickableUserStat
+                      ? gradientColors.first
+                      : const Color(0xFF64748B),
               decoration: isClickableUserStat ? TextDecoration.underline : null,
             ),
           ),
@@ -419,20 +537,8 @@ class _SummaryDashboard extends ConsumerWidget {
       );
     }
 
-    final cardContent = Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    final cardContent = _AnimatedStatCardContainer(
+      gradientColors: gradientColors,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -447,28 +553,37 @@ class _SummaryDashboard extends ConsumerWidget {
                     title,
                     style: GoogleFonts.poppins(
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
                     ),
                   ),
-                  if (isToday)
+                  if (badgeLabel != null) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      'Today',
+                      badgeLabel,
                       style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: color.withValues(alpha: 0.7),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: gradientColors.first,
                       ),
                     ),
+                  ],
                 ],
               ),
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(colors: gradientColors),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: gradientColors.first.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, color: color, size: 20),
+                child: Icon(icon, color: Colors.white, size: 20),
               ),
             ],
           ),
@@ -481,7 +596,7 @@ class _SummaryDashboard extends ConsumerWidget {
                       count.toString(),
                       style: GoogleFonts.poppins(
                         fontSize: 32,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: const Color(0xFF0F172A),
                         height: 1.1,
                       ),
@@ -490,32 +605,34 @@ class _SummaryDashboard extends ConsumerWidget {
                     () => const SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
                     ),
                 error: (_, __) => const Text('Error'),
               ),
               if (!isToday && statsAsync != null) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 statsAsync.when(
-                  data: (stats) => SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        buildPeriodStat('Today', stats.today),
-                        buildDotDivider(),
-                        buildPeriodStat('Yesterday', stats.yesterday),
-                        buildDotDivider(),
-                        buildPeriodStat('7d', stats.last7Days),
-                        buildDotDivider(),
-                        buildPeriodStat('30d', stats.last30Days),
-                      ],
-                    ),
-                  ),
-                  loading: () => const SizedBox(
-                    height: 12,
-                    width: 12,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                  ),
+                  data:
+                      (stats) => SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            buildPeriodStat('Today', stats.today),
+                            buildDotDivider(),
+                            buildPeriodStat('Yesterday', stats.yesterday),
+                            buildDotDivider(),
+                            buildPeriodStat('7d', stats.last7Days),
+                            buildDotDivider(),
+                            buildPeriodStat('30d', stats.last30Days),
+                          ],
+                        ),
+                      ),
+                  loading:
+                      () => const SizedBox(
+                        height: 12,
+                        width: 12,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      ),
                   error: (_, __) => const SizedBox.shrink(),
                 ),
               ],
@@ -528,14 +645,16 @@ class _SummaryDashboard extends ConsumerWidget {
     if (isClickableUserStat) {
       return Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            ref.read(userDateFilterProvider.notifier).state = isToday
-                ? timeFilterToLegacyUserValue(TimeFilterOption.today)
-                : null;
-            ref.read(currentDashboardViewProvider.notifier).state = DashboardView.users;
+            ref.read(userDateFilterProvider.notifier).state =
+                isToday
+                    ? timeFilterToLegacyUserValue(TimeFilterOption.today)
+                    : null;
+            ref.read(currentDashboardViewProvider.notifier).state =
+                DashboardView.users;
           },
           child: cardContent,
         ),
@@ -543,6 +662,64 @@ class _SummaryDashboard extends ConsumerWidget {
     }
 
     return cardContent;
+  }
+}
+
+class _AnimatedStatCardContainer extends StatefulWidget {
+  final Widget child;
+  final List<Color> gradientColors;
+
+  const _AnimatedStatCardContainer({
+    required this.child,
+    required this.gradientColors,
+  });
+
+  @override
+  State<_AnimatedStatCardContainer> createState() =>
+      _AnimatedStatCardContainerState();
+}
+
+class _AnimatedStatCardContainerState
+    extends State<_AnimatedStatCardContainer> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        transform:
+            _isHovered
+                ? Matrix4.translationValues(0, -4, 0)
+                : Matrix4.identity(),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color:
+                _isHovered
+                    ? widget.gradientColors.first.withValues(alpha: 0.35)
+                    : const Color(0xFFE2E8F0),
+            width: _isHovered ? 1.5 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color:
+                  _isHovered
+                      ? widget.gradientColors.first.withValues(alpha: 0.15)
+                      : Colors.black.withValues(alpha: 0.03),
+              blurRadius: _isHovered ? 16 : 8,
+              offset: Offset(0, _isHovered ? 8 : 3),
+            ),
+          ],
+        ),
+        child: widget.child,
+      ),
+    );
   }
 }
 
@@ -555,61 +732,95 @@ class _DashboardCityFilterDropdown extends ConsumerWidget {
     final citiesAsync = ref.watch(unverifiedCitiesProvider);
 
     return citiesAsync.when(
-      data: (cities) => Container(
-        height: 42,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFFE2E8F0),
-          ),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String?>(
-            value: selectedCity,
-            hint: Text(
-              'All Cities',
-              style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF64748B)),
-            ),
-            icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
-            onChanged: (value) {
-              ref.read(dashboardSelectedCityProvider.notifier).state = value;
-            },
-            items: [
-              DropdownMenuItem<String?>(
-                value: null,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_city_rounded, size: 16, color: Color(0xFF64748B)),
-                    const SizedBox(width: 8),
-                    Text('All Cities', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
-                  ],
+      data:
+          (cities) => Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 6,
                 ),
-              ),
-              ...cities.map(
-                (city) => DropdownMenuItem<String?>(
-                  value: city,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_on_rounded, size: 16, color: Color(0xFF2563EB)),
-                      const SizedBox(width: 8),
-                      Text(city, style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
-                    ],
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                value: selectedCity,
+                hint: Text(
+                  'All Cities 🌆',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Color(0xFF4F46E5),
+                ),
+                onChanged: (value) {
+                  ref.read(dashboardSelectedCityProvider.notifier).state =
+                      value;
+                },
+                items: [
+                  DropdownMenuItem<String?>(
+                    value: null,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_city_rounded,
+                          size: 18,
+                          color: Color(0xFF4F46E5),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'All Cities 🌆',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...cities.map(
+                    (city) => DropdownMenuItem<String?>(
+                      value: city,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 18,
+                            color: Color(0xFF3B82F6),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            city,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-      loading: () => const SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      ),
+      loading:
+          () => const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
       error: (_, __) => const SizedBox.shrink(),
     );
   }
@@ -623,25 +834,34 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
     final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
 
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFE2E8F0),
-        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6),
+        ],
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
           value: dateFilter,
           hint: Text(
-            'Registration Filter',
-            style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF64748B)),
+            'Registration Filter 📅',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF64748B)),
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: Color(0xFF4F46E5),
+          ),
           onChanged: (value) {
-            ref.read(dashboardSelectedDateFilterProvider.notifier).state = value;
+            ref.read(dashboardSelectedDateFilterProvider.notifier).state =
+                value;
           },
           items: [
             DropdownMenuItem<String?>(
@@ -649,9 +869,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.date_range_rounded, size: 16, color: Color(0xFF64748B)),
+                  const Icon(
+                    Icons.date_range_rounded,
+                    size: 18,
+                    color: Color(0xFF64748B),
+                  ),
                   const SizedBox(width: 8),
-                  Text('All Time', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'All Time ⏳',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -660,9 +890,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.today_rounded, size: 16, color: Color(0xFF2563EB)),
+                  const Icon(
+                    Icons.today_rounded,
+                    size: 18,
+                    color: Color(0xFF3B82F6),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Today', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Today ⚡',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -671,9 +911,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.history_rounded, size: 16, color: Color(0xFFEA580C)),
+                  const Icon(
+                    Icons.history_rounded,
+                    size: 18,
+                    color: Color(0xFFEA580C),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Yesterday', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Yesterday 🕰️',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -682,9 +932,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.date_range_rounded, size: 16, color: Color(0xFF7C3AED)),
+                  const Icon(
+                    Icons.date_range_rounded,
+                    size: 18,
+                    color: Color(0xFF7C3AED),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Last 7 Days', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Last 7 Days 📆',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -693,9 +953,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.calendar_month_rounded, size: 16, color: Color(0xFF16A34A)),
+                  const Icon(
+                    Icons.calendar_month_rounded,
+                    size: 18,
+                    color: Color(0xFF16A34A),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Last 30 Days', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Last 30 Days 📅',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -704,9 +974,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.calendar_view_month_rounded, size: 16, color: Color(0xFF0284C7)),
+                  const Icon(
+                    Icons.calendar_view_month_rounded,
+                    size: 18,
+                    color: Color(0xFF0284C7),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Last 3 Months', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Last 3 Months 🗓️',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -715,9 +995,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.event_note_rounded, size: 16, color: Color(0xFF9333EA)),
+                  const Icon(
+                    Icons.event_note_rounded,
+                    size: 18,
+                    color: Color(0xFF9333EA),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Last 6 Months', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Last 6 Months 📊',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -726,9 +1016,19 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.event_available_rounded, size: 16, color: Color(0xFFCA8A04)),
+                  const Icon(
+                    Icons.event_available_rounded,
+                    size: 18,
+                    color: Color(0xFFCA8A04),
+                  ),
                   const SizedBox(width: 8),
-                  Text('Last 1 Year', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                    'Last 1 Year 🏆',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),

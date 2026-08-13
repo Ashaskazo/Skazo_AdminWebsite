@@ -37,6 +37,8 @@ class UserModel {
   final bool categoryBoostEnabled;
   final bool paymentLinkSend;
   final bool isonline;
+  final String? StarServiceprovider;
+  final num? payperLeadCharge;
 
   const UserModel({
     required this.id,
@@ -74,6 +76,8 @@ class UserModel {
     this.categoryBoostEnabled = false,
     this.paymentLinkSend = false,
     this.isonline = false,
+    this.StarServiceprovider,
+    this.payperLeadCharge,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -84,6 +88,19 @@ class UserModel {
   factory UserModel.fromMap(String id, Map<String, dynamic> data) {
     final inferredIsUser =
         _parseBool(data['isuser']) ?? !_looksLikeServiceProvider(data);
+
+    final rawStar = data['StarServiceprovider'];
+    final starProviderStr = rawStar == null ? null : rawStar.toString();
+
+    final rawLeadCharge = data['payperLeadCharge'];
+    num? leadChargeNum;
+    if (rawLeadCharge != null) {
+      if (rawLeadCharge is num) {
+        leadChargeNum = rawLeadCharge;
+      } else {
+        leadChargeNum = num.tryParse(rawLeadCharge.toString().trim());
+      }
+    }
 
     return UserModel(
       id: id,
@@ -121,6 +138,8 @@ class UserModel {
       categoryBoostEnabled: _parseBool(data['categoryBoostEnabled']) ?? false,
       paymentLinkSend: _parseBool(data['paymentLinkSend']) ?? false,
       isonline: _parseBool(data['isonline']) ?? false,
+      StarServiceprovider: starProviderStr,
+      payperLeadCharge: leadChargeNum,
     );
   }
 
@@ -162,6 +181,9 @@ class UserModel {
       'categoryBoostEnabled': categoryBoostEnabled,
       'paymentLinkSend': paymentLinkSend,
       'isonline': isonline,
+      if (StarServiceprovider != null)
+        'StarServiceprovider': StarServiceprovider,
+      if (payperLeadCharge != null) 'payperLeadCharge': payperLeadCharge,
     };
   }
 

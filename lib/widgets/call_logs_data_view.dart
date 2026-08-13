@@ -11,9 +11,7 @@ import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
 class CallLogsDataView extends ConsumerStatefulWidget {
-  const CallLogsDataView({
-    super.key
-  });
+  const CallLogsDataView({super.key});
 
   @override
   ConsumerState<CallLogsDataView> createState() => _CallLogsDataViewState();
@@ -69,10 +67,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   int _statConverted = 0;
   int _statFollowUpsDue = 0;
 
-  // Follow-up Reminders
-  int _countFollowUpToday = 0;
-  int _countFollowUpOverdue = 0;
-  int _countFollowUpTomorrow = 0;
+  // // Follow-up Reminders
+  // int _countFollowUpToday = 0;
+  // int _countFollowUpOverdue = 0;
+  // int _countFollowUpTomorrow = 0;
 
   @override
   void initState() {
@@ -280,29 +278,29 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   /// a filter is changed by the user.
   void _applyFilters() {
     if (!mounted) return;
-final now = DateTime.now().toUtc();
-final todayStart = DateTime.utc(now.year, now.month, now.day);
-final tomorrowStart = todayStart.add(Duration(days: 1));
-    final dayAfterTomorrowStart = todayStart.add(const Duration(days: 2));
+    final now = DateTime.now().toUtc();
+    final todayStart = DateTime.utc(now.year, now.month, now.day);
+    // final tomorrowStart = todayStart.add(Duration(days: 1));
+    // final dayAfterTomorrowStart = todayStart.add(const Duration(days: 2));
 
-    _countFollowUpToday = 0;
-    _countFollowUpOverdue = 0;
-    _countFollowUpTomorrow = 0;
+    // _countFollowUpToday = 0;
+    // _countFollowUpOverdue = 0;
+    // _countFollowUpTomorrow = 0;
 
-    for (final log in _allDocs) {
-      final raw = log['rawData'] ?? {};
-      if (raw['salesStatus'] == 'follow_up' &&
-          raw['followUpDate'] is Timestamp) {
-        final date = (raw['followUpDate'] as Timestamp).toDate();
-        if (date.isBefore(todayStart)) {
-          _countFollowUpOverdue++;
-        } else if (date.isBefore(tomorrowStart)) {
-          _countFollowUpToday++;
-        } else if (date.isBefore(dayAfterTomorrowStart)) {
-          _countFollowUpTomorrow++;
-        }
-      }
-    }
+    // for (final log in _allDocs) {
+    //   final raw = log['rawData'] ?? {};
+    //   if (raw['salesStatus'] == 'follow_up' &&
+    //       raw['followUpDate'] is Timestamp) {
+    //     final date = (raw['followUpDate'] as Timestamp).toDate();
+    //     if (date.isBefore(todayStart)) {
+    //       _countFollowUpOverdue++;
+    //     } else if (date.isBefore(tomorrowStart)) {
+    //       _countFollowUpToday++;
+    //     } else if (date.isBefore(dayAfterTomorrowStart)) {
+    //       _countFollowUpTomorrow++;
+    //     }
+    //   }
+    // }
 
     _filteredLogs =
         _allDocs.where((log) {
@@ -370,40 +368,40 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
           }
 
           // 7. Assigned Sales Person filter
-          if (_assignedPersonController.text.trim().isNotEmpty) {
-            final assigned = _normalizeString(raw['assignedTo']);
-            if (!assigned.contains(
-              _assignedPersonController.text.trim().toLowerCase(),
-            )) {
-              return false;
-            }
-          }
+          // if (_assignedPersonController.text.trim().isNotEmpty) {
+          //   final assigned = _normalizeString(raw['assignedTo']);
+          //   if (!assigned.contains(
+          //     _assignedPersonController.text.trim().toLowerCase(),
+          //   )) {
+          //     return false;
+          //   }
+          // }
 
           // 8. Call Status
-          if (_filterCallStatus != 'All') {
-            final status = _normalizeString(raw['callType'] ?? raw['status']);
-            if (status != _filterCallStatus.toLowerCase()) return false;
-          }
+          // if (_filterCallStatus != 'All') {
+          //   final status = _normalizeString(raw['callType'] ?? raw['status']);
+          //   if (status != _filterCallStatus.toLowerCase()) return false;
+          // }
 
           // 9. Payment Status
-          if (_filterPaymentStatus != 'All') {
-            final payStatus = _normalizeString(raw['paymentStatus']);
-            if (payStatus != _filterPaymentStatus.toLowerCase()) return false;
-          }
+          // if (_filterPaymentStatus != 'All') {
+          //   final payStatus = _normalizeString(raw['paymentStatus']);
+          //   if (payStatus != _filterPaymentStatus.toLowerCase()) return false;
+          // }
 
           // 10. Follow-up Status
-          if (_filterFollowUpStatus != 'All') {
-            final salesStatus = _normalizeString(raw['salesStatus']);
-            if (salesStatus != _filterFollowUpStatus.toLowerCase()) return false;
-          }
+          // if (_filterFollowUpStatus != 'All') {
+          //   final salesStatus = _normalizeString(raw['salesStatus']);
+          //   if (salesStatus != _filterFollowUpStatus.toLowerCase()) return false;
+          // }
 
           // 11. Boost Sent
-          if (_filterBoostSent != 'All') {
-            final boostSent =
-                raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-            final expected = _filterBoostSent == 'Sent';
-            if (boostSent != expected) return false;
-          }
+          // if (_filterBoostSent != 'All') {
+          //   final boostSent =
+          //       raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
+          //   final expected = _filterBoostSent == 'Sent';
+          //   if (boostSent != expected) return false;
+          // }
 
           // 12. Plan Type
           if (_filterPlan != 'All') {
@@ -429,12 +427,12 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
               case 'Interested Leads':
                 if (raw['salesStatus'] != 'interested') return false;
                 break;
-              case 'Not Called':
-                final status = raw['salesStatus'];
-                if (status != null && status != 'new' && status != '') {
-                  return false;
-                }
-                break;
+              // case 'Not Called':
+              //   final status = raw['salesStatus'];
+              //   if (status != null && status != 'new' && status != '') {
+              //     return false;
+              //   }
+              // break;
               case 'Converted':
                 if (raw['salesStatus'] != 'converted') return false;
                 break;
@@ -516,7 +514,7 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
         _normalizeString(explicitCity ?? '').isNotEmpty
             ? explicitCity.toString()
             : (resolveUserCityName(data, _pincodesMap, _pincodeCityLookup) ??
-               _extractCityFromAddress(address));
+                _extractCityFromAddress(address));
     values.add(city.toLowerCase());
 
     return values.join(' ');
@@ -591,7 +589,7 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
         _normalizeString(explicitCity ?? '').isNotEmpty
             ? explicitCity.toString()
             : (resolveUserCityName(data, _pincodesMap, _pincodeCityLookup) ??
-               _extractCityFromAddress(address));
+                _extractCityFromAddress(address));
 
     return {
       'id': doc.id,
@@ -608,10 +606,12 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
   }
 
   String _formatTimestamp(dynamic rawTimestamp) {
-    if (rawTimestamp is DateTime) {
-      return '${rawTimestamp.toLocal()}'.split('.').first;
-    }
     if (rawTimestamp is Timestamp) {
+      print("************************************************************");
+      print('Formatting Timestamp: $rawTimestamp');
+      print(
+        "rawTimestamp.toDate().toLocal(): ${rawTimestamp.toDate().toLocal()}",
+      );
       return '${rawTimestamp.toDate().toLocal()}'.split('.').first;
     }
     return rawTimestamp?.toString() ?? '-';
@@ -699,6 +699,60 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
     }
   }
 
+  Future<void> _updateFeedbackStatus(String status) async {
+    if (_selectedDocId == null) return;
+
+    final raw = _selectedDocData!['rawData'] ?? {};
+    final oldFeedbackStatus = raw['feedbackStatus'];
+    final email = FirebaseAuth.instance.currentUser?.email ?? 'sales@skazo.com';
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('callLogs')
+          .doc(_selectedDocId)
+          .update({
+            'feedbackStatus': status,
+            'lastFeedbackUpdatedAt': FieldValue.serverTimestamp(),
+            'lastFeedbackUpdatedBy': email,
+          });
+
+      await _writeAuditLog(
+        docId: _selectedDocId!,
+        fieldName: 'feedbackStatus',
+        oldValue: oldFeedbackStatus,
+        newValue: status,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Feedback status set to "$status"'),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+      setState(() {
+        if (_selectedDocData != null && _selectedDocData!['rawData'] != null) {
+          (_selectedDocData!['rawData'] as Map<String, dynamic>)['feedbackStatus'] = status;
+        }
+      });
+
+      _applyFilters();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update feedback status: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _setCRMFollowUp() async {
     if (_selectedDocId == null) return;
 
@@ -771,9 +825,6 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
       );
     }
   }
-
-
-
 
   void _showEditFieldDialog(String fieldName, dynamic currentValue) {
     if (!_canEditField(fieldName)) {
@@ -897,7 +948,7 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
             style: GoogleFonts.poppins(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF64748B),
+              color: const Color.fromARGB(255, 223, 8, 108),
               letterSpacing: 1.1,
             ),
           ),
@@ -905,40 +956,42 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
           _buildSavedViewButton('Today Calls', Icons.calendar_today),
           _buildSavedViewButton('Pending Follow-ups', Icons.timer),
           _buildSavedViewButton('Interested Leads', Icons.star),
-          _buildSavedViewButton('Not Called', Icons.phone_callback),
+          // _buildSavedViewButton('Not Interested Leads', Icons.star),
+
+          // _buildSavedViewButton('Not Called', Icons.phone_callback),
           _buildSavedViewButton('Converted', Icons.check_circle),
           // _buildSavedViewButton('Boost Calls', Icons.bolt),
           // _buildSavedViewButton('Paid Providers', Icons.payment),
           // _buildSavedViewButton('City-wise Leads', Icons.location_city),
-          const SizedBox(height: 24),
+          // const SizedBox(height: 24),
 
           // Section: Follow-up Reminders
-          Text(
-            'REMINDERS',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF64748B),
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildReminderChip(
-            'Follow-up Today',
-            _countFollowUpToday,
-            Colors.purple,
-          ),
-          _buildReminderChip(
-            'Overdue Follow-ups',
-            _countFollowUpOverdue,
-            Colors.red,
-          ),
-          _buildReminderChip(
-            'Tomorrow Follow-ups',
-            _countFollowUpTomorrow,
-            Colors.orange,
-          ),
-          const SizedBox(height: 24),
+          // Text(
+          //   'REMINDERS',
+          //   style: GoogleFonts.poppins(
+          //     fontSize: 11,
+          //     fontWeight: FontWeight.w700,
+          //     color: const Color(0xFF64748B),
+          //     letterSpacing: 1.1,
+          //   ),
+          // ),
+          // const SizedBox(height: 8),
+          // _buildReminderChip(
+          //   'Follow-up Today',
+          //   _countFollowUpToday,
+          //   Colors.purple,
+          // ),
+          // _buildReminderChip(
+          //   'Overdue Follow-ups',
+          //   _countFollowUpOverdue,
+          //   Colors.red,
+          // ),
+          // _buildReminderChip(
+          //   'Tomorrow Follow-ups',
+          //   _countFollowUpTomorrow,
+          //   Colors.orange,
+          // ),
+          // const SizedBox(height: 24),
 
           // Section: Smart Filters
           Text(
@@ -946,7 +999,7 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
             style: GoogleFonts.poppins(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF64748B),
+              color: const Color.fromARGB(255, 223, 8, 108),
               letterSpacing: 1.1,
             ),
           ),
@@ -989,39 +1042,39 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
             _providerPhoneController,
             Icons.phone_android,
           ),
-          const SizedBox(height: 12),
-          _buildLeftSearchTextField(
-            'Assigned Sales',
-            _assignedPersonController,
-            Icons.badge_outlined,
-          ),
-          const SizedBox(height: 12),
-          _buildLeftDropdownFilter(
-            'Call Status',
-            _filterCallStatus,
-            ['All', 'General', 'Missed', 'Incoming', 'Outgoing'],
-            (val) {
-              setState(() {
-                _filterCallStatus = val;
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
-          ),
-          const SizedBox(height: 12),
-          _buildLeftDropdownFilter(
-            'Payment Status',
-            _filterPaymentStatus,
-            ['All', 'Success', 'Pending', 'Failed'],
-            (val) {
-              setState(() {
-                _filterPaymentStatus = val;
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
-          ),
-          const SizedBox(height: 12),
+          // const SizedBox(height: 12),
+          // _buildLeftSearchTextField(
+          //   'Assigned Sales',
+          //   _assignedPersonController,
+          //   Icons.badge_outlined,
+          // ),
+          // const SizedBox(height: 12),
+          // _buildLeftDropdownFilter(
+          //   'Call Status',
+          //   _filterCallStatus,
+          //   ['All', 'General', 'Missed', 'Incoming', 'Outgoing'],
+          //   (val) {
+          //     setState(() {
+          //       _filterCallStatus = val;
+          //       _currentPage = 0;
+          //     });
+          //     _applyFilters();
+          //   },
+          // ),
+          // const SizedBox(height: 12),
+          // _buildLeftDropdownFilter(
+          //   'Payment Status',
+          //   _filterPaymentStatus,
+          //   ['All', 'Success', 'Pending', 'Failed'],
+          //   (val) {
+          //     setState(() {
+          //       _filterPaymentStatus = val;
+          //       _currentPage = 0;
+          //     });
+          //     _applyFilters();
+          //   },
+          // ),
+          // const SizedBox(height: 12),
           // _buildLeftDropdownFilter(
           //   'CRM Sales Status',
           //   _filterFollowUpStatus,
@@ -1042,20 +1095,20 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
           //     _applyFilters();
           //   },
           // ),
-          const SizedBox(height: 12),
-          _buildLeftDropdownFilter(
-            'Category Boost',
-            _filterBoostSent,
-            ['All', 'Sent', 'Not Sent'],
-            (val) {
-              setState(() {
-                _filterBoostSent = val;
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
-          ),
-          const SizedBox(height: 12),
+          // const SizedBox(height: 12),
+          // _buildLeftDropdownFilter(
+          //   'Category Boost',
+          //   _filterBoostSent,
+          //   ['All', 'Sent', 'Not Sent'],
+          //   (val) {
+          //     setState(() {
+          //       _filterBoostSent = val;
+          //       _currentPage = 0;
+          //     });
+          //     _applyFilters();
+          //   },
+          // ),
+          // const SizedBox(height: 12),
           // _buildLeftDropdownFilter(
           //   'Plan',
           //   _filterPlan,
@@ -1080,10 +1133,10 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
                 _providerPhoneController.clear();
                 _assignedPersonController.clear();
                 _dateFilter = 'All';
-                _filterCallStatus = 'All';
-                _filterPaymentStatus = 'All';
-                _filterFollowUpStatus = 'All';
-                _filterBoostSent = 'All';
+                // _filterCallStatus = 'All';
+                // _filterPaymentStatus = 'All';
+                // _filterFollowUpStatus = 'All';
+                // _filterBoostSent = 'All';
                 _filterPlan = 'All';
                 _activeSavedView = null;
                 _currentPage = 0;
@@ -1375,6 +1428,7 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
     final phone = log['phone'] ?? '';
     final city = log['city'] ?? '';
     final timeStr = _formatTimestamp(log['timestamp']);
+
     final raw = log['rawData'] ?? {};
 
     // final salesStatus = raw['salesStatus'] ?? 'new';
@@ -1421,10 +1475,10 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
                   ),
                 ),
                 Text(
-                  timeStr.split(' ').first,
+                  timeStr.toString(),
                   style: GoogleFonts.poppins(
                     fontSize: 11,
-                    color: Colors.grey[500],
+                    color: const Color.fromARGB(255, 218, 13, 13),
                   ),
                 ),
               ],
@@ -1486,26 +1540,30 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
               spacing: 6,
               runSpacing: 4,
               children: [
-                // _buildBadge(
-                //   salesStatus.toString().toUpperCase(),
-                //   _getSalesStatusColor(salesStatus),
-                // ),
+                if (raw['feedbackStatus'] != null &&
+                    raw['feedbackStatus'].toString().isNotEmpty)
+                  _buildBadge(
+                    'FEEDBACK: ${raw['feedbackStatus'].toString().toUpperCase()}',
+                    _getFeedbackStatusColor(raw['feedbackStatus'].toString()),
+                  ),
                 if (leadQuality != null)
                   _buildBadge(
                     '${leadQuality.toString().toUpperCase()} LEAD',
                     _getLeadQualityColor(leadQuality),
                   ),
-                // _buildBadge(
-                  // '${plan.toString().toUpperCase()} PLAN',
-                  // _getPlanColor(plan),
-                // )
-                // ,
               ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Color _getFeedbackStatusColor(String status) {
+    final norm = status.trim().toLowerCase();
+    if (norm == 'converted') return const Color(0xFF10B981);
+    if (norm == 'not converted' || norm == 'not converetd') return const Color(0xFFEF4444);
+    return const Color(0xFF64748B);
   }
 
   Widget _buildBadge(String label, Color color) {
@@ -1869,6 +1927,139 @@ final tomorrowStart = todayStart.add(Duration(days: 1));
                     () => _changeCRMStatus('converted'),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+
+        // Sales Feedback Status Dropdown
+        Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.rate_review_rounded,
+                    color: Color(0xFF6366F1),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'SALES FEEDBACK STATUS',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF6366F1),
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: () {
+                      final current = rawData['feedbackStatus']?.toString().toLowerCase().trim();
+                      if (current == 'converted') return 'converted';
+                      if (current == 'not converted' || current == 'not converetd') return 'not converted';
+                      if (current == 'skip') return 'skip';
+                      return 'skip';
+                    }(),
+                    isExpanded: true,
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Color(0xFF6366F1),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'converted',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF10B981),
+                              size: 18,
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'converted',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'not converted',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.cancel_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 18,
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'not converted',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'skip',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.redo_rounded,
+                              color: Color(0xFF64748B),
+                              size: 18,
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'skip',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (newStatus) {
+                      if (newStatus != null) {
+                        _updateFeedbackStatus(newStatus);
+                      }
+                    },
+                  ),
+                ),
               ),
             ],
           ),
@@ -2274,6 +2465,30 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
             ),
             const Spacer(),
             IconButton(
+              icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                String copyText;
+                try {
+                  copyText = jsonEncode(widget.value);
+                } catch (_) {
+                  copyText = widget.value.toString();
+                }
+                Clipboard.setData(ClipboardData(text: copyText));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied "${widget.label}" JSON to clipboard'),
+                    duration: const Duration(seconds: 1),
+                    backgroundColor: const Color(0xFF10B981),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              tooltip: 'Copy JSON',
+            ),
+            const SizedBox(width: 8),
+            IconButton(
               icon: const Icon(Icons.edit, size: 14, color: Colors.blue),
               onPressed: widget.onEdit,
               tooltip: 'Edit JSON',
@@ -2413,6 +2628,28 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
           const SizedBox(width: 8),
           Expanded(child: valueWidget),
           const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () {
+              final val = widget.value;
+              final strVal = val is Timestamp
+                  ? _formatDetailedTimestamp(val)
+                  : (val?.toString() ?? '');
+              Clipboard.setData(ClipboardData(text: strVal));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Copied "${widget.label}" value to clipboard'),
+                  duration: const Duration(seconds: 1),
+                  backgroundColor: const Color(0xFF10B981),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            tooltip: 'Copy value',
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.edit, size: 14, color: Colors.blue),
             padding: EdgeInsets.zero,

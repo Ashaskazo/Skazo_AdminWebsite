@@ -13,42 +13,64 @@ class SidebarNav extends ConsumerWidget {
     final isCollapsed = ref.watch(sidebarCollapsedProvider);
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: isCollapsed ? 80 : 280,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      width: isCollapsed ? 84 : 290,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(4, 0),
+          ),
+        ],
+        border: const Border(
           right: BorderSide(
-            color: Colors.grey.withValues(alpha: 0.1),
+            color: Color(0xFFE2E8F0),
             width: 1,
           ),
         ),
       ),
       child: Column(
         children: [
-          // Logo/Header Area
+          // Logo / Header Area
           Container(
             padding: EdgeInsets.symmetric(
-              vertical: 24,
-              horizontal: isCollapsed ? 12 : 24,
+              vertical: 20,
+              horizontal: isCollapsed ? 12 : 20,
             ),
             child:
                 isCollapsed
                     ? Column(
                       children: [
-                        IconButton(
-                          onPressed:
-                              () =>
-                                  ref
-                                      .read(sidebarCollapsedProvider.notifier)
-                                      .state = false,
-                          icon: const Icon(
-                            Icons.menu,
-                            color: Color(0xFF2563EB),
-                            size: 26,
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                                blurRadius: 8,
+                              ),
+                            ],
                           ),
-                          tooltip: 'Expand Sidebar',
+                          child: IconButton(
+                            onPressed:
+                                () =>
+                                    ref
+                                        .read(sidebarCollapsedProvider.notifier)
+                                        .state = false,
+                            icon: const Icon(
+                              Icons.bolt_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            tooltip: 'Expand Command Center 🚀',
+                          ),
                         ),
                       ],
                     )
@@ -56,32 +78,55 @@ class SidebarNav extends ConsumerWidget {
                       scrollDirection: Axis.horizontal,
                       physics: const NeverScrollableScrollPhysics(),
                       child: SizedBox(
-                        width: 232,
+                        width: 250,
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF2563EB),
-                                borderRadius: BorderRadius.circular(12),
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
                               child: const Icon(
-                                Icons.admin_panel_settings,
+                                Icons.auto_awesome_rounded,
                                 color: Colors.white,
-                                size: 24,
+                                size: 22,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: Text(
-                                'Skazo Admin',
-                                maxLines: 1,
-                                overflow: TextOverflow.clip,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF0F172A),
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'SKAZO ',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.clip,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF0F172A),
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Admin Command Suite 🚀',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF6366F1),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             IconButton(
@@ -93,8 +138,8 @@ class SidebarNav extends ConsumerWidget {
                                           )
                                           .state = true,
                               icon: const Icon(
-                                Icons.menu_open,
-                                color: Color(0xFF64748B),
+                                Icons.menu_open_rounded,
+                                color: Color(0xFF94A3B8),
                                 size: 22,
                               ),
                               tooltip: 'Collapse Sidebar',
@@ -105,157 +150,180 @@ class SidebarNav extends ConsumerWidget {
                     ),
           ),
 
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 12),
+
           // Navigation Links
           Expanded(
             child: ListView(
-              padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 8 : 16),
+              padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 10 : 16),
               children: [
-                _buildSectionHeader('MAIN', isCollapsed),
+                _buildSectionHeader('MAIN CONTROL 🎛️', isCollapsed),
                 _buildNavItem(
                   ref,
-                  'Dashboard',
-                  Icons.dashboard_outlined,
+                  'Dashboard Overview',
+                  Icons.grid_view_rounded,
                   DashboardView.summary,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF6366F1), Color(0xFF4F46E5)],
                 ),
 
                 const SizedBox(height: 16),
-                _buildSectionHeader('ENTITIES', isCollapsed),
+                _buildSectionHeader('CORE ENTITIES 👑', isCollapsed),
                 _buildNavItem(
                   ref,
-                  'Users',
-                  Icons.people_outline,
+                  'Users & Providers',
+                  Icons.people_alt_rounded,
                   DashboardView.users,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                  badge: 'VIP',
                 ),
                 _buildNavItem(
                   ref,
-                  'Logs',
-                  Icons.history_outlined,
+                  'Call & Action Logs',
+                  Icons.phone_in_talk_rounded,
                   DashboardView.logs,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
+                  badge: 'LIVE',
                 ),
                 _buildNavItem(
                   ref,
                   'Service Posts',
-                  Icons.post_add_outlined,
+                  Icons.auto_stories_rounded,
                   DashboardView.servicePosts,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF10B981), Color(0xFF059669)],
                 ),
                 _buildNavItem(
                   ref,
                   'Rental Properties',
-                  Icons.home_work_outlined,
+                  Icons.holiday_village_rounded,
                   DashboardView.rentalProperties,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
                 ),
                 _buildNavItem(
                   ref,
                   'Local Promotions',
-                  Icons.campaign_outlined,
+                  Icons.campaign_rounded,
                   DashboardView.localPromotions,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFFEC4899), Color(0xFFDB2777)],
                 ),
-                // _buildNavItem(
-                //   ref,
-                //   'Orders',
-                //   Icons.shopping_cart_outlined,
-                //   DashboardView.orders,
-                //   currentView,
-                //   isCollapsed,
-                // ),
                 _buildNavItem(
                   ref,
-                  'Payments',
-                  Icons.payments_outlined,
+                  'Payments & Revenue',
+                  Icons.account_balance_wallet_rounded,
                   DashboardView.payments,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
+                  badge: '₹💰',
                 ),
 
                 const SizedBox(height: 16),
-                _buildSectionHeader('OPERATIONS', isCollapsed),
+                _buildSectionHeader('OPERATIONS & HELPDESK 🛠️', isCollapsed),
                 _buildNavItem(
                   ref,
-                  'Tickets',
-                  Icons.confirmation_number_outlined,
+                  'Support Tickets',
+                  Icons.confirmation_number_rounded,
                   DashboardView.tickets,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFFF97316), Color(0xFFEA580C)],
                 ),
                 _buildNavItem(
                   ref,
-                  'Verification',
-                  Icons.verified_user_outlined,
+                  'Verification Queue',
+                  Icons.verified_user_rounded,
                   DashboardView.verification,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF14B8A6), Color(0xFF0D9488)],
                 ),
                 _buildNavItem(
                   ref,
-                  'WhatsApp Messages',
-                  Icons.message_outlined,
+                  'WhatsApp Logs',
+                  Icons.chat_bubble_rounded,
                   DashboardView.whatsappMessages,
                   currentView,
                   isCollapsed,
+                  activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
                 ),
 
                 if (ref.watch(isSuperAdminProvider)) ...[
                   const SizedBox(height: 16),
-                  _buildSectionHeader('SYSTEM', isCollapsed),
+                  _buildSectionHeader('SYSTEM CONTROL ⚡', isCollapsed),
                   _buildNavItem(
                     ref,
                     'Admin Management',
-                    Icons.admin_panel_settings_outlined,
+                    Icons.admin_panel_settings_rounded,
                     DashboardView.admin,
                     currentView,
                     isCollapsed,
+                    activeGradient: const [Color(0xFF6366F1), Color(0xFF4338CA)],
+                    badge: 'SUPER',
                   ),
                   _buildNavItem(
                     ref,
-                    'App Config',
-                    Icons.settings_outlined,
+                    'App Configurations',
+                    Icons.tune_rounded,
                     DashboardView.appConfig,
                     currentView,
                     isCollapsed,
+                    activeGradient: const [Color(0xFF64748B), Color(0xFF334155)],
                   ),
                 ],
+                const SizedBox(height: 20),
               ],
             ),
           ),
 
           // User Profile Info at Bottom
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
           ref
               .watch(currentAdminProfileProvider)
               .when(
                 data: (profile) {
+                  final name = profile?['name'] ?? 'Super Admin';
+                  final role =
+                      (profile?['role'] ?? profile?['level'] ?? 'Boss')
+                          .toString()
+                          .replaceAll('_', ' ')
+                          .toUpperCase();
+
                   if (isCollapsed) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16.0),
                       child: Column(
                         children: [
                           Tooltip(
-                            message:
-                                '${profile?['name'] ?? 'Admin User'} (${(profile?['role'] ?? profile?['level'] ?? 'admin').toString().toUpperCase()})',
-                            child: CircleAvatar(
-                              backgroundColor: const Color(
-                                0xFF2563EB,
-                              ).withValues(alpha: 0.1),
-                              child: Text(
-                                (profile?['name'] ?? 'A')
-                                    .toString()
-                                    .substring(0, 1)
-                                    .toUpperCase(),
-                                style: const TextStyle(
-                                  color: Color(0xFF2563EB),
-                                  fontWeight: FontWeight.bold,
+                            message: '$name ($role) - Logged in 😎',
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
+                                ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Colors.white,
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'A',
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(0xFF6366F1),
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ),
                             ),
@@ -268,86 +336,109 @@ class SidebarNav extends ConsumerWidget {
                                         .read(adminAuthProvider.notifier)
                                         .signOut(),
                             icon: const Icon(
-                              Icons.logout,
+                              Icons.logout_rounded,
                               size: 20,
                               color: Color(0xFFEF4444),
                             ),
-                            tooltip: 'Logout',
+                            tooltip: 'Logout 🚪',
                           ),
                         ],
                       ),
                     );
                   }
                   return Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const NeverScrollableScrollPhysics(),
-                      child: SizedBox(
-                        width: 232,
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: const Color(
-                                0xFF2563EB,
-                              ).withValues(alpha: 0.1),
+                    padding: const EdgeInsets.all(16.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF6366F1).withValues(alpha: 0.08),
+                            const Color(0xFFA855F7).withValues(alpha: 0.04),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
+                              ),
+                            ),
+                            child: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Colors.white,
                               child: Text(
-                                (profile?['name'] ?? 'A')
-                                    .toString()
-                                    .substring(0, 1)
-                                    .toUpperCase(),
-                                style: const TextStyle(
-                                  color: Color(0xFF2563EB),
-                                  fontWeight: FontWeight.bold,
+                                name.isNotEmpty ? name[0].toUpperCase() : 'S',
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFF6366F1),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    profile?['name'] ?? 'Admin User',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                    color: const Color(0xFF0F172A),
                                   ),
-                                  Text(
-                                    (profile?['role'] ??
-                                            profile?['level'] ??
-                                            'admin')
-                                        .toString()
-                                        .replaceAll('_', ' ')
-                                        .toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                ),
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF10B981),
+                                        shape: BoxShape.circle,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      role,
+                                      style: GoogleFonts.poppins(
+                                        color: const Color(0xFF6366F1),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            IconButton(
-                              onPressed:
-                                  () =>
-                                      ref
-                                          .read(adminAuthProvider.notifier)
-                                          .signOut(),
-                              icon: const Icon(
-                                Icons.logout,
-                                size: 20,
-                                color: Color(0xFFEF4444),
-                              ),
-                              tooltip: 'Logout',
+                          ),
+                          IconButton(
+                            onPressed:
+                                () =>
+                                    ref
+                                        .read(adminAuthProvider.notifier)
+                                        .signOut(),
+                            icon: const Icon(
+                              Icons.logout_rounded,
+                              size: 18,
+                              color: Color(0xFFEF4444),
                             ),
-                          ],
-                        ),
+                            tooltip: 'Logout',
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -370,7 +461,7 @@ class SidebarNav extends ConsumerWidget {
     if (isCollapsed) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: Divider(height: 1, thickness: 1),
+        child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
       );
     }
     return Padding(
@@ -378,9 +469,9 @@ class SidebarNav extends ConsumerWidget {
       child: Text(
         title,
         style: GoogleFonts.poppins(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Colors.grey[400],
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: const Color(0xFF94A3B8),
           letterSpacing: 1.2,
         ),
       ),
@@ -393,13 +484,15 @@ class SidebarNav extends ConsumerWidget {
     IconData icon,
     DashboardView view,
     DashboardView currentView,
-    bool isCollapsed,
-  ) {
+    bool isCollapsed, {
+    required List<Color> activeGradient,
+    String? badge,
+  }) {
     final isSelected = view == currentView;
 
     if (isCollapsed) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.only(bottom: 6),
         child: Tooltip(
           message: title,
           child: InkWell(
@@ -407,24 +500,32 @@ class SidebarNav extends ConsumerWidget {
                 () =>
                     ref.read(currentDashboardViewProvider.notifier).state =
                         view,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color:
+                gradient:
                     isSelected
-                        ? const Color(0xFF2563EB).withValues(alpha: 0.1)
-                        : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+                        ? LinearGradient(colors: activeGradient)
+                        : null,
+                color: isSelected ? null : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow:
+                    isSelected
+                        ? [
+                          BoxShadow(
+                            color: activeGradient.first.withValues(alpha: 0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                        : null,
               ),
               child: Icon(
                 icon,
                 size: 20,
-                color:
-                    isSelected
-                        ? const Color(0xFF2563EB)
-                        : const Color(0xFF64748B),
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
               ),
             ),
           ),
@@ -433,67 +534,77 @@ class SidebarNav extends ConsumerWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: InkWell(
         onTap:
             () => ref.read(currentDashboardViewProvider.notifier).state = view,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
           decoration: BoxDecoration(
+            gradient:
+                isSelected
+                    ? LinearGradient(colors: activeGradient)
+                    : null,
             color:
                 isSelected
-                    ? const Color(0xFF2563EB).withValues(alpha: 0.1)
+                    ? null
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow:
+                isSelected
+                    ? [
+                      BoxShadow(
+                        color: activeGradient.first.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                    : null,
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const NeverScrollableScrollPhysics(),
-            child: SizedBox(
-              width: 224,
-              child: Row(
-                children: [
-                  Icon(
-                    icon,
-                    size: 20,
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                  ),
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
                     color:
                         isSelected
-                            ? const Color(0xFF2563EB)
-                            : const Color(0xFF64748B),
+                            ? Colors.white.withValues(alpha: 0.25)
+                            : activeGradient.first.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w500,
-                        color:
-                            isSelected
-                                ? const Color(0xFF2563EB)
-                                : const Color(0xFF64748B),
-                      ),
+                  child: Text(
+                    badge,
+                    style: GoogleFonts.poppins(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: isSelected ? Colors.white : activeGradient.first,
                     ),
                   ),
-                  if (isSelected) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2563EB),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
