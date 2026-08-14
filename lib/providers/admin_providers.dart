@@ -27,51 +27,31 @@ final isAuthorizedAdminProvider = FutureProvider.family<bool, String>((ref, emai
   }
 });
 
-/// Provider to get the current admin profile data
-// final currentAdminProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
-//   final user = FirebaseAuth.instance.currentUser;
-//   if (user == null || user.email == null) return null;
+/// Real-time StreamProvider watching the current logged-in admin's profile document in Firestore
+final currentAdminProfileProvider = StreamProvider<Map<String, dynamic>?>((ref) {
+  final authUser = ref.watch(authStateProvider).value;
 
-//   try {
-//     final snapshot = await FirebaseFirestore.instance
-//         .collection('admin')
-//         .where('email', isEqualTo: user.email!.toLowerCase().trim())
-//         .limit(1)
-//         .get();
-
-//     if (snapshot.docs.isNotEmpty) {
-//       return {
-//         'id': snapshot.docs.first.id,
-//         ...snapshot.docs.first.data(),
-//       };
-//     }
-//   } catch (e) {
-//     debugPrint('Error fetching admin profile: $e');
-//   }
-//   return null;
-// });
-
-final currentAdminProfileProvider =
-    FutureProvider<Map<String, dynamic>?>((ref) async {
-  final user = ref.watch(authStateProvider).value;
-
-  if (user == null || user.email == null) {
-    return null;
+  if (authUser == null || authUser.email == null) {
+    return Stream.value(null);
   }
 
-  final snapshot = await FirebaseFirestore.instance
+  final email = authUser.email!.toLowerCase().trim();
+
+  return FirebaseFirestore.instance
       .collection('admin')
-      .where('email', isEqualTo: user.email!.toLowerCase().trim())
-      .limit(1)
-      .get();
-
-  if (snapshot.docs.isEmpty) return null;
-
-  return {
-    'id': snapshot.docs.first.id,
-    ...snapshot.docs.first.data(),
-  };
+      .where('email', isEqualTo: email)
+      .snapshots()
+      .map((snapshot) {
+    if (snapshot.docs.isEmpty) return null;
+    final doc = snapshot.docs.first;
+    return {
+      'id': doc.id,
+      ...doc.data(),
+    };
+  });
 });
+
+/// Provider checking if current logged in admin is a Super Admin
 final isSuperAdminProvider = Provider<bool>((ref) {
   final profileAsync = ref.watch(currentAdminProfileProvider);
 
@@ -79,44 +59,65 @@ final isSuperAdminProvider = Provider<bool>((ref) {
     data: (profile) {
       if (profile == null) return false;
 
-      final level = (profile['level'] ?? '')
-          .toString()
-          .toLowerCase()
-          .trim();
+      final level = (profile['level'] ?? '').toString().toLowerCase().trim();
+      final role = (profile['role'] ?? '').toString().toLowerCase().trim();
 
-      return level == 'super_admin';
+      return level == 'super_admin' || level == 'administrator' || role == 'super_admin';
     },
     loading: () => false,
     error: (_, __) => false,
   );
 });
-// final isSuperAdminProvider = Provider<bool>((ref) {
-//   final profile = ref.watch(currentAdminProfileProvider).value;
-//   if (profile == null) return false;
 
-//   final level = (profile['level'] ?? '')
-//       .toString()
-//       .toLowerCase()
-//       .trim();
+/// Provider checking if current logged in admin account is Active
+final isAdminActiveProvider = Provider<bool>((ref) {
+  final profileAsync = ref.watch(currentAdminProfileProvider);
 
-//   return level == 'super_admin';
-// });
+  return profileAsync.when(
+    data: (profile) {
+      if (profile == null) return false;
+      // Default to true if isActive field is not explicitly set to false
+      return profile['isActive'] != false && profile['status'] != 'inactive';
+    },
+    loading: () => true,
+    error: (_, __) => false,
+  );
+});
 
-/// Provider to check if current user is a super admin
-// final isSuperAdminProvider = Provider<bool>((ref) {
-//   final profile = ref.watch(currentAdminProfileProvider).value;
-//   if (profile == null) return false;
+/// Real-time provider extracting assigned cities for the current admin.
+/// Returns empty list `[]` if Super Admin (meaning unrestricted access to all cities).
+final currentAdminAssignedCitiesProvider = Provider<List<String>>((ref) {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  if (isSuper) return const []; // Super Admin has unrestricted access to all cities
+
+  final profile = ref.watch(currentAdminProfileProvider).value;
+  if (profile == null) return const [];
+
+  final dynamic rawCities = profile['assignedCities'] ?? profile['assigned_cities'];
+  if (rawCities is List) {
+    final list = rawCities.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    if (list.isNotEmpty) return list;
+  }
   
-//   final role = (profile['role'] ?? '').toString().toLowerCase().trim();
-//   final level = (profile['level'] ?? '').toString().toLowerCase().trim();
-  
-//   // If role is 'admin' or level is 'staff', the user is not a super admin
-//   if (role == 'admin' || role == 'staff' || level == 'staff') {
-//     return false;
-//   }
-  
-//   return role == 'super_admin' || level == 'administrator';
-// });
+  final singleCity = (profile['assignedCity'] ?? profile['city'])?.toString().trim();
+  if (singleCity != null && singleCity.isNotEmpty) {
+    return [singleCity];
+  }
+
+  return const [];
+});
+
+/// Provider returning all cities accessible to the current admin for UI dropdowns.
+/// Returns all system cities for Super Admin, or assigned cities for regular Admin.
+final allowedCitiesProvider = FutureProvider<List<String>>((ref) async {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  if (isSuper) {
+    final allCities = await ref.watch(userFilterCitiesProvider.future);
+    return allCities;
+  }
+  final assigned = ref.watch(currentAdminAssignedCitiesProvider);
+  return assigned;
+});
 
 /// StreamProvider to fetch admins collection list (cached to prevent duplicate listeners on rebuild)
 final adminsStreamProvider = StreamProvider<QuerySnapshot>((ref) {
@@ -167,3 +168,4 @@ class AdminAuthNotifier extends StateNotifier<bool> {
 final adminAuthProvider = StateNotifierProvider<AdminAuthNotifier, bool>((ref) {
   return AdminAuthNotifier(ref);
 });
+

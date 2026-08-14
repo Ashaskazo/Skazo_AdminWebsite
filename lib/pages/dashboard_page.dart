@@ -728,6 +728,11 @@ class _DashboardCityFilterDropdown extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isSuperAdmin = ref.watch(isSuperAdminProvider);
+    if (!isSuperAdmin) {
+      return const SizedBox.shrink();
+    }
+
     final selectedCity = ref.watch(dashboardSelectedCityProvider);
     final citiesAsync = ref.watch(unverifiedCitiesProvider);
 

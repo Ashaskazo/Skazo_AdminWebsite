@@ -116,30 +116,34 @@ class UserRepository {
   Future<PageResult<UserModel>> fetchUsers({
     required UserFilters filters,
     String searchQuery = '',
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
     final cityFilter = filters.city?.trim();
-    if (_shouldUseDerivedCityFiltering(cityFilter)) {
-      final selectedCity = cityFilter!;
+    if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
+      final selectedCity = cityFilter;
       final filtersWithoutCity = filters.copyWith(clearCity: true);
       final search = UserSearchParams.fromQuery(searchQuery);
-      final cityKeyResult = await _tryFetchUsersByCityKey(
-        filters: filtersWithoutCity,
-        search: search,
-        selectedCity: selectedCity,
-        startAfter: startAfter,
-        limit: limit,
-      );
-      if (cityKeyResult != null) {
-        return cityKeyResult;
+      if (selectedCity != null && assignedCities.isEmpty) {
+        final cityKeyResult = await _tryFetchUsersByCityKey(
+          filters: filtersWithoutCity,
+          search: search,
+          selectedCity: selectedCity,
+          startAfter: startAfter,
+          limit: limit,
+        );
+        if (cityKeyResult != null) {
+          return cityKeyResult;
+        }
       }
 
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
 
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -174,23 +178,27 @@ class UserRepository {
   Future<int> countUsers({
     required UserFilters filters,
     String searchQuery = '',
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final cityFilter = filters.city?.trim();
-    if (_shouldUseDerivedCityFiltering(cityFilter)) {
-      final cityKeyCount = await _tryCountUsersByCityKey(
-        filters: filters.copyWith(clearCity: true),
-        search: UserSearchParams.fromQuery(searchQuery),
-        selectedCity: cityFilter!,
-      );
-      if (cityKeyCount != null) {
-        return cityKeyCount;
+    if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
+      if (cityFilter != null && assignedCities.isEmpty) {
+        final cityKeyCount = await _tryCountUsersByCityKey(
+          filters: filters.copyWith(clearCity: true),
+          search: UserSearchParams.fromQuery(searchQuery),
+          selectedCity: cityFilter,
+        );
+        if (cityKeyCount != null) {
+          return cityKeyCount;
+        }
       }
 
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
 
       return _countCityFilteredUsers(
         selectedCity: cityFilter,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
         queryBuilder:
             () => _buildUsersQuery(
@@ -236,36 +244,28 @@ class UserRepository {
 
   Future<int> countServiceProviders({
     UserFilters? filters,
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final baseFilters = (filters ?? const UserFilters()).copyWith(
       userType: 'Service Providers',
     );
-    return countUsers(filters: baseFilters, pincodesMap: pincodesMap);
+    return countUsers(filters: baseFilters, assignedCities: assignedCities, pincodesMap: pincodesMap);
   }
 
   Future<int> countUnverifiedPending({
     TimeFilterOption timeFilter = TimeFilterOption.all,
     String? city,
     String? category,
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final selectedCity = city?.trim();
-    if (_shouldUseDerivedCityFiltering(selectedCity)) {
-      final cityFilter = selectedCity!;
-      final cityKeyCount = await _tryCountUnverifiedByCityKey(
-        timeFilter: timeFilter,
-        category: category,
-        selectedCity: cityFilter,
-      );
-      if (cityKeyCount != null) {
-        return cityKeyCount;
-      }
-
+    if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
-
       return _countCityFilteredUsers(
-        selectedCity: cityFilter,
+        selectedCity: selectedCity,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
         queryBuilder:
             () => _buildUnverifiedBaseQuery(
@@ -289,27 +289,31 @@ class UserRepository {
     TimeFilterOption timeFilter = TimeFilterOption.all,
     String? city,
     String? category,
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
     final selectedCity = city?.trim();
-    if (_shouldUseDerivedCityFiltering(selectedCity)) {
-      final cityKeyResult = await _tryFetchUnverifiedByCityKey(
-        timeFilter: timeFilter,
-        category: category,
-        selectedCity: selectedCity!,
-        startAfter: startAfter,
-        limit: limit,
-      );
-      if (cityKeyResult != null) {
-        return cityKeyResult;
+    if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+      if (selectedCity != null && assignedCities.isEmpty) {
+        final cityKeyResult = await _tryFetchUnverifiedByCityKey(
+          timeFilter: timeFilter,
+          category: category,
+          selectedCity: selectedCity,
+          startAfter: startAfter,
+          limit: limit,
+        );
+        if (cityKeyResult != null) {
+          return cityKeyResult;
+        }
       }
 
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
 
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -347,15 +351,17 @@ class UserRepository {
     required List<String> categories,
     TimeFilterOption timeFilter = TimeFilterOption.all,
     String? city,
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final selectedCity = city?.trim();
-    if (_shouldUseDerivedCityFiltering(selectedCity)) {
+    if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
       return _countCityFilteredUnverifiedCategories(
         categories: categories,
         timeFilter: timeFilter,
-        selectedCity: selectedCity!,
+        selectedCity: selectedCity,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
       );
     }
@@ -366,6 +372,7 @@ class UserRepository {
           timeFilter: timeFilter,
           city: city,
           category: category,
+          assignedCities: assignedCities,
           pincodesMap: pincodesMap,
         );
         return MapEntry(category, count);
@@ -554,7 +561,8 @@ class UserRepository {
   }
 
   Future<PageResult<UserModel>> _fetchCityFilteredPage({
-    required String selectedCity,
+    required String? selectedCity,
+    List<String> assignedCities = const [],
     required Map<String, List<String>> pincodesMap,
     required Query<Map<String, dynamic>> Function() queryBuilder,
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
@@ -567,19 +575,6 @@ class UserRepository {
       final queryBatchSize = _cityFilterQueryBatchSize(limit);
       DocumentSnapshot<Map<String, dynamic>>? cursor = startAfter;
       var hasMore = true;
-
-      final normalizedTargetCity = _normalizeQueryableCityKey(selectedCity);
-      final cityPins =
-          pincodesMap.entries
-              .where(
-                (entry) =>
-                    _normalizeQueryableCityKey(entry.key) ==
-                    normalizedTargetCity,
-              )
-              .expand((entry) => entry.value)
-              .map((p) => p.replaceAll(RegExp(r'\D'), ''))
-              .where((p) => p.length == 6)
-              .toSet();
 
       while (matched.length < limit && hasMore) {
         // Safety check to avoid overall timeout
@@ -603,13 +598,12 @@ class UserRepository {
         for (final doc in snapshot.docs) {
           final userData = doc.data();
           cursor = doc;
-          if (!userMatchesCity(
+          if (!userMatchesAssignedCities(
             userData,
             selectedCity,
+            assignedCities,
             pincodesMap,
             pincodeCityLookup,
-            normalizedTargetCity: normalizedTargetCity,
-            cityPins: cityPins,
           )) {
             continue;
           }
@@ -633,7 +627,8 @@ class UserRepository {
   }
 
   Future<int> _countCityFilteredUsers({
-    required String selectedCity,
+    required String? selectedCity,
+    List<String> assignedCities = const [],
     required Map<String, List<String>> pincodesMap,
     required Query<Map<String, dynamic>> Function() queryBuilder,
   }) async {
@@ -641,22 +636,9 @@ class UserRepository {
       final startTime = DateTime.now();
       var total = 0;
       final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
-      final queryBatchSize = _cityFilterQueryBatchSize(userPageSize);
+      final queryBatchSize = _maxCityFilterScanBatchSize;
       DocumentSnapshot<Map<String, dynamic>>? cursor;
       var hasMore = true;
-
-      final normalizedTargetCity = _normalizeQueryableCityKey(selectedCity);
-      final cityPins =
-          pincodesMap.entries
-              .where(
-                (entry) =>
-                    _normalizeQueryableCityKey(entry.key) ==
-                    normalizedTargetCity,
-              )
-              .expand((entry) => entry.value)
-              .map((p) => p.replaceAll(RegExp(r'\D'), ''))
-              .where((p) => p.length == 6)
-              .toSet();
 
       while (hasMore) {
         // Safety check to avoid overall timeout
@@ -676,13 +658,12 @@ class UserRepository {
         }
 
         for (final doc in snapshot.docs) {
-          if (userMatchesCity(
+          if (userMatchesAssignedCities(
             doc.data(),
             selectedCity,
+            assignedCities,
             pincodesMap,
             pincodeCityLookup,
-            normalizedTargetCity: normalizedTargetCity,
-            cityPins: cityPins,
           )) {
             total++;
           }
@@ -699,7 +680,8 @@ class UserRepository {
   Future<Map<String, int>> _countCityFilteredUnverifiedCategories({
     required List<String> categories,
     required TimeFilterOption timeFilter,
-    required String selectedCity,
+    required String? selectedCity,
+    List<String> assignedCities = const [],
     required Map<String, List<String>> pincodesMap,
   }) async {
     return _withRetry(() async {
@@ -708,22 +690,9 @@ class UserRepository {
         for (final category in categories) category: 0,
       };
       final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
-      final queryBatchSize = _cityFilterQueryBatchSize(userPageSize);
+      final queryBatchSize = _maxCityFilterScanBatchSize;
       DocumentSnapshot<Map<String, dynamic>>? cursor;
       var hasMore = true;
-
-      final normalizedTargetCity = _normalizeQueryableCityKey(selectedCity);
-      final cityPins =
-          pincodesMap.entries
-              .where(
-                (entry) =>
-                    _normalizeQueryableCityKey(entry.key) ==
-                    normalizedTargetCity,
-              )
-              .expand((entry) => entry.value)
-              .map((p) => p.replaceAll(RegExp(r'\D'), ''))
-              .where((p) => p.length == 6)
-              .toSet();
 
       while (hasMore) {
         // Safety check to avoid overall timeout
@@ -747,13 +716,12 @@ class UserRepository {
 
         for (final doc in snapshot.docs) {
           final userData = doc.data();
-          if (!userMatchesCity(
+          if (!userMatchesAssignedCities(
             userData,
             selectedCity,
+            assignedCities,
             pincodesMap,
             pincodeCityLookup,
-            normalizedTargetCity: normalizedTargetCity,
-            cityPins: cityPins,
           )) {
             continue;
           }
@@ -812,6 +780,7 @@ class UserRepository {
   Future<PageResult<UserModel>> fetchUsersWithSearchFallback({
     required UserFilters filters,
     required String searchQuery,
+    List<String> assignedCities = const [],
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
@@ -819,6 +788,7 @@ class UserRepository {
     final primary = await fetchUsers(
       filters: filters,
       searchQuery: searchQuery,
+      assignedCities: assignedCities,
       pincodesMap: pincodesMap,
       startAfter: startAfter,
       limit: limit,
@@ -837,23 +807,26 @@ class UserRepository {
     );
 
     final cityFilter = filters.city?.trim();
-    if (_shouldUseDerivedCityFiltering(cityFilter)) {
-      final selectedCity = cityFilter!;
-      final directResult = await _tryFetchUsersByCityKey(
-        filters: filters.copyWith(clearCity: true),
-        search: usernameSearch,
-        selectedCity: selectedCity,
-        startAfter: startAfter,
-        limit: limit,
-      );
-      if (directResult != null) {
-        return directResult;
+    if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
+      final selectedCity = cityFilter;
+      if (selectedCity != null && assignedCities.isEmpty) {
+        final directResult = await _tryFetchUsersByCityKey(
+          filters: filters.copyWith(clearCity: true),
+          search: usernameSearch,
+          selectedCity: selectedCity,
+          startAfter: startAfter,
+          limit: limit,
+        );
+        if (directResult != null) {
+          return directResult;
+        }
       }
 
       final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
 
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
+        assignedCities: assignedCities,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -880,8 +853,8 @@ class UserRepository {
     });
   }
 
-  bool _shouldUseDerivedCityFiltering(String? selectedCity) {
-    return selectedCity != null && selectedCity.isNotEmpty;
+  bool _shouldUseDerivedCityFiltering(String? selectedCity, [List<String> assignedCities = const []]) {
+    return (selectedCity != null && selectedCity.isNotEmpty) || assignedCities.isNotEmpty;
   }
 
   Future<Map<String, List<String>>> _resolvePincodesMap(
@@ -1041,10 +1014,11 @@ class UserRepository {
   }
 
   int _cityFilterQueryBatchSize(int requestedLimit) {
-    final safeLimit = requestedLimit <= 0 ? userPageSize : requestedLimit;
-    final desiredBatchSize = safeLimit * 3;
-    if (desiredBatchSize < userPageSize) {
-      return userPageSize;
+    const defaultScanBatch = 250;
+    if (requestedLimit <= 0) return defaultScanBatch;
+    final desiredBatchSize = requestedLimit * 15;
+    if (desiredBatchSize < defaultScanBatch) {
+      return defaultScanBatch;
     }
     if (desiredBatchSize > _maxCityFilterScanBatchSize) {
       return _maxCityFilterScanBatchSize;

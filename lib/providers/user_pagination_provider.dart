@@ -7,6 +7,7 @@ import 'package:skazo_admin/models/page_result.dart';
 import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -62,6 +63,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     );
     ref.listen(userBusinessNameFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userSortAscendingProvider, (_, __) => _scheduleRefresh());
+    ref.listen(currentAdminAssignedCitiesProvider, (_, __) => _scheduleRefresh());
 
     Future.microtask(refresh);
     return UserPaginationState.initial();
@@ -102,45 +104,42 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
   }
 
   Future<void> refresh() async {
+    _requestId++;
+    final requestId = _requestId;
+    _filterDebounce?.cancel();
+
     final filters = _readFilters();
-    final searchQuery = ref.read(userSearchQueryProvider).trim();
-    final requestId = ++_requestId;
-    final countsKey = _buildCountsKey(filters, searchQuery);
-    final cachedCounts = _readCachedCounts(countsKey);
+    final searchQuery = ref.read(userSearchQueryProvider);
 
     state = state.copyWith(
       loading: true,
       loadingMore: false,
+      filters: filters,
+      searchQuery: searchQuery,
       users: const [],
       clearLastDocument: true,
       clearError: true,
-      filters: filters,
-      searchQuery: searchQuery,
       hasMore: true,
-      clearCounts: cachedCounts == null,
-      filteredCount: cachedCounts?.filteredCount,
-      totalCount: cachedCounts?.totalCount,
-      serviceProviderCount: cachedCounts?.serviceProviderCount,
     );
 
-    await _fetchNextPage(isRefresh: true, requestId: requestId);
-    if (requestId != _requestId) {
-      return;
-    }
-    unawaited(_loadCounts(filters, searchQuery, requestId));
+    await Future.wait([
+      _fetchPage(isRefresh: true, requestId: requestId),
+      _loadCounts(filters: filters, searchQuery: searchQuery, requestId: requestId),
+    ]);
   }
 
   Future<void> loadMore() async {
     if (state.loading || state.loadingMore || !state.hasMore) return;
+    final requestId = _requestId;
     state = state.copyWith(loadingMore: true, clearError: true);
-    await _fetchNextPage(isRefresh: false, requestId: _requestId);
+    await _fetchPage(isRefresh: false, requestId: requestId);
   }
 
-  Future<void> _loadCounts(
-    UserFilters filters,
-    String searchQuery,
-    int requestId,
-  ) async {
+  Future<void> _loadCounts({
+    required UserFilters filters,
+    required String searchQuery,
+    required int requestId,
+  }) async {
     final cacheKey = _buildCountsKey(filters, searchQuery);
     final cachedCounts = _readCachedCounts(cacheKey);
     if (cachedCounts != null) {
@@ -194,11 +193,12 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     return filters == const UserFilters();
   }
 
-  Future<void> _fetchNextPage({
+  Future<void> _fetchPage({
     required bool isRefresh,
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
     final filters = state.filters;
     final searchQuery = state.searchQuery;
     final startAfter = isRefresh ? null : state.lastDocument;
@@ -215,6 +215,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
             return repository.fetchUsersWithSearchFallback(
               filters: filters,
               searchQuery: searchQuery,
+              assignedCities: assignedCities,
               pincodesMap: const {},
               startAfter: startAfter,
             );
@@ -270,10 +271,12 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
     _throwIfStale(requestId);
     final filteredCount = await repository.countUsers(
       filters: filters,
       searchQuery: searchQuery,
+      assignedCities: assignedCities,
       pincodesMap: const {},
     );
     _throwIfStale(requestId);
@@ -283,6 +286,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
                 ? filteredCount
                 : await repository.countServiceProviders(
                   filters: filters,
+                  assignedCities: assignedCities,
                   pincodesMap: const {},
                 ))
             : null;
@@ -293,6 +297,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
             : await repository.countUsers(
               filters: const UserFilters(),
               searchQuery: '',
+              assignedCities: assignedCities,
               pincodesMap: const {},
             );
     _throwIfStale(requestId);

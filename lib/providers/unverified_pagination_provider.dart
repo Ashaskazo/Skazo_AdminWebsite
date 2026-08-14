@@ -8,6 +8,8 @@ import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
 
+import 'package:skazo_admin/providers/admin_providers.dart';
+
 /// Paginated unverified users for dashboard category drill-down.
 class UnverifiedPaginationState {
   final List<UserModel> users;
@@ -57,6 +59,7 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
   UnverifiedPaginationState build(String? category) {
     ref.listen(dashboardSelectedDateFilterProvider, (_, __) => refresh());
     ref.listen(dashboardSelectedCityProvider, (_, __) => refresh());
+    ref.listen(currentAdminAssignedCitiesProvider, (_, __) => refresh());
     Future.microtask(refresh);
     return UnverifiedPaginationState.initial();
   }
@@ -89,6 +92,7 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
   Future<void> _fetchPage({required bool isRefresh}) async {
     final repository = ref.read(userRepositoryProvider);
     final category = arg;
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
 
     try {
       final pincodesMap = await ref.read(propertyPincodesProvider.future);
@@ -96,6 +100,7 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
         timeFilter: _timeFilter,
         city: _city,
         category: category,
+        assignedCities: assignedCities,
         pincodesMap: pincodesMap,
         startAfter: isRefresh ? null : state.lastDocument,
       );
@@ -135,6 +140,7 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
+  final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
   final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
@@ -142,6 +148,7 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
     categories: kBusinessCategories,
     timeFilter: timeFilter,
     city: city,
+    assignedCities: assignedCities,
     pincodesMap: pincodesMap,
   );
 });
@@ -150,12 +157,15 @@ final unverifiedPendingCountProvider = FutureProvider<int>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
+  final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
   final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
   return repository.countUnverifiedPending(
     timeFilter: timeFilter,
     city: city,
+    assignedCities: assignedCities,
     pincodesMap: pincodesMap,
   );
 });
+

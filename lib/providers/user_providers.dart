@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
@@ -15,9 +16,9 @@ final dashboardSelectedDateFilterProvider = StateProvider<String?>(
   (ref) => null,
 );
 
-// Provider to get all unique cities from property_pincodes collection
+// Provider to get all allowed cities for the current admin
 final unverifiedCitiesProvider = FutureProvider<List<String>>((ref) async {
-  return ref.watch(userFilterCitiesProvider.future);
+  return ref.watch(allowedCitiesProvider.future);
 });
 
 class UserVerificationNotifier extends StateNotifier<bool> {

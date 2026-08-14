@@ -9,9 +9,13 @@ class SidebarNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-       print("************************************************************************");
-                print('Current Admin Profile: ${ref.watch(currentAdminProfileProvider).value}');
-print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
+    print(
+      "************************************************************************",
+    );
+    print(
+      'Current Admin Profile: ${ref.watch(currentAdminProfileProvider).value}',
+    );
+    print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
     final currentView = ref.watch(currentDashboardViewProvider);
     final isCollapsed = ref.watch(sidebarCollapsedProvider);
 
@@ -30,10 +34,7 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
           ),
         ],
         border: const Border(
-          right: BorderSide(
-            color: Color(0xFFE2E8F0),
-            width: 1,
-          ),
+          right: BorderSide(color: Color(0xFFE2E8F0), width: 1),
         ),
       ),
       child: Column(
@@ -56,7 +57,9 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                                color: const Color(
+                                  0xFF6366F1,
+                                ).withValues(alpha: 0.3),
                                 blurRadius: 8,
                               ),
                             ],
@@ -88,12 +91,17 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
-                                  colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
+                                  colors: [
+                                    Color(0xFF312E81),
+                                    Color(0xFF4F46E5),
+                                  ],
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                                    color: const Color(
+                                      0xFF4F46E5,
+                                    ).withValues(alpha: 0.3),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -261,7 +269,6 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                   isCollapsed,
                   activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
                 ),
-             
 
                 if (ref.watch(isSuperAdminProvider)) ...[
                   const SizedBox(height: 16),
@@ -273,7 +280,10 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                     DashboardView.admin,
                     currentView,
                     isCollapsed,
-                    activeGradient: const [Color(0xFF6366F1), Color(0xFF4338CA)],
+                    activeGradient: const [
+                      Color(0xFF6366F1),
+                      Color(0xFF4338CA),
+                    ],
                     badge: 'SUPER',
                   ),
                   _buildNavItem(
@@ -283,7 +293,10 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                     DashboardView.appConfig,
                     currentView,
                     isCollapsed,
-                    activeGradient: const [Color(0xFF64748B), Color(0xFF334155)],
+                    activeGradient: const [
+                      Color(0xFF64748B),
+                      Color(0xFF334155),
+                    ],
                   ),
                 ],
                 const SizedBox(height: 20),
@@ -316,7 +329,10 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                               decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
                                 gradient: LinearGradient(
-                                  colors: [Color(0xFF6366F1), Color(0xFFEC4899)],
+                                  colors: [
+                                    Color(0xFF6366F1),
+                                    Color(0xFFEC4899),
+                                  ],
                                 ),
                               ),
                               child: CircleAvatar(
@@ -363,7 +379,9 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
                         ),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                          color: const Color(
+                            0xFF6366F1,
+                          ).withValues(alpha: 0.15),
                         ),
                       ),
                       child: Row(
@@ -510,9 +528,7 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 gradient:
-                    isSelected
-                        ? LinearGradient(colors: activeGradient)
-                        : null,
+                    isSelected ? LinearGradient(colors: activeGradient) : null,
                 color: isSelected ? null : Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
                 boxShadow:
@@ -548,13 +564,8 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
           padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
           decoration: BoxDecoration(
             gradient:
-                isSelected
-                    ? LinearGradient(colors: activeGradient)
-                    : null,
-            color:
-                isSelected
-                    ? null
-                    : Colors.transparent,
+                isSelected ? LinearGradient(colors: activeGradient) : null,
+            color: isSelected ? null : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             boxShadow:
                 isSelected
@@ -590,7 +601,10 @@ print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
               if (badge != null) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color:
                         isSelected

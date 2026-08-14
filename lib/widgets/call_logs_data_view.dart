@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
@@ -134,6 +135,11 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       _hasNextPage = false;
       _selectedDocId = null;
       _selectedDocData = null;
+      _statTotalLogs = 0;
+      _statTodayCalls = 0;
+      _statInterested = 0;
+      _statConverted = 0;
+      _statFollowUpsDue = 0;
     });
 
     await _loadPincodesMap();
@@ -158,6 +164,13 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   Future<void> _fetchDashboardStats() async {
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    if (assignedCities.isNotEmpty) {
+      // Regular admin with assigned city: skip unfiltered global collection count query
+      // so global counts are never temporarily flashed.
+      return;
+    }
+
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final tomorrowStart = todayStart.add(const Duration(days: 1));
@@ -278,32 +291,73 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   /// a filter is changed by the user.
   void _applyFilters() {
     if (!mounted) return;
-    final now = DateTime.now().toUtc();
-    final todayStart = DateTime.utc(now.year, now.month, now.day);
-    // final tomorrowStart = todayStart.add(Duration(days: 1));
-    // final dayAfterTomorrowStart = todayStart.add(const Duration(days: 2));
 
-    // _countFollowUpToday = 0;
-    // _countFollowUpOverdue = 0;
-    // _countFollowUpTomorrow = 0;
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
 
-    // for (final log in _allDocs) {
-    //   final raw = log['rawData'] ?? {};
-    //   if (raw['salesStatus'] == 'follow_up' &&
-    //       raw['followUpDate'] is Timestamp) {
-    //     final date = (raw['followUpDate'] as Timestamp).toDate();
-    //     if (date.isBefore(todayStart)) {
-    //       _countFollowUpOverdue++;
-    //     } else if (date.isBefore(tomorrowStart)) {
-    //       _countFollowUpToday++;
-    //     } else if (date.isBefore(dayAfterTomorrowStart)) {
-    //       _countFollowUpTomorrow++;
-    //     }
-    //   }
-    // }
+    // 0. Filter by Admin Assigned Cities scope first
+    List<Map<String, dynamic>> cityScopedDocs = _allDocs;
+    if (assignedCities.isNotEmpty) {
+      cityScopedDocs = _allDocs.where((log) {
+        final raw = log['rawData'] ?? {};
+        final matchesResolver = userMatchesAssignedCities(
+          raw,
+          null,
+          assignedCities,
+          _pincodesMap,
+          _pincodeCityLookup,
+        );
+        if (matchesResolver) return true;
+
+        final logCity = _normalizeString(log['city']);
+        if (logCity.isNotEmpty &&
+            assignedCities.any((c) => logCity.contains(c.toLowerCase()) || c.toLowerCase().contains(logCity))) {
+          return true;
+        }
+        return false;
+      }).toList();
+    }
+
+    // Update Header Dashboard Stats to match assigned city scope
+    _statTotalLogs = cityScopedDocs.length;
+    final nowLocal = DateTime.now();
+    final todayStartLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+    final tomorrowStartLocal = todayStartLocal.add(const Duration(days: 1));
+
+    int todayCount = 0;
+    int interestedCount = 0;
+    int convertedCount = 0;
+    int followUpsDueCount = 0;
+
+    for (final log in cityScopedDocs) {
+      final raw = log['rawData'] ?? {};
+      final ts = log['timestamp'];
+      if (ts is DateTime) {
+        if (ts.isAfter(todayStartLocal) || ts.isAtSameMomentAs(todayStartLocal)) {
+          todayCount++;
+        }
+      }
+      final salesStatus = (raw['salesStatus'] ?? '').toString().toLowerCase();
+      if (salesStatus == 'interested') {
+        interestedCount++;
+      } else if (salesStatus == 'converted') {
+        convertedCount++;
+      } else if (salesStatus == 'follow_up') {
+        if (raw['followUpDate'] is Timestamp) {
+          final followUpDt = (raw['followUpDate'] as Timestamp).toDate();
+          if (followUpDt.isBefore(tomorrowStartLocal)) {
+            followUpsDueCount++;
+          }
+        }
+      }
+    }
+
+    _statTodayCalls = todayCount;
+    _statInterested = interestedCount;
+    _statConverted = convertedCount;
+    _statFollowUpsDue = followUpsDueCount;
 
     _filteredLogs =
-        _allDocs.where((log) {
+        cityScopedDocs.where((log) {
           final raw = log['rawData'] ?? {};
 
           // 1. Quick search
@@ -1016,9 +1070,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               _subscribeToLogs();
             },
           ),
-          const SizedBox(height: 12),
-          _buildLeftSearchTextField('City', _cityController, Icons.location_on),
-          const SizedBox(height: 12),
+          if (ref.watch(isSuperAdminProvider)) ...[
+            _buildLeftSearchTextField('City', _cityController, Icons.location_on),
+            const SizedBox(height: 12),
+          ],
           _buildLeftSearchTextField(
             'Category',
             _categoryController,
@@ -2343,6 +2398,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(currentAdminAssignedCitiesProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(

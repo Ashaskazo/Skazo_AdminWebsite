@@ -9,11 +9,12 @@ import 'package:skazo_admin/providers/collections_provider.dart';
 
 class AdminsDataView extends ConsumerWidget {
   const AdminsDataView({super.key});
-  
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSuperAdmin = ref.watch(isSuperAdminProvider);
     final adminsAsync = ref.watch(adminsStreamProvider);
+    final systemCitiesAsync = ref.watch(userFilterCitiesProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -37,7 +38,7 @@ class AdminsDataView extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Manage administrative access and roles.',
+                    'Manage administrative access, assigned cities, and active statuses.',
                     style: GoogleFonts.poppins(
                       fontSize: 14,
                       color: const Color(0xFF64748B),
@@ -47,7 +48,10 @@ class AdminsDataView extends ConsumerWidget {
               ),
               if (isSuperAdmin)
                 ElevatedButton.icon(
-                  onPressed: () => _showAddAdminDialog(context, ref),
+                  onPressed: () {
+                    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
+                    _showAddAdminDialog(context, ref, systemCities);
+                  },
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Add Sales Admin'),
                   style: ElevatedButton.styleFrom(
@@ -79,101 +83,208 @@ class AdminsDataView extends ConsumerWidget {
                   final id = docs[index].id;
                   final email = data['email'] ?? 'No email';
                   final name = data['name'] ?? 'No name';
-                  final role = data['role'] ?? data['level'] ?? 'admin';
-                  final isCurrentSuperAdmin = role == 'super_admin' || role == 'administrator';
+                  final role = (data['role'] ?? data['level'] ?? 'admin').toString();
+                  final isCurrentSuperAdmin = role.toLowerCase() == 'super_admin' || role.toLowerCase() == 'administrator';
+                  final isActive = data['isActive'] != false && data['status'] != 'inactive';
+
+                  // Extract assigned cities
+                  List<String> assignedCities = [];
+                  final rawCities = data['assignedCities'] ?? data['assigned_cities'];
+                  if (rawCities is List) {
+                    assignedCities = rawCities.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+                  } else if (data['assignedCity'] != null && data['assignedCity'].toString().trim().isNotEmpty) {
+                    assignedCities = [data['assignedCity'].toString().trim()];
+                  } else if (data['city'] != null && data['city'].toString().trim().isNotEmpty) {
+                    assignedCities = [data['city'].toString().trim()];
+                  }
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                      border: Border.all(
+                        color: isActive ? const Color(0xFFF1F5F9) : Colors.red.withValues(alpha: 0.2),
+                      ),
                     ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      leading: CircleAvatar(
-                        backgroundColor: isCurrentSuperAdmin ? const Color(0xFF2563EB).withValues(alpha: 0.1) : const Color(0xFFF1F5F9),
-                        child: Icon(
-                          isCurrentSuperAdmin ? Icons.shield : Icons.person,
-                          color: isCurrentSuperAdmin ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                        ),
-                      ),
-                      title: Text(
-                        name,
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
                         children: [
-                          Text(
-                            email,
-                            style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
-                          ),
-                          if (data['admin_id'] != null)
-                            Text(
-                              'ID: ${data['admin_id']}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10, 
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2563EB),
-                              ),
-                            ),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isCurrentSuperAdmin ? const Color(0xFF2563EB).withValues(alpha: 0.1) : const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              role.toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: isCurrentSuperAdmin ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                              ),
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundColor: isCurrentSuperAdmin
+                                ? const Color(0xFF2563EB).withValues(alpha: 0.1)
+                                : (isActive ? const Color(0xFFF1F5F9) : Colors.red.withValues(alpha: 0.1)),
+                            child: Icon(
+                              isCurrentSuperAdmin ? Icons.shield : Icons.person,
+                              color: isCurrentSuperAdmin
+                                  ? const Color(0xFF2563EB)
+                                  : (isActive ? const Color(0xFF64748B) : Colors.red),
                             ),
                           ),
-                          if (isSuperAdmin) ...[
-                            IconButton(
-                              onPressed: () async {
-                                try {
-                                  await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Password reset email sent to $email.'),
-                                        backgroundColor: Colors.green,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      name,
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16,
                                       ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Failed to send reset email: $e'),
-                                        backgroundColor: Colors.red,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Status Chip
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isActive ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.lock_reset, color: Color(0xFF2563EB), size: 20),
-                              tooltip: 'Send Password Reset Email',
+                                      child: Text(
+                                        isActive ? 'Active' : 'Inactive',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: isActive ? Colors.green[700] : Colors.red[700],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  email,
+                                  style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
+                                ),
+                                if (data['admin_id'] != null)
+                                  Text(
+                                    'ID: ${data['admin_id']}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                // Assigned Cities Badges
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: isCurrentSuperAdmin
+                                      ? [
+                                          Chip(
+                                            avatar: const Icon(Icons.star, size: 12, color: Color(0xFF2563EB)),
+                                            label: Text(
+                                              'All Cities (Super Admin)',
+                                              style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF2563EB)),
+                                            ),
+                                            backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.08),
+                                            visualDensity: VisualDensity.compact,
+                                            padding: EdgeInsets.zero,
+                                          ),
+                                        ]
+                                      : (assignedCities.isEmpty
+                                          ? [
+                                              Chip(
+                                                avatar: const Icon(Icons.location_off, size: 12, color: Colors.orange),
+                                                label: Text(
+                                                  'No Cities Assigned',
+                                                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange[800]),
+                                                ),
+                                                backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                                                visualDensity: VisualDensity.compact,
+                                                padding: EdgeInsets.zero,
+                                              ),
+                                            ]
+                                          : assignedCities
+                                              .map(
+                                                (c) => Chip(
+                                                  avatar: const Icon(Icons.location_city, size: 12, color: Color(0xFF0284C7)),
+                                                  label: Text(
+                                                    c,
+                                                    style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF0369A1)),
+                                                  ),
+                                                  backgroundColor: const Color(0xFFE0F2FE),
+                                                  visualDensity: VisualDensity.compact,
+                                                  padding: EdgeInsets.zero,
+                                                ),
+                                              )
+                                              .toList()),
+                                ),
+                              ],
                             ),
-                          ],
-                          if (isSuperAdmin && role != 'super_admin') ...[
-                            const SizedBox(width: 4),
-                            IconButton(
-                              onPressed: () => _deleteAdmin(context, ref, id, name),
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                              tooltip: 'Remove Admin',
-                            ),
-                          ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isCurrentSuperAdmin ? const Color(0xFF2563EB).withValues(alpha: 0.1) : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  role.toUpperCase(),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isCurrentSuperAdmin ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ),
+                              if (isSuperAdmin) ...[
+                                const SizedBox(width: 8),
+                                // Edit Admin Button
+                                IconButton(
+                                  onPressed: () {
+                                    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
+                                    _showEditAdminDialog(context, ref, id, data, systemCities);
+                                  },
+                                  icon: const Icon(Icons.edit_outlined, color: Color(0xFF2563EB), size: 20),
+                                  tooltip: 'Edit Admin & Assigned Cities',
+                                ),
+                                IconButton(
+                                  onPressed: () async {
+                                    try {
+                                      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Password reset email sent to $email.'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to send reset email: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.lock_reset, color: Color(0xFF475569), size: 20),
+                                  tooltip: 'Send Password Reset Email',
+                                ),
+                              ],
+                              if (isSuperAdmin && !isCurrentSuperAdmin) ...[
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  onPressed: () => _deleteAdmin(context, ref, id, name),
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                  tooltip: 'Remove Admin',
+                                ),
+                              ],
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -189,11 +300,13 @@ class AdminsDataView extends ConsumerWidget {
     );
   }
 
-  Future<void> _showAddAdminDialog(BuildContext context, WidgetRef ref) async {
+  Future<void> _showAddAdminDialog(BuildContext context, WidgetRef ref, List<String> availableCities) async {
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     String selectedRole = 'admin';
+    bool isActive = true;
+    List<String> selectedCities = [];
     bool isCreating = false;
 
     return showDialog(
@@ -202,57 +315,107 @@ class AdminsDataView extends ConsumerWidget {
         builder: (context, setState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text('Add New Admin', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'Full Name',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    hintText: 'John Doe',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'admin@example.com',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedRole,
-                decoration: InputDecoration(
-                  labelText: 'Role',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                  DropdownMenuItem(value: 'super_admin', child: Text('Super Admin')),
-                ],
-                onChanged: (v) => setState(() => selectedRole = v!),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  hintText: 'Enter login password',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              if (isCreating) ...[
                 const SizedBox(height: 16),
-                const LinearProgressIndicator(),
-                const SizedBox(height: 8),
-                Text('Creating authentication account...', style: GoogleFonts.poppins(fontSize: 12)),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'admin@example.com',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: InputDecoration(
+                    labelText: 'Role',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'admin', child: Text('Sales / Staff Admin')),
+                    DropdownMenuItem(value: 'super_admin', child: Text('Super Admin (Unrestricted)')),
+                  ],
+                  onChanged: (v) => setState(() => selectedRole = v!),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    hintText: 'Enter login password',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    Row(
+                      children: [
+                        Text(isActive ? 'Active' : 'Inactive', style: TextStyle(color: isActive ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                        Switch(
+                          value: isActive,
+                          onChanged: (v) => setState(() => isActive = v),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (selectedRole != 'super_admin') ...[
+                  const SizedBox(height: 16),
+                  Text('Assign Cities:', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: availableCities.map((city) {
+                      final isSelected = selectedCities.contains(city);
+                      return FilterChip(
+                        label: Text(city),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              selectedCities.add(city);
+                            } else {
+                              selectedCities.remove(city);
+                            }
+                          });
+                        },
+                        selectedColor: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                        checkmarkColor: const Color(0xFF2563EB),
+                        labelStyle: TextStyle(
+                          color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF475569),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                if (isCreating) ...[
+                  const SizedBox(height: 16),
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 8),
+                  Text('Creating admin account...', style: GoogleFonts.poppins(fontSize: 12)),
+                ],
               ],
-            ],
+            ),
           ),
           actions: [
             TextButton(
@@ -275,7 +438,7 @@ class AdminsDataView extends ConsumerWidget {
                 setState(() => isCreating = true);
 
                 try {
-                  // 1. Check if admin already exists in the Firestore 'admin' collection
+                  // 1. Check if admin document already exists in Firestore
                   final existingAdminDoc = await FirebaseFirestore.instance
                       .collection('admin')
                       .where('email', isEqualTo: email)
@@ -286,7 +449,7 @@ class AdminsDataView extends ConsumerWidget {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('An admin account with this email already exists in Admin Management.'),
+                          content: Text('An admin account with this email already exists.'),
                           backgroundColor: Colors.orange,
                         ),
                       );
@@ -295,7 +458,6 @@ class AdminsDataView extends ConsumerWidget {
                   }
 
                   // 2. Attempt Firebase Auth user creation using a secondary FirebaseApp instance
-                  // This prevents the current super admin from being logged out
                   FirebaseApp? secondaryApp;
                   String? createdUid;
                   bool isExistingAuthUser = false;
@@ -320,7 +482,6 @@ class AdminsDataView extends ConsumerWidget {
                     } on FirebaseAuthException catch (authErr) {
                       if (authErr.code == 'email-already-in-use') {
                         isExistingAuthUser = true;
-                        debugPrint('Auth account already exists for $email, proceeding to add admin document.');
                       } else {
                         rethrow;
                       }
@@ -340,6 +501,8 @@ class AdminsDataView extends ConsumerWidget {
                     'role': selectedRole,
                     'level': selectedRole == 'super_admin' ? 'administrator' : 'staff',
                     'admin_id': adminId,
+                    'isActive': isActive,
+                    'assignedCities': selectedRole == 'super_admin' ? [] : selectedCities,
                     'createdAt': FieldValue.serverTimestamp(),
                   };
                   if (createdUid != null) {
@@ -348,34 +511,24 @@ class AdminsDataView extends ConsumerWidget {
 
                   await FirebaseFirestore.instance.collection('admin').add(newAdminData);
 
-                  // Invalidate non-stream cached admins provider
                   ref.invalidate(adminsListProvider);
 
                   if (context.mounted) {
                     Navigator.pop(context);
                     final successMessage = isExistingAuthUser
-                        ? 'Admin added! (Note: Email already existed in Firebase Auth — existing password preserved. Click "Forgot Password" to reset if needed.)'
+                        ? 'Admin created successfully! (Existing Firebase Auth password preserved)'
                         : 'Admin account added successfully!';
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(successMessage),
                         backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 6),
                       ),
                     );
                   }
                 } catch (e) {
                   if (context.mounted) {
-                    String errorMsg = 'Failed to create admin account: $e';
-                    if (e is FirebaseAuthException) {
-                      if (e.code == 'weak-password') {
-                        errorMsg = 'The password provided is too weak.';
-                      } else if (e.code == 'invalid-email') {
-                        errorMsg = 'The email address is invalid.';
-                      }
-                    }
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+                      SnackBar(content: Text('Error creating admin: $e'), backgroundColor: Colors.red),
                     );
                   }
                 } finally {
@@ -387,7 +540,179 @@ class AdminsDataView extends ConsumerWidget {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              child: Text(isCreating ? 'Creating...' : 'Add'),
+              child: Text(isCreating ? 'Creating...' : 'Add Admin'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEditAdminDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String docId,
+    Map<String, dynamic> data,
+    List<String> availableCities,
+  ) async {
+    final nameController = TextEditingController(text: data['name'] ?? '');
+    String selectedRole = (data['role'] ?? data['level'] ?? 'admin').toString();
+    if (selectedRole.toLowerCase() == 'administrator') selectedRole = 'super_admin';
+    bool isActive = data['isActive'] != false && data['status'] != 'inactive';
+
+    // Parse existing assigned cities
+    List<String> selectedCities = [];
+    final rawCities = data['assignedCities'] ?? data['assigned_cities'];
+    if (rawCities is List) {
+      selectedCities = rawCities.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    } else if (data['assignedCity'] != null && data['assignedCity'].toString().trim().isNotEmpty) {
+      selectedCities = [data['assignedCity'].toString().trim()];
+    }
+
+    bool isSaving = false;
+
+    return showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Edit Admin Details', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Email: ${data['email']}', style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: InputDecoration(
+                    labelText: 'Role',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'admin', child: Text('Sales / Staff Admin')),
+                    DropdownMenuItem(value: 'super_admin', child: Text('Super Admin (Unrestricted)')),
+                  ],
+                  onChanged: (v) => setState(() => selectedRole = v!),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    Row(
+                      children: [
+                        Text(isActive ? 'Active' : 'Inactive', style: TextStyle(color: isActive ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                        Switch(
+                          value: isActive,
+                          onChanged: (v) => setState(() => isActive = v),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (selectedRole != 'super_admin') ...[
+                  const SizedBox(height: 16),
+                  Text('Assign Cities:', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: availableCities.map((city) {
+                      final isSelected = selectedCities.contains(city);
+                      return FilterChip(
+                        label: Text(city),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              selectedCities.add(city);
+                            } else {
+                              selectedCities.remove(city);
+                            }
+                          });
+                        },
+                        selectedColor: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                        checkmarkColor: const Color(0xFF2563EB),
+                        labelStyle: TextStyle(
+                          color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF475569),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                if (isSaving) ...[
+                  const SizedBox(height: 16),
+                  const LinearProgressIndicator(),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: isSaving ? null : () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Name cannot be empty')),
+                  );
+                  return;
+                }
+
+                setState(() => isSaving = true);
+
+                try {
+                  final updateData = <String, dynamic>{
+                    'name': name,
+                    'role': selectedRole,
+                    'level': selectedRole == 'super_admin' ? 'administrator' : 'staff',
+                    'isActive': isActive,
+                    'assignedCities': selectedRole == 'super_admin' ? [] : selectedCities,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  };
+
+                  await FirebaseFirestore.instance.collection('admin').doc(docId).update(updateData);
+                  ref.invalidate(adminsListProvider);
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Admin details updated successfully!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error updating admin: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                } finally {
+                  if (context.mounted) setState(() => isSaving = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: Text(isSaving ? 'Saving...' : 'Save Changes'),
             ),
           ],
         ),
@@ -418,3 +743,4 @@ class AdminsDataView extends ConsumerWidget {
     }
   }
 }
+

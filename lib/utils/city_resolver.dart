@@ -333,3 +333,42 @@ bool userMatchesCategory(Map<String, dynamic> user, String category) {
   if (userCategories is List) return userCategories.contains(category);
   return false;
 }
+
+/// Evaluates if a user/document matches assigned cities for admins, or an explicitly selected city.
+/// If [selectedCity] is provided and non-empty, checks matching against that city (ensuring it's in assignedCities if restricted).
+/// If [selectedCity] is null/empty and [assignedCities] is non-empty (regular Admin), verifies doc matches ANY assigned city.
+/// If [selectedCity] is null/empty and [assignedCities] is empty (Super Admin), returns true (unrestricted).
+bool userMatchesAssignedCities(
+  Map<String, dynamic> user,
+  String? selectedCity,
+  List<String> assignedCities,
+  Map<String, List<String>> pincodesMap,
+  Map<String, String>? pincodeCityLookup,
+) {
+  // 1. Explicit UI Selected City filter:
+  if (selectedCity != null && selectedCity.trim().isNotEmpty) {
+    // If admin is restricted to specific cities, ensure selectedCity is within assignedCities
+    if (assignedCities.isNotEmpty) {
+      final normSelected = _normalizeCityKey(selectedCity);
+      final isAllowed = assignedCities.any((c) => _normalizeCityKey(c) == normSelected);
+      if (!isAllowed) return false;
+    }
+    return userMatchesCity(user, selectedCity, pincodesMap, pincodeCityLookup);
+  }
+
+  // 2. No explicit city filter selected ("All Cities"):
+  // If assignedCities is empty (Super Admin or unrestricted), return true.
+  if (assignedCities.isEmpty) {
+    return true;
+  }
+
+  // Regular Admin with assignedCities: check if doc matches ANY of assignedCities
+  for (final city in assignedCities) {
+    if (userMatchesCity(user, city, pincodesMap, pincodeCityLookup)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+

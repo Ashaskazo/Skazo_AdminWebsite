@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 export 'package:skazo_admin/utils/city_resolver.dart' show getSmartCity;
 
@@ -50,7 +51,7 @@ final userFilterCitiesProvider = FutureProvider<List<String>>((ref) async {
 
 // Backward-compatible city set provider for existing users page code.
 final userCitiesProvider = FutureProvider<Set<String>>((ref) async {
-  final cities = await ref.watch(userFilterCitiesProvider.future);
+  final cities = await ref.watch(allowedCitiesProvider.future);
   return cities.toSet();
 });
 
@@ -390,20 +391,10 @@ List<String> extractPropertyImageUrls(Map<String, dynamic> prop) {
   return urls.toSet().toList();
 }
 
-// Provider to gather a comprehensive list of cities from rental properties
+// Provider to gather a comprehensive list of cities for rental properties filter
 final rentalCitiesProvider = FutureProvider<Set<String>>((ref) async {
-  final snapshot =
-      await FirebaseFirestore.instance
-          .collection('rental_properties')
-          .limit(500)
-          .get();
-  final Set<String> cities = {};
-  for (var doc in snapshot.docs) {
-    final data = doc.data();
-    final city = (data['city'] ?? data['City'])?.toString();
-    if (city != null && city.isNotEmpty) cities.add(city);
-  }
-  return cities;
+  final cities = await ref.watch(allowedCitiesProvider.future);
+  return cities.toSet();
 });
 
 // Paginated provider for the rental properties list utilizing real-time stream subscription
@@ -466,25 +457,33 @@ class PaginatedRentalNotifier
         );
   }
 
+  List<Map<String, dynamic>> get allFilteredProperties => _filteredProperties;
+  int get totalPages => (_filteredProperties.length / pageSize).ceil();
+
   void _applyFiltersAndNotify() {
     final searchQuery =
         ref.read(rentalSearchQueryProvider).trim().toLowerCase();
     final selectedCity = ref.read(rentalSelectedCityProvider);
     final filterType = ref.read(rentalTypeFilterProvider);
     final timeFilter = ref.read(rentalTimeFilterProvider);
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final pincodesMap = ref.read(propertyPincodesProvider).value ?? {};
+    final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
 
     _totalCount = _allProperties.length;
 
     List<Map<String, dynamic>> temp = List.from(_allProperties);
 
-    // 1. Filter by City
-    if (selectedCity != null) {
-      temp =
-          temp.where((p) {
-            final city = (p['city'] ?? p['City'])?.toString().toLowerCase();
-            return city == selectedCity.toLowerCase();
-          }).toList();
-    }
+    // 1. Filter by City and Admin Assigned Cities Scope
+    temp = temp.where((p) {
+      return userMatchesAssignedCities(
+        p,
+        selectedCity,
+        assignedCities,
+        pincodesMap,
+        pincodeCityLookup,
+      );
+    }).toList();
 
     // 2. Filter by Verification / Premium Type
     if (filterType == 'Verified') {
@@ -1272,29 +1271,10 @@ List<String> extractPromotionImageUrls(Map<String, dynamic> promo) {
   return urls.toSet().toList();
 }
 
-// Provider to gather a comprehensive list of cities from local promotions
+// Provider to gather a comprehensive list of cities for local promotions filter
 final localPromotionsCitiesProvider = FutureProvider<Set<String>>((ref) async {
-  final snapshot =
-      await FirebaseFirestore.instance
-          .collection('local_promotions')
-          .limit(500)
-          .get();
-  final Set<String> cities = {};
-  for (var doc in snapshot.docs) {
-    final data = doc.data();
-    final city = (data['city'] ?? data['City']);
-    if (city != null && city.toString().isNotEmpty) {
-      cities.add(city.toString());
-    } else if (data['address'] != null &&
-        data['address'].toString().isNotEmpty) {
-      final parts = data['address'].toString().split(',');
-      if (parts.length >= 2) {
-        final possibleCity = parts[parts.length - 2].trim();
-        if (possibleCity.isNotEmpty) cities.add(possibleCity);
-      }
-    }
-  }
-  return cities;
+  final cities = await ref.watch(allowedCitiesProvider.future);
+  return cities.toSet();
 });
 
 // Paginated provider for the local promotions list utilizing real-time stream subscription
@@ -1320,6 +1300,10 @@ class PaginatedLocalPromotionsNotifier
       _applyFiltersAndNotify();
     });
     ref.listen(localPromotionsSelectedCityProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(currentAdminAssignedCitiesProvider, (prev, next) {
       _currentPage = 0;
       _applyFiltersAndNotify();
     });
@@ -1368,33 +1352,30 @@ class PaginatedLocalPromotionsNotifier
         );
   }
 
-
-
   void _applyFiltersAndNotify() {
     final searchQuery =
         ref.read(localPromotionsSearchQueryProvider).trim().toLowerCase();
     final selectedCity = ref.read(localPromotionsSelectedCityProvider);
     final filterType = ref.read(localPromotionsTypeFilterProvider);
     final timeFilter = ref.read(localPromotionsTimeFilterProvider);
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final pincodesMap = ref.read(propertyPincodesProvider).value ?? {};
+    final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
 
     _totalCount = _allPromotions.length;
 
     List<Map<String, dynamic>> temp = List.from(_allPromotions);
 
-    // 1. Filter by City
-    if (selectedCity != null) {
-      temp =
-          temp.where((p) {
-            final city =
-                (p['city'] ?? p['City'])?.toString().toLowerCase() ?? '';
-            if (city == selectedCity.toLowerCase()) return true;
-            if (p['address'] != null) {
-              final addr = p['address'].toString().toLowerCase();
-              if (addr.contains(selectedCity.toLowerCase())) return true;
-            }
-            return false;
-          }).toList();
-    }
+    // 1. Filter by City and Admin Assigned Cities Scope
+    temp = temp.where((p) {
+      return userMatchesAssignedCities(
+        p,
+        selectedCity,
+        assignedCities,
+        pincodesMap,
+        pincodeCityLookup,
+      );
+    }).toList();
 
     // 2. Filter by Verification Status Type
     if (filterType == 'Verified') {
