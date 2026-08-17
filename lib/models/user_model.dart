@@ -129,7 +129,7 @@ class UserModel {
       createdAt: _parseDateTime(data['createdAt']),
       updatedAt: _parseDateTime(data['updatedAt']),
       verifiedAt: _parseDateTime(data['verifiedAt']),
-      activePlan: _parseInt(data['AtivePlan'] ?? data['ActivePlan']),
+      activePlan: _parseInt(data['AtivePlan']),
       gender: data['gender']?.toString(),
       ownerPropertyPaid: _parseInt(data['ownerPropertyPaid']),
       userPropertyPaid: _parseInt(data['userPropertyPaid']),

@@ -88,7 +88,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _planController = TextEditingController(
       text:
           data['AtivePlan']?.toString() ??
-          data['ActivePlan']?.toString() ??
+          // data['ActivePlan']?.toString() ??
           '0',
     );
     _priorityController = TextEditingController(
@@ -116,7 +116,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       text: data['paymentCount']?.toString() ?? '0',
     );
 
-    final rawLeadCharge = data['payPerLeadCharge'] ?? data['payperleadcharge'];
+    final rawLeadCharge = data['payperLeadCharge'];
     _payPerLeadChargeController = TextEditingController(
       text: rawLeadCharge?.toString() ?? '',
     );
@@ -298,8 +298,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'paymentLinkSend': _paymentLinkSend,
         // 'StarServiceprovider': _isStarServiceProvider ? 'true' : 'false',
         'starServiceProvider': _isStarServiceProvider,
-        'payPerLeadCharge': leadChargeVal,
-        // 'payperleadcharge': leadChargeVal,
+        // 'payPerLeadCharge': leadChargeVal,
+        'payperLeadcharge': leadChargeVal,
         'ServiceRateCard': rateCardList,
         'transactionId': _transactionIdController.text.trim(),
         'paymentPlanDuration': _paymentPlanController.text.trim(),
