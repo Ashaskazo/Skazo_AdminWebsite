@@ -8,6 +8,7 @@ import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -18,18 +19,11 @@ class _StaleUserRequestException implements Exception {
   const _StaleUserRequestException();
 }
 
-class _CachedUserCounts {
-  const _CachedUserCounts({
-    required this.filteredCount,
-    required this.totalCount,
-    required this.cachedAt,
-    this.serviceProviderCount,
-  });
-
-  final int filteredCount;
-  final int totalCount;
-  final int? serviceProviderCount;
+class _CachedCounts {
+  final UserCounts counts;
   final DateTime cachedAt;
+
+  const _CachedCounts({required this.counts, required this.cachedAt});
 
   bool get isFresh => DateTime.now().difference(cachedAt) < _countsCacheTtl;
 }
@@ -38,8 +32,8 @@ class _CachedUserCounts {
 class UserPaginationNotifier extends Notifier<UserPaginationState> {
   Timer? _filterDebounce;
   int _requestId = 0;
-  final Map<String, _CachedUserCounts> _countCache = {};
-  final Map<String, Future<_CachedUserCounts>> _countRequests = {};
+  final Map<String, _CachedCounts> _countCache = {};
+  final Map<String, Future<UserCounts>> _countRequests = {};
   final Map<String, Future<PageResult<UserModel>>> _pageRequests = {};
 
   @override
@@ -48,6 +42,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       _filterDebounce?.cancel();
       _countRequests.clear();
       _pageRequests.clear();
+      _countCache.clear();
     });
 
     ref.listen(userSearchQueryProvider, (_, __) => _scheduleRefresh());
@@ -57,13 +52,11 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     ref.listen(userTypeFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userCategoryFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userPriorityFilterProvider, (_, __) => _scheduleRefresh());
-    ref.listen(
-      userProfileCompleteFilterProvider,
-      (_, __) => _scheduleRefresh(),
-    );
+    ref.listen(userProfileCompleteFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userBusinessNameFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userSortAscendingProvider, (_, __) => _scheduleRefresh());
     ref.listen(currentAdminAssignedCitiesProvider, (_, __) => _scheduleRefresh());
+    ref.listen(isSuperAdminProvider, (_, __) => _scheduleRefresh());
 
     Future.microtask(refresh);
     return UserPaginationState.initial();
@@ -77,11 +70,12 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     final profileComplete = ref.read(userProfileCompleteFilterProvider);
     final businessName = ref.read(userBusinessNameFilterProvider);
     final sortAscending = ref.read(userSortAscendingProvider);
+    final city = ref.read(userSelectedCityProvider);
 
     return UserFilters(
       timeFilter: timeFilterFromLegacyUserValue(dateFilter),
       verifiedOnly: verifiedOnly ? true : null,
-      city: ref.read(userSelectedCityProvider),
+      city: city,
       userType: ref.read(userTypeFilterProvider),
       category: category,
       priority: priority,
@@ -94,7 +88,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
 
   void _scheduleRefresh() {
     _filterDebounce?.cancel();
-    _filterDebounce = Timer(const Duration(milliseconds: 250), refresh);
+    _filterDebounce = Timer(const Duration(milliseconds: 200), refresh);
   }
 
   void clearOptimizationCaches() {
@@ -122,10 +116,8 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       hasMore: true,
     );
 
-    await Future.wait([
-      _fetchPage(isRefresh: true, requestId: requestId),
-      _loadCounts(filters: filters, searchQuery: searchQuery, requestId: requestId),
-    ]);
+    await _fetchPage(isRefresh: true, requestId: requestId);
+    _loadCounts(filters: filters, searchQuery: searchQuery, requestId: requestId);
   }
 
   Future<void> loadMore() async {
@@ -140,47 +132,54 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     required String searchQuery,
     required int requestId,
   }) async {
-    final cacheKey = _buildCountsKey(filters, searchQuery);
-    final cachedCounts = _readCachedCounts(cacheKey);
-    if (cachedCounts != null) {
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final isSuper = ref.read(isSuperAdminProvider);
+    final cacheKey = filters.toCacheKey(
+      assignedCities: assignedCities,
+      query: searchQuery,
+    );
+
+    final cached = _readCachedCounts(cacheKey);
+    if (cached != null) {
       if (requestId == _requestId) {
         state = state.copyWith(
-          filteredCount: cachedCounts.filteredCount,
-          totalCount: cachedCounts.totalCount,
-          serviceProviderCount: cachedCounts.serviceProviderCount,
+          filteredCount: cached.filtered,
+          totalCount: cached.total,
+          customerCount: cached.customers,
+          serviceProviderCount: cached.serviceProviders,
         );
       }
       return;
     }
 
-    Future<_CachedUserCounts>? future;
+    Future<UserCounts>? future;
     try {
-      future =
-          _countRequests[cacheKey] ??= _computeCounts(
-            filters: filters,
-            searchQuery: searchQuery,
-            requestId: requestId,
-          );
-      final counts = await future;
+      final repository = ref.read(userRepositoryProvider);
+      future = _countRequests[cacheKey] ??= repository.fetchUserCounts(
+        filters: filters,
+        searchQuery: searchQuery,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuper,
+      );
 
-      if (requestId != _requestId) {
-        return;
-      }
+      final counts = await future;
+      _countCache[cacheKey] = _CachedCounts(
+        counts: counts,
+        cachedAt: DateTime.now(),
+      );
+
+      if (requestId != _requestId) return;
 
       state = state.copyWith(
-        filteredCount: counts.filteredCount,
-        totalCount: counts.totalCount,
-        serviceProviderCount: counts.serviceProviderCount,
+        filteredCount: counts.filtered,
+        totalCount: counts.total,
+        customerCount: counts.customers,
+        serviceProviderCount: counts.serviceProviders,
       );
     } catch (e) {
-      if (e is _StaleUserRequestException) {
-        return;
-      }
-      if (requestId != _requestId) {
-        return;
-      }
+      if (e is _StaleUserRequestException || requestId != _requestId) return;
       if (kDebugMode) {
-        debugPrint('UserPaginationNotifier count error: $e');
+        debugPrint('[USERS] UserPaginationNotifier count error: $e');
       }
     } finally {
       if (identical(_countRequests[cacheKey], future)) {
@@ -189,34 +188,32 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     }
   }
 
-  bool _filtersAreDefault(UserFilters filters) {
-    return filters == const UserFilters();
-  }
-
   Future<void> _fetchPage({
     required bool isRefresh,
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
     final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final isSuper = ref.read(isSuperAdminProvider);
     final filters = state.filters;
     final searchQuery = state.searchQuery;
     final startAfter = isRefresh ? null : state.lastDocument;
-    final pageKey = _buildPageKey(filters, searchQuery, startAfter);
+    final pageKey = '${filters.toCacheKey(assignedCities: assignedCities, query: searchQuery)}|${startAfter?.id ?? 'root'}';
 
     Future<PageResult<UserModel>>? requestFuture;
     try {
       _throwIfStale(requestId);
       final inFlightRequest = _pageRequests[pageKey];
-      requestFuture =
-          inFlightRequest ??
+      requestFuture = inFlightRequest ??
           (() async {
             _throwIfStale(requestId);
+            final pincodesMap = (ref.read(propertyPincodesProvider).value) ?? const <String, List<String>>{};
             return repository.fetchUsersWithSearchFallback(
               filters: filters,
               searchQuery: searchQuery,
               assignedCities: assignedCities,
-              pincodesMap: const {},
+              isSuperAdmin: isSuper,
+              pincodesMap: pincodesMap,
               startAfter: startAfter,
             );
           })();
@@ -225,14 +222,8 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
         _pageRequests[pageKey] = requestFuture;
       }
 
-      if (requestId != _requestId) {
-        return;
-      }
-
       final result = await requestFuture;
-      if (requestId != _requestId) {
-        return;
-      }
+      if (requestId != _requestId) return;
 
       final updatedUsers =
           isRefresh ? result.items : [...state.users, ...result.items];
@@ -246,12 +237,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
         clearError: true,
       );
     } catch (e) {
-      if (e is _StaleUserRequestException) {
-        return;
-      }
-      if (requestId != _requestId) {
-        return;
-      }
+      if (e is _StaleUserRequestException || requestId != _requestId) return;
       state = state.copyWith(
         loading: false,
         loadingMore: false,
@@ -265,95 +251,25 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     }
   }
 
-  Future<_CachedUserCounts> _computeCounts({
-    required UserFilters filters,
-    required String searchQuery,
-    required int requestId,
-  }) async {
-    final repository = ref.read(userRepositoryProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
-    _throwIfStale(requestId);
-    final filteredCount = await repository.countUsers(
-      filters: filters,
-      searchQuery: searchQuery,
-      assignedCities: assignedCities,
-      pincodesMap: const {},
-    );
-    _throwIfStale(requestId);
-    final serviceProviderCount =
-        searchQuery.isEmpty
-            ? (filters.userType == 'Service Providers'
-                ? filteredCount
-                : await repository.countServiceProviders(
-                  filters: filters,
-                  assignedCities: assignedCities,
-                  pincodesMap: const {},
-                ))
-            : null;
-    _throwIfStale(requestId);
-    final totalCount =
-        searchQuery.isEmpty && _filtersAreDefault(filters)
-            ? filteredCount
-            : await repository.countUsers(
-              filters: const UserFilters(),
-              searchQuery: '',
-              assignedCities: assignedCities,
-              pincodesMap: const {},
-            );
-    _throwIfStale(requestId);
-
-    final counts = _CachedUserCounts(
-      filteredCount: filteredCount,
-      totalCount: totalCount,
-      serviceProviderCount: serviceProviderCount,
-      cachedAt: DateTime.now(),
-    );
-    _countCache[_buildCountsKey(filters, searchQuery)] = counts;
-    return counts;
-  }
-
   void _throwIfStale(int requestId) {
     if (requestId != _requestId) {
       throw const _StaleUserRequestException();
     }
   }
 
-  _CachedUserCounts? _readCachedCounts(String cacheKey) {
+  UserCounts? _readCachedCounts(String cacheKey) {
     final cached = _countCache[cacheKey];
-    if (cached == null) {
-      return null;
-    }
+    if (cached == null) return null;
     if (!cached.isFresh) {
       _countCache.remove(cacheKey);
       return null;
     }
-    return cached;
-  }
-
-  String _buildCountsKey(UserFilters filters, String searchQuery) {
-    return [
-      filters.timeFilter.name,
-      filters.verifiedOnly?.toString() ?? '',
-      filters.city?.trim().toLowerCase() ?? '',
-      filters.userType,
-      filters.category?.trim() ?? '',
-      filters.priority?.toString() ?? '',
-      filters.profileComplete?.toString() ?? '',
-      filters.businessNamePrefix?.trim() ?? '',
-      searchQuery.trim(),
-    ].join('|');
-  }
-
-  String _buildPageKey(
-    UserFilters filters,
-    String searchQuery,
-    DocumentSnapshot<Map<String, dynamic>>? startAfter,
-  ) {
-    return '${_buildCountsKey(filters, searchQuery)}|${startAfter?.id ?? 'root'}';
+    return cached.counts;
   }
 
   int get filteredCount => state.filteredCount ?? state.users.length;
   int get totalCount => state.totalCount ?? 0;
+  int get customerCount => state.customerCount ?? 0;
   int get serviceProviderCount => state.serviceProviderCount ?? 0;
 }
 
@@ -361,3 +277,4 @@ final userPaginationProvider =
     NotifierProvider<UserPaginationNotifier, UserPaginationState>(
       UserPaginationNotifier.new,
     );
+

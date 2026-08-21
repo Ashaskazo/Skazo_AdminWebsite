@@ -26,14 +26,151 @@ class DashboardPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateProvider);
+    final accessState = ref.watch(adminAccessStateProvider);
     final currentView = ref.watch(currentDashboardViewProvider);
 
-    return authState.when(
-      data: (user) {
-        if (user == null) {
-          return const AuthPage();
+    // Auto-select assigned city for normal admin with single assigned city
+    ref.listen<String?>(adminDefaultCityProvider, (previous, next) {
+      if (next != null) {
+        if (ref.read(userSelectedCityProvider) == null) {
+          ref.read(userSelectedCityProvider.notifier).state = next;
         }
+        if (ref.read(dashboardSelectedCityProvider) == null) {
+          ref.read(dashboardSelectedCityProvider.notifier).state = next;
+        }
+      }
+    });
+
+    switch (accessState.status) {
+      case AdminAccessStatus.loading:
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Verifying administrator credentials...',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case AdminAccessStatus.unauthenticated:
+        return const AuthPage();
+
+      case AdminAccessStatus.unauthorized:
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          body: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(36),
+                    ),
+                    child: const Icon(
+                      Icons.lock_person_rounded,
+                      size: 36,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Access Denied',
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    accessState.errorMessage ??
+                        'Your account does not have permission to access the Skazo Admin Console.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      onPressed: () => ref.read(adminAuthProvider.notifier).signOut(),
+                      icon: const Icon(Icons.logout_rounded, size: 18),
+                      label: Text(
+                        'Sign Out',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+      case AdminAccessStatus.error:
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Authorization Error: ${accessState.errorMessage}',
+                  style: GoogleFonts.poppins(color: Colors.red),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.refresh(adminAccessStateProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case AdminAccessStatus.authorized:
         return Scaffold(
           body: Row(
             children: [
@@ -52,12 +189,7 @@ class DashboardPage extends ConsumerWidget {
             ],
           ),
         );
-      },
-      loading:
-          () =>
-              const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Auth Error: $e'))),
-    );
+    }
   }
 
   Widget _buildMainContent(DashboardView view, WidgetRef ref) {
@@ -263,28 +395,34 @@ class _SummaryDashboard extends ConsumerWidget {
 
           // Overall Summary Header
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.auto_graph_rounded,
-                  color: Color(0xFF4F46E5),
-                  size: 22,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.auto_graph_rounded,
+                      color: Color(0xFF4F46E5),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Overall Platform Summary ✨',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Overall Platform Summary ✨',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
+              const _DashboardCityFilterDropdown(),
             ],
           ),
           const SizedBox(height: 18),
@@ -293,18 +431,26 @@ class _SummaryDashboard extends ConsumerWidget {
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            childAspectRatio: 1.35,
+            crossAxisCount: MediaQuery.of(context).size.width > 1400 ? 5 : (MediaQuery.of(context).size.width > 900 ? 3 : 2),
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.3,
             children: [
               _buildStatCard(
                 ref,
-                'Total Users',
+                'Users',
                 'users',
                 Icons.people_alt_rounded,
                 const [Color(0xFF3B82F6), Color(0xFF1E40AF)],
-                badgeLabel: '👑 VIP USERS',
+                badgeLabel: '👥 CUSTOMERS',
+              ),
+              _buildStatCard(
+                ref,
+                'Service Providers',
+                'service_providers',
+                Icons.storefront_rounded,
+                const [Color(0xFF10B981), Color(0xFF047857)],
+                badgeLabel: '⚡ BUSINESSES',
               ),
               _buildStatCard(
                 ref,
@@ -319,7 +465,7 @@ class _SummaryDashboard extends ConsumerWidget {
                 'Service Posts',
                 'service_posts',
                 Icons.auto_stories_rounded,
-                const [Color(0xFF10B981), Color(0xFF047857)],
+                const [Color(0xFF06B6D4), Color(0xFF0E7490)],
                 badgeLabel: '⚡ SERVICES',
               ),
               _buildStatCard(
@@ -443,8 +589,6 @@ class _SummaryDashboard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              const _DashboardCityFilterDropdown(),
-              const SizedBox(width: 12),
               const _DashboardDateFilterDropdown(),
             ],
           ),
@@ -489,7 +633,7 @@ class _SummaryDashboard extends ConsumerWidget {
       );
     }
 
-    final isClickableUserStat = collection == 'users';
+    final isClickableUserStat = collection == 'users' || collection == 'service_providers';
 
     Widget buildPeriodStat(String label, int value) {
       return InkWell(
@@ -513,6 +657,12 @@ class _SummaryDashboard extends ConsumerWidget {
                     );
                   } else {
                     ref.read(userDateFilterProvider.notifier).state = null;
+                  }
+                  ref.read(userTypeFilterProvider.notifier).state =
+                      collection == 'service_providers' ? 'Service Providers' : 'Customers';
+                  final selectedCity = ref.read(dashboardSelectedCityProvider);
+                  if (selectedCity != null) {
+                    ref.read(userSelectedCityProvider.notifier).state = selectedCity;
                   }
                   ref.read(currentDashboardViewProvider.notifier).state =
                       DashboardView.users;
@@ -653,6 +803,12 @@ class _SummaryDashboard extends ConsumerWidget {
                 isToday
                     ? timeFilterToLegacyUserValue(TimeFilterOption.today)
                     : null;
+            ref.read(userTypeFilterProvider.notifier).state =
+                collection == 'service_providers' ? 'Service Providers' : 'Customers';
+            final selectedCity = ref.read(dashboardSelectedCityProvider);
+            if (selectedCity != null) {
+              ref.read(userSelectedCityProvider.notifier).state = selectedCity;
+            }
             ref.read(currentDashboardViewProvider.notifier).state =
                 DashboardView.users;
           },
@@ -729,49 +885,78 @@ class _DashboardCityFilterDropdown extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSuperAdmin = ref.watch(isSuperAdminProvider);
-    if (!isSuperAdmin) {
-      return const SizedBox.shrink();
+    final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
+    final selectedCity = ref.watch(dashboardSelectedCityProvider);
+
+    // Normal Admin with 1 city -> show locked badge
+    if (!isSuperAdmin && assignedCities.length <= 1) {
+      if (assignedCities.isEmpty) return const SizedBox.shrink();
+      return Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFC7D2FE)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF4F46E5)),
+            const SizedBox(width: 8),
+            Text(
+              assignedCities.first,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF4F46E5),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
-    final selectedCity = ref.watch(dashboardSelectedCityProvider);
     final citiesAsync = ref.watch(unverifiedCitiesProvider);
 
     return citiesAsync.when(
-      data:
-          (cities) => Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 6,
+      data: (cities) {
+        final allowedCityList = isSuperAdmin ? cities : assignedCities;
+
+        return Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              value: selectedCity,
+              hint: Text(
+                isSuperAdmin ? 'All Cities 🌆' : 'Select City 🌆',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: const Color(0xFF64748B),
+                  fontWeight: FontWeight.w500,
                 ),
-              ],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                value: selectedCity,
-                hint: Text(
-                  'All Cities 🌆',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                icon: const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  color: Color(0xFF4F46E5),
-                ),
-                onChanged: (value) {
-                  ref.read(dashboardSelectedCityProvider.notifier).state =
-                      value;
-                },
-                items: [
+              ),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF4F46E5),
+              ),
+              onChanged: (value) {
+                ref.read(dashboardSelectedCityProvider.notifier).state = value;
+              },
+              items: [
+                if (isSuperAdmin)
                   DropdownMenuItem<String?>(
                     value: null,
                     child: Row(
@@ -793,39 +978,39 @@ class _DashboardCityFilterDropdown extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  ...cities.map(
-                    (city) => DropdownMenuItem<String?>(
-                      value: city,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.location_on_rounded,
-                            size: 18,
-                            color: Color(0xFF3B82F6),
+                ...allowedCityList.map(
+                  (city) => DropdownMenuItem<String?>(
+                    value: city,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_on_rounded,
+                          size: 18,
+                          color: Color(0xFF3B82F6),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          city,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            city,
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-      loading:
-          () => const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+        );
+      },
+      loading: () => const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
       error: (_, __) => const SizedBox.shrink(),
     );
   }

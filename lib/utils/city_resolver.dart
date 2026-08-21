@@ -7,6 +7,7 @@ String _addressSource(Map<String, dynamic> user) {
   final addr = user['businessAddress'] ??
       user['businessaddress'] ??
       user['customerAddress'] ??
+      user['customeraddress'] ??
       user['address'] ??
       user['business_address'] ??
       user['customer_address'] ??
@@ -18,7 +19,9 @@ String? _explicitCityField(Map<String, dynamic> user) {
   final raw = (user['City'] ??
           user['city'] ??
           user['businessCity'] ??
+          user['businesscity'] ??
           user['customerCity'] ??
+          user['customercity'] ??
           user['business_city'] ??
           user['customer_city'])
       ?.toString()
@@ -189,7 +192,9 @@ Map<String, String> buildPincodeCityLookup(
 String? extractUserPincode(Map<String, dynamic> user) {
   final explicitPin = (user['pincode'] ??
           user['businessPincode'] ??
+          user['businesspincode'] ??
           user['customerPincode'] ??
+          user['customerpincode'] ??
           user['pinCode'] ??
           user['business_pincode'] ??
           user['customer_pincode'] ??
@@ -256,7 +261,28 @@ bool userMatchesCity(
   final targetCity = normalizedTargetCity ?? _normalizeCityKey(selectedCity);
   if (targetCity.isEmpty) return true;
 
-  final directCityKey = (user['cityKey'] ?? user['city'] ?? user['businessCity'] ?? user['customerCity'])?.toString().trim();
+  // 1. Pincode match check against Property_Pincodes collection
+  final userPin = extractUserPincode(user);
+  final pins =
+      cityPins ??
+      (pincodesMap.isNotEmpty
+          ? pincodesMap.entries
+              .where((entry) {
+                final k = _normalizeCityKey(entry.key);
+                return k == targetCity || k.contains(targetCity) || targetCity.contains(k);
+              })
+              .expand((entry) => entry.value)
+              .map(_normalizePincode)
+              .whereType<String>()
+              .toSet()
+          : <String>{});
+
+  if (userPin != null && pins.contains(userPin)) {
+    return true;
+  }
+
+  // 2. Direct city key or explicit city field check
+  final directCityKey = (user['cityKey'] ?? user['city'] ?? user['businessCity'] ?? user['businesscity'] ?? user['customerCity'] ?? user['customercity'])?.toString().trim();
 
   if (directCityKey != null && directCityKey.isNotEmpty) {
     final normDirect = _normalizeCityKey(directCityKey);
@@ -265,23 +291,7 @@ bool userMatchesCity(
     }
   }
 
-  final pins =
-      cityPins ??
-      pincodesMap.entries
-          .where((entry) {
-            final k = _normalizeCityKey(entry.key);
-            return k == targetCity || k.contains(targetCity) || targetCity.contains(k);
-          })
-          .expand((entry) => entry.value)
-          .map(_normalizePincode)
-          .whereType<String>()
-          .toSet();
-
-  final userPin = extractUserPincode(user);
-  if (userPin != null && pins.contains(userPin)) {
-    return true;
-  }
-
+  // 3. Resolved city name check via pincode lookup / address parsing
   final resolved = resolveUserCityName(user, pincodesMap, pincodeCityLookup);
   if (resolved != null) {
     final normResolved = _normalizeCityKey(resolved);
@@ -290,22 +300,7 @@ bool userMatchesCity(
     }
   }
 
-  final addressCity = extractUserCityFromAddress(user);
-  if (addressCity != null) {
-    final normAddrCity = _normalizeCityKey(addressCity);
-    if (normAddrCity == targetCity || normAddrCity.contains(targetCity) || targetCity.contains(normAddrCity)) {
-      return true;
-    }
-  }
-
-  final explicitCity = _explicitCityField(user);
-  if (explicitCity != null) {
-    final normExpCity = _normalizeCityKey(explicitCity);
-    if (normExpCity == targetCity || normExpCity.contains(targetCity) || targetCity.contains(normExpCity)) {
-      return true;
-    }
-  }
-
+  // 4. Address text fallback search
   final address = _addressSource(user);
   if (address.isNotEmpty) {
     final normAddress = address.toLowerCase();

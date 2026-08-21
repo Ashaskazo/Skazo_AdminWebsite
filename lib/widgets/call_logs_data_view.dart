@@ -11,6 +11,8 @@ import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
+import '../providers/user_providers.dart';
+
 class CallLogsDataView extends ConsumerStatefulWidget {
   const CallLogsDataView({super.key});
 
@@ -155,6 +157,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           _pincodesMap = map;
           _pincodeCityLookup = buildPincodeCityLookup(map);
         });
+        _applyFilters();
       }
     } catch (e) {
       if (kDebugMode) {
@@ -293,15 +296,19 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     if (!mounted) return;
 
     final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final dashboardCity = ref.read(dashboardSelectedCityProvider);
+    final effectiveSelectedCity = _cityController.text.trim().isNotEmpty
+        ? _cityController.text.trim()
+        : dashboardCity;
 
-    // 0. Filter by Admin Assigned Cities scope first
+    // 0. Filter by Admin Assigned Cities & Selected Dashboard City scope
     List<Map<String, dynamic>> cityScopedDocs = _allDocs;
-    if (assignedCities.isNotEmpty) {
+    if (assignedCities.isNotEmpty || (effectiveSelectedCity != null && effectiveSelectedCity.trim().isNotEmpty)) {
       cityScopedDocs = _allDocs.where((log) {
         final raw = log['rawData'] ?? {};
         final matchesResolver = userMatchesAssignedCities(
           raw,
-          null,
+          effectiveSelectedCity,
           assignedCities,
           _pincodesMap,
           _pincodeCityLookup,
@@ -310,7 +317,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
         final logCity = _normalizeString(log['city']);
         if (logCity.isNotEmpty &&
-            assignedCities.any((c) => logCity.contains(c.toLowerCase()) || c.toLowerCase().contains(logCity))) {
+            effectiveSelectedCity != null &&
+            (logCity.contains(effectiveSelectedCity.toLowerCase()) || effectiveSelectedCity.toLowerCase().contains(logCity))) {
           return true;
         }
         return false;
@@ -368,8 +376,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           }
 
           // 2. City filter
-          if (_cityController.text.trim().isNotEmpty) {
-            final filterCity = _cityController.text.trim();
+          if (effectiveSelectedCity != null && effectiveSelectedCity.trim().isNotEmpty) {
+            final filterCity = effectiveSelectedCity.trim();
             final matchesCity = userMatchesCity(
               raw,
               filterCity,
@@ -1259,45 +1267,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     );
   }
 
-  Widget _buildReminderChip(String label, int count, Color color) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.15)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              count.toString(),
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildLeftSearchTextField(
     String label,
@@ -1640,24 +1610,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     );
   }
 
-  Color _getSalesStatusColor(dynamic status) {
-    switch (status?.toString().toLowerCase()) {
-      case 'interested':
-        return Colors.teal;
-      case 'converted':
-        return Colors.green;
-      case 'not_interested':
-        return Colors.grey[600]!;
-      case 'follow_up':
-        return Colors.purple;
-      case 'called':
-        return Colors.blue;
-      case 'new':
-      default:
-        return Colors.blueGrey;
-    }
-  }
-
   Color _getLeadQualityColor(dynamic quality) {
     switch (quality?.toString().toLowerCase()) {
       case 'hot':
@@ -1667,20 +1619,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       case 'cold':
       default:
         return Colors.blue;
-    }
-  }
-
-  Color _getPlanColor(dynamic plan) {
-    switch (plan?.toString().toLowerCase()) {
-      case 'premium':
-        return Colors.amber[700]!;
-      case '599':
-        return Colors.orange;
-      case 'paid':
-        return Colors.green;
-      case 'free':
-      default:
-        return Colors.grey;
     }
   }
 
@@ -2399,6 +2337,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   @override
   Widget build(BuildContext context) {
     ref.watch(currentAdminAssignedCitiesProvider);
+    ref.watch(dashboardSelectedCityProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(

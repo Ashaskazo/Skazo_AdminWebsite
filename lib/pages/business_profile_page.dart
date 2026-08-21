@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -59,15 +60,25 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   // Editable Service Rate Card
   late List<_ServiceRateCardItemControllers> _serviceRateCardControllers;
 
+  // Editable Categories
+  late List<String> _categories;
+  final TextEditingController _newCategoryController = TextEditingController();
+
+  // Editable Category Priority map (category name -> priority int)
+  late Map<String, TextEditingController> _categoryPriorityControllers;
+
+  // Star Service Provider as string "0" or "1"
+  late TextEditingController _starServiceProviderController;
+
   // Status variables
   late bool _isVerified;
   late bool _isActive;
+  late bool _priority;
   late bool _isOnline;
   late bool _isUser;
   late bool _profileComplete;
   late bool _categoryBoostEnabled;
   late bool _paymentLinkSend;
-  late bool _isStarServiceProvider;
 
   @override
   void initState() {
@@ -116,7 +127,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       text: data['paymentCount']?.toString() ?? '0',
     );
 
-    final rawLeadCharge = data['payperLeadCharge'];
+    final rawLeadCharge = data['payperLeadcharge'];
     _payPerLeadChargeController = TextEditingController(
       text: rawLeadCharge?.toString() ?? '',
     );
@@ -137,46 +148,63 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       }
     }
 
-    _isVerified =
-        data['isverified'] == true ||
-        data['isverified'] == 1 ||
-        data['isverified'] == 'true';
-    _isActive =
-        data['isactive'] == true ||
-        data['isactive'] == 1 ||
-        data['isactive'] == 'true';
-    _isOnline =
-        data['isonline'] == true ||
-        data['isonline'] == 1 ||
-        data['isonline'] == 'true';
-    _profileComplete =
-        data['profileComplete'] == true ||
-        data['profileComplete'] == 1 ||
-        data['profileComplete'] == 'true';
-    _categoryBoostEnabled =
-        data['categoryBoostEnabled'] == true ||
-        data['categoryBoostEnabled'] == 1 ||
-        data['categoryBoostEnabled'] == 'true';
-    _paymentLinkSend =
-        data['paymentLinkSend'] == true ||
-        data['paymentLinkSend'] == 1 ||
-        data['paymentLinkSend'] == 'true';
+    // Parse Categories
+    _categories = [];
+    final rawCats = data['category'];
+    if (rawCats is List) {
+      for (var c in rawCats) {
+        if (c != null) _categories.add(c.toString());
+      }
+    }
 
-    final rawStar = data['StarServiceprovider'] ?? data['starServiceProvider'];
-    _isStarServiceProvider =
-        rawStar == true ||
-        rawStar == 1 ||
-        rawStar.toString().toLowerCase() == 'true' ||
-        rawStar.toString().toLowerCase() == 'yes' ||
-        rawStar.toString().toLowerCase() == 'gold' ||
-        rawStar.toString().toLowerCase() == 'star';
+    // Parse Category Priority map
+    _categoryPriorityControllers = {};
+    final rawCatPriority = data['categoryPriority'];
+    if (rawCatPriority is Map) {
+      rawCatPriority.forEach((k, v) {
+        _categoryPriorityControllers[k.toString()] = TextEditingController(
+          text: v?.toString() ?? '0',
+        );
+      });
+    }
+    // Ensure every category has a priority controller
+    for (final cat in _categories) {
+      if (!_categoryPriorityControllers.containsKey(cat)) {
+        _categoryPriorityControllers[cat] = TextEditingController(text: '0');
+      }
+    }
+
+    // Star Service Provider as string
+    final rawStar =
+        data['StarServiceprovider']
+        ;
+    _starServiceProviderController = TextEditingController(
+      text: rawStar?.toString() ?? '0',
+    );
+
+    _isVerified =
+        data['isverified'] == true;
+    _isActive =
+        data['isactive'] == true;
+    _priority =
+        data['priority'] == true ||
+        data['priority'] == 1 ||
+        data['priority'] == '1' ||
+        data['priority'] == 'true';
+    _isOnline =
+        data['isonline'] == true;
+    // _profileComplete =
+    //     data['profileComplete'] == true ||
+    //     data['profileComplete'] == 1 ||
+    //     data['profileComplete'] == 'true';
+    _categoryBoostEnabled =
+        data['categoryBoostEnabled'] == true ;
+    _paymentLinkSend =
+        data['paymentLinkSend'] == true;
 
     if (data.containsKey('isuser') && data['isuser'] != null) {
       _isUser =
-          data['isuser'] == true ||
-          data['isuser'] == 1 ||
-          data['isuser'] == 'true' ||
-          data['isuser'] == '1';
+          data['isuser'] == true ;
     } else {
       final bName = data['businessname']?.toString().trim() ?? '';
       final bPic = data['businesspic']?.toString().trim() ?? '';
@@ -210,11 +238,34 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _paymentPlanController.dispose();
     _paymentCountController.dispose();
     _payPerLeadChargeController.dispose();
+    _newCategoryController.dispose();
+    _starServiceProviderController.dispose();
 
     for (var item in _serviceRateCardControllers) {
       item.dispose();
     }
+    for (final ctrl in _categoryPriorityControllers.values) {
+      ctrl.dispose();
+    }
     super.dispose();
+  }
+
+  void _addCategory(String cat) {
+    final trimmed = cat.trim();
+    if (trimmed.isEmpty || _categories.contains(trimmed)) return;
+    setState(() {
+      _categories.add(trimmed);
+      _categoryPriorityControllers[trimmed] = TextEditingController(text: '0');
+    });
+    _newCategoryController.clear();
+  }
+
+  void _removeCategory(String cat) {
+    setState(() {
+      _categories.remove(cat);
+      _categoryPriorityControllers[cat]?.dispose();
+      _categoryPriorityControllers.remove(cat);
+    });
   }
 
   void _addServiceRateCardItem() {
@@ -267,10 +318,20 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       }
 
       final leadChargeText = _payPerLeadChargeController.text.trim();
-      final dynamic leadChargeVal =
+      final int leadChargeVal =
           leadChargeText.isEmpty
               ? 0
-              : (num.tryParse(leadChargeText) ?? leadChargeText);
+              : (int.tryParse(leadChargeText) ?? 0);
+
+      // Build categoryPriority map
+      final Map<String, dynamic> catPriorityMap = {};
+      for (final entry in _categoryPriorityControllers.entries) {
+        catPriorityMap[entry.key] = int.tryParse(entry.value.text.trim()) ?? 0;
+      }
+
+      // Star service provider saved as string "0" or "1"
+      final starVal = _starServiceProviderController.text.trim();
+      final normalizedStar = (starVal == '1') ? '1' : '0';
 
       final Map<String, dynamic> updatedData = {
         'businessname': _nameController.text.trim(),
@@ -281,7 +342,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'email': _emailController.text.trim(),
         'AtivePlan': planVal,
         // 'ActivePlan': planVal,
-        'priority': int.tryParse(_priorityController.text.trim()) ?? 0,
+        'priority': _priority,
         'gender': _genderController.text.trim(),
         'username': _usernameController.text.trim(),
         'ownerPropertyPaid':
@@ -296,11 +357,13 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'profileComplete': _profileComplete,
         'categoryBoostEnabled': _categoryBoostEnabled,
         'paymentLinkSend': _paymentLinkSend,
-        // 'StarServiceprovider': _isStarServiceProvider ? 'true' : 'false',
-        'starServiceProvider': _isStarServiceProvider,
+        'StarServiceprovider': normalizedStar,
+        'starServiceProvider': normalizedStar,
         // 'payPerLeadCharge': leadChargeVal,
         'payperLeadcharge': leadChargeVal,
         'ServiceRateCard': rateCardList,
+        'category': _categories,
+        'categoryPriority': catPriorityMap,
         'transactionId': _transactionIdController.text.trim(),
         'paymentPlanDuration': _paymentPlanController.text.trim(),
         'paymentCount': int.tryParse(_paymentCountController.text.trim()) ?? 0,
@@ -605,977 +668,1421 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
           padding: const EdgeInsets.fromLTRB(28, 16, 28, 50),
           child: Center(
             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Super Vibrant Hero Card
-                  Container(
-                    padding: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF1E1B4B),
-                          Color(0xFF312E81),
-                          Color(0xFF4338CA),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF312E81).withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Super Vibrant Hero Card
+                Container(
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF1E1B4B),
+                        Color(0xFF312E81),
+                        Color(0xFF4338CA),
                       ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: Row(
-                      children: [
-                        Stack(
-                          children: [
-                            Container(
-                              width: 90,
-                              height: 90,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 4,
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF312E81).withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Stack(
+                        children: [
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 10,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.2),
-                                    blurRadius: 10,
-                                  ),
-                                ],
-                              ),
-                              child: ClipOval(
-                                child: CachedNetworkImage(
-                                  imageUrl: data['businesspic'] ?? '',
-                                  fit: BoxFit.cover,
-                                  memCacheWidth: 240,
-                                  memCacheHeight: 240,
-                                  maxWidthDiskCache: 480,
-                                  errorWidget:
-                                      (context, url, error) => const Icon(
-                                        Icons.person_rounded,
-                                        color: Colors.white,
-                                        size: 48,
-                                      ),
-                                ),
-                              ),
+                              ],
                             ),
-                            if (_isOnline)
-                              Positioned(
-                                right: 4,
-                                bottom: 4,
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF10B981),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
+                            child: ClipOval(
+                              child: CachedNetworkImage(
+                                imageUrl: data['businesspic'] ?? '',
+                                fit: BoxFit.cover,
+                                memCacheWidth: 240,
+                                memCacheHeight: 240,
+                                maxWidthDiskCache: 480,
+                                errorWidget:
+                                    (context, url, error) => const Icon(
+                                      Icons.person_rounded,
                                       color: Colors.white,
-                                      width: 3,
+                                      size: 48,
                                     ),
+                              ),
+                            ),
+                          ),
+                          if (_isOnline)
+                            Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3,
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      data['businessname'] ??
-                                          data['firstname'] ??
-                                          'Anonymous VIP User 👑',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  if (_isStarServiceProvider) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF59E0B),
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(
-                                              0xFFF59E0B,
-                                            ).withValues(alpha: 0.4),
-                                            blurRadius: 6,
-                                          ),
-                                        ],
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.star_rounded,
-                                            color: Colors.white,
-                                            size: 14,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'STAR PROVIDER',
-                                            style: GoogleFonts.poppins(
-                                              color: Colors.white,
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "UID: ${data['uid'] ?? data['id'] ?? 'No UID'}",
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _buildBadgeChip(
-                                    _isVerified
-                                        ? 'VERIFIED LEGEND'
-                                        : 'UNVERIFIED',
-                                    _isVerified
-                                        ? const Color(0xFF10B981)
-                                        : const Color(0xFFF59E0B),
-                                    _isVerified
-                                        ? Icons.verified_rounded
-                                        : Icons.help_outline_rounded,
-                                  ),
-                                  _buildBadgeChip(
-                                    _isActive
-                                        ? 'ACTIVE ACCOUNT'
-                                        : 'DEACTIVATED',
-                                    _isActive
-                                        ? const Color(0xFF3B82F6)
-                                        : const Color(0xFFEF4444),
-                                    _isActive
-                                        ? Icons.bolt_rounded
-                                        : Icons.pause_circle_rounded,
-                                  ),
-                                  _buildBadgeChip(
-                                    _isUser
-                                        ? 'REGULAR USER'
-                                        : 'SERVICE PROVIDER 🛠️',
-                                    const Color(0xFF8B5CF6),
-                                    Icons.badge_rounded,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Switches Bar
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.tune_rounded,
-                              color: Color(0xFF6366F1),
-                              size: 20,
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Account Status & Badges Control 🎛️',
-                              style: GoogleFonts.poppins(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF0F172A),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: [
-                            _buildToggle(
-                              'Verified User',
-                              _isVerified,
-                              (v) => setState(() => _isVerified = v),
-                              activeColor: const Color(0xFF10B981),
-                              icon: Icons.verified_rounded,
-                            ),
-                            _buildToggle(
-                              'Star Service Provider',
-                              _isStarServiceProvider,
-                              (v) => setState(() => _isStarServiceProvider = v),
-                              activeColor: const Color(0xFFF59E0B),
-                              icon: Icons.star_rounded,
-                            ),
-                            _buildToggle(
-                              'Active Status',
-                              _isActive,
-                              (v) => setState(() => _isActive = v),
-                              activeColor: const Color(0xFF3B82F6),
-                              icon: Icons.power_settings_new_rounded,
-                            ),
-                            _buildToggle(
-                              'Online Now',
-                              _isOnline,
-                              (v) => setState(() => _isOnline = v),
-                              activeColor: const Color(0xFF10B981),
-                              icon: Icons.circle_rounded,
-                            ),
-                            _buildToggle(
-                              'Is User',
-                              _isUser,
-                              (v) => setState(() => _isUser = v),
-                              activeColor: const Color(0xFF8B5CF6),
-                              icon: Icons.person_rounded,
-                            ),
-                            _buildToggle(
-                              'Profile Complete',
-                              _profileComplete,
-                              (v) => setState(() => _profileComplete = v),
-                              activeColor: const Color(0xFF06B6D4),
-                              icon: Icons.check_circle_rounded,
-                            ),
-                            _buildToggle(
-                              'Category Boost',
-                              _categoryBoostEnabled,
-                              (v) => setState(() => _categoryBoostEnabled = v),
-                              activeColor: const Color(0xFFEC4899),
-                              icon: Icons.auto_awesome_rounded,
-                            ),
-                            _buildToggle(
-                              'Payment Link Sent',
-                              _paymentLinkSend,
-                              (v) => setState(() => _paymentLinkSend = v),
-                              activeColor: const Color(0xFF6366F1),
-                              icon: Icons.send_rounded,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Business Information Section
-                  _buildSectionHeader(
-                    'Business Information 🏢',
-                    'Manage company branding, bio, and business address',
-                    Icons.business_rounded,
-                    [const Color(0xFF4F46E5), const Color(0xFF6366F1)],
-                  ),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: _buildInputDecoration(
-                      'Business Name',
-                      Icons.storefront_rounded,
-                      accentColor: const Color(0xFF4F46E5),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _bioController,
-                    maxLines: 2,
-                    decoration: _buildInputDecoration(
-                      'Business Bio',
-                      Icons.description_rounded,
-                      accentColor: const Color(0xFF4F46E5),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _addressController,
-                    maxLines: 2,
-                    decoration: _buildInputDecoration(
-                      'Business Address',
-                      Icons.location_on_rounded,
-                      accentColor: const Color(0xFF4F46E5),
-                    ),
-                  ),
-
-                  // Personal Information Section
-                  _buildSectionHeader(
-                    'Personal Information 👤',
-                    'Contact details and personal identifiers',
-                    Icons.person_rounded,
-                    [const Color(0xFF0EA5E9), const Color(0xFF0284C7)],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _firstNameController,
-                          decoration: _buildInputDecoration(
-                            'First Name',
-                            Icons.person_outline_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _lastNameController,
-                          decoration: _buildInputDecoration(
-                            'Last Name',
-                            Icons.person_outline_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _usernameController,
-                          decoration: _buildInputDecoration(
-                            'Username',
-                            Icons.alternate_email_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _genderController,
-                          decoration: _buildInputDecoration(
-                            'Gender',
-                            Icons.wc_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: _buildInputDecoration(
-                            'Phone Number',
-                            Icons.phone_android_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _buildInputDecoration(
-                            'Email Address',
-                            Icons.email_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Editable Service Rate Card & Pay Per Lead Charge Section
-                  _buildSectionHeader(
-                    'Service Rate Card & Lead Pricing ⚡💰',
-                    'Edit service rate list & configure pay per lead charge (₹)',
-                    Icons.payments_rounded,
-                    [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-                  ),
-
-                  // Pay per lead charge card
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFFFFFBEB),
-                          const Color(0xFFFEF3C7).withValues(alpha: 0.5),
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF59E0B),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.monetization_on_rounded,
-                            color: Colors.white,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Pay Per Lead Charge (₹)',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF78350F),
-                                ),
-                              ),
-                              Text(
-                                'Amount charged to service provider per generated lead',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: const Color(0xFF92400E),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        SizedBox(
-                          width: 180,
-                          child: TextFormField(
-                            controller: _payPerLeadChargeController,
-                            keyboardType: TextInputType.number,
-                            decoration: _buildInputDecoration(
-                              'Charge / Lead (₹)',
-                              Icons.currency_rupee_rounded,
-                              accentColor: const Color(0xFFF59E0B),
-                              hintText: 'e.g. 50',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Editable Service Rate Card List
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      const SizedBox(width: 24),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                const Icon(
-                                  Icons.receipt_long_rounded,
-                                  color: Color(0xFFF59E0B),
-                                  size: 22,
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  'Service Rate Card Items (${_serviceRateCardControllers.length})',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF0F172A),
+                                Flexible(
+                                  child: Text(
+                                    data['businessname'] ??
+                                        data['firstname'] ??
+                                        'Anonymous VIP User 👑',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
+                                ),
+                                if (_starServiceProviderController.text
+                                        .trim() ==
+                                    '1') ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF59E0B),
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(
+                                            0xFFF59E0B,
+                                          ).withValues(alpha: 0.4),
+                                          blurRadius: 6,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.star_rounded,
+                                          color: Colors.white,
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'STAR PROVIDER',
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "UID: ${data['uid'] ?? data['id'] ?? 'No UID'}",
+                              style: GoogleFonts.poppins(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildBadgeChip(
+                                  _isVerified
+                                      ? 'VERIFIED LEGEND'
+                                      : 'UNVERIFIED',
+                                  _isVerified
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFF59E0B),
+                                  _isVerified
+                                      ? Icons.verified_rounded
+                                      : Icons.help_outline_rounded,
+                                ),
+                                _buildBadgeChip(
+                                  _isActive ? 'ACTIVE ACCOUNT' : 'DEACTIVATED',
+                                  _isActive
+                                      ? const Color(0xFF3B82F6)
+                                      : const Color(0xFFEF4444),
+                                  _isActive
+                                      ? Icons.bolt_rounded
+                                      : Icons.pause_circle_rounded,
+                                ),
+                                _buildBadgeChip(
+                                  _isUser
+                                      ? 'REGULAR USER'
+                                      : 'SERVICE PROVIDER 🛠️',
+                                  const Color(0xFF8B5CF6),
+                                  Icons.badge_rounded,
                                 ),
                               ],
                             ),
-                            ElevatedButton.icon(
-                              onPressed: _addServiceRateCardItem,
-                              icon: const Icon(
-                                Icons.add_circle_rounded,
-                                size: 18,
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Switches Bar
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.tune_rounded,
+                            color: Color(0xFF6366F1),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Account Status & Badges Control 🎛️',
+                            style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _buildToggle(
+                            'Verified User',
+                            _isVerified,
+                            (v) => setState(() => _isVerified = v),
+                            activeColor: const Color(0xFF10B981),
+                            icon: Icons.verified_rounded,
+                          ),
+                          _buildStarProviderField(),
+
+                          _buildToggle(
+                            'Active Status',
+                            _isActive,
+                            (v) => setState(() => _isActive = v),
+                            activeColor: const Color(0xFF3B82F6),
+                            icon: Icons.power_settings_new_rounded,
+                          ),
+                          _buildToggle(
+                            'Priority',
+                            _priority,
+                            (v) => setState(() => _priority = v),
+                            activeColor: const Color(0xFFF59E0B),
+                            icon: Icons.star_rounded,
+                          ),
+                          // _buildToggle(
+                          //   'Online Now',
+                          //   _isOnline,
+                          //   (v) => setState(() => _isOnline = v),
+                          //   activeColor: const Color(0xFF10B981),
+                          //   icon: Icons.circle_rounded,
+                          // ),
+                          _buildToggle(
+                            'Is User',
+                            _isUser,
+                            (v) => setState(() => _isUser = v),
+                            activeColor: const Color(0xFF8B5CF6),
+                            icon: Icons.person_rounded,
+                          ),
+                          // _buildToggle(
+                          //   'Profile Complete',
+                          //   _profileComplete,
+                          //   (v) => setState(() => _profileComplete = v),
+                          //   activeColor: const Color(0xFF06B6D4),
+                          //   icon: Icons.check_circle_rounded,
+                          // ),
+                          _buildToggle(
+                            'Category Boost',
+                            _categoryBoostEnabled,
+                            (v) => setState(() => _categoryBoostEnabled = v),
+                            activeColor: const Color(0xFFEC4899),
+                            icon: Icons.auto_awesome_rounded,
+                          ),
+                          _buildToggle(
+                            'Payment Link Sent',
+                            _paymentLinkSend,
+                            (v) => setState(() => _paymentLinkSend = v),
+                            activeColor: const Color(0xFF6366F1),
+                            icon: Icons.send_rounded,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Business Information Section
+                _buildSectionHeader(
+                  'Business Information 🏢',
+                  'Manage company branding, bio, and business address',
+                  Icons.business_rounded,
+                  [const Color(0xFF4F46E5), const Color(0xFF6366F1)],
+                ),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: _buildInputDecoration(
+                    'Business Name',
+                    Icons.storefront_rounded,
+                    accentColor: const Color(0xFF4F46E5),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _bioController,
+                  maxLines: 2,
+                  decoration: _buildInputDecoration(
+                    'Business Bio',
+                    Icons.description_rounded,
+                    accentColor: const Color(0xFF4F46E5),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _addressController,
+                  maxLines: 2,
+                  decoration: _buildInputDecoration(
+                    'Business Address',
+                    Icons.location_on_rounded,
+                    accentColor: const Color(0xFF4F46E5),
+                  ),
+                ),
+
+                // Personal Information Section
+                _buildSectionHeader(
+                  'Personal Information 👤',
+                  'Contact details and personal identifiers',
+                  Icons.person_rounded,
+                  [const Color(0xFF0EA5E9), const Color(0xFF0284C7)],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _firstNameController,
+                        decoration: _buildInputDecoration(
+                          'First Name',
+                          Icons.person_outline_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _lastNameController,
+                        decoration: _buildInputDecoration(
+                          'Last Name',
+                          Icons.person_outline_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _usernameController,
+                        decoration: _buildInputDecoration(
+                          'Username',
+                          Icons.alternate_email_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _genderController,
+                        decoration: _buildInputDecoration(
+                          'Gender',
+                          Icons.wc_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: _buildInputDecoration(
+                          'Phone Number',
+                          Icons.phone_android_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: _buildInputDecoration(
+                          'Email Address',
+                          Icons.email_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Editable Service Rate Card & Pay Per Lead Charge Section
+                // _buildSectionHeader(
+                //   'Service Rate Card & Lead Pricing ⚡💰',
+                //   'Edit service rate list & configure pay per lead charge (₹)',
+                //   Icons.payments_rounded,
+                //   [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                // ),
+
+                // Pay per lead charge card
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFFFFFBEB),
+                        const Color(0xFFFEF3C7).withValues(alpha: 0.5),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.monetization_on_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pay Per Lead Charge (₹)',
+                              style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF78350F),
                               ),
-                              label: Text(
-                                'Add Service',
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFF59E0B),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
+                            ),
+                            Text(
+                              'Amount charged to service provider per generated lead',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: const Color(0xFF92400E),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        if (_serviceRateCardControllers.isEmpty)
-                          Container(
-                            padding: const EdgeInsets.all(24),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: const Color(0xFFE2E8F0),
-                                style: BorderStyle.solid,
+                      ),
+                      const SizedBox(width: 16),
+                      SizedBox(
+                        width: 180,
+                        child: TextFormField(
+                          controller: _payPerLeadChargeController,
+                          keyboardType: TextInputType.number,
+                          decoration: _buildInputDecoration(
+                            'Charge / Lead (₹)',
+                            Icons.currency_rupee_rounded,
+                            accentColor: const Color(0xFFF59E0B),
+                            hintText: 'e.g. 50',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Editable Service Rate Card List
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.receipt_long_rounded,
+                                color: Color(0xFFF59E0B),
+                                size: 22,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Service Rate Card Items (${_serviceRateCardControllers.length})',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _addServiceRateCardItem,
+                            icon: const Icon(
+                              Icons.add_circle_rounded,
+                              size: 18,
+                            ),
+                            label: Text(
+                              'Add Service',
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
                               ),
                             ),
-                            child: Column(
-                              children: [
-                                const Icon(
-                                  Icons.miscellaneous_services_rounded,
-                                  color: Color(0xFF94A3B8),
-                                  size: 36,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No rate card services added yet!',
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                                Text(
-                                  'Click "+ Add Service" to add custom service rates.',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ],
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF59E0B),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
                             ),
-                          )
-                        else
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _serviceRateCardControllers.length,
-                            separatorBuilder:
-                                (c, i) => const SizedBox(height: 12),
-                            itemBuilder: (context, index) {
-                              final item = _serviceRateCardControllers[index];
-                              return Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E8F0),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (_serviceRateCardControllers.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: const Color(0xFFE2E8F0),
+                              style: BorderStyle.solid,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.miscellaneous_services_rounded,
+                                color: Color(0xFF94A3B8),
+                                size: 36,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No rate card services added yet!',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                              Text(
+                                'Click "+ Add Service" to add custom service rates.',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _serviceRateCardControllers.length,
+                          separatorBuilder:
+                              (c, i) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final item = _serviceRateCardControllers[index];
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFFF59E0B,
+                                      ).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '#${index + 1}',
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFFD97706),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFFF59E0B,
-                                        ).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '#${index + 1}',
-                                        style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFFD97706),
-                                        ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 3,
+                                    child: TextFormField(
+                                      controller: item.serviceController,
+                                      decoration: _buildInputDecoration(
+                                        'Service Name',
+                                        Icons.build_rounded,
+                                        accentColor: const Color(0xFFF59E0B),
+                                        hintText: 'e.g. AC Repair',
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 3,
-                                      child: TextFormField(
-                                        controller: item.serviceController,
-                                        decoration: _buildInputDecoration(
-                                          'Service Name',
-                                          Icons.build_rounded,
-                                          accentColor: const Color(0xFFF59E0B),
-                                          hintText: 'e.g. AC Repair',
-                                        ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextFormField(
+                                      controller: item.rateController,
+                                      decoration: _buildInputDecoration(
+                                        'Rate (₹)',
+                                        Icons.currency_rupee_rounded,
+                                        accentColor: const Color(0xFFF59E0B),
+                                        hintText: 'e.g. 499',
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 2,
-                                      child: TextFormField(
-                                        controller: item.rateController,
-                                        decoration: _buildInputDecoration(
-                                          'Rate (₹)',
-                                          Icons.currency_rupee_rounded,
-                                          accentColor: const Color(0xFFF59E0B),
-                                          hintText: 'e.g. 499',
-                                        ),
-                                      ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    onPressed:
+                                        () => _removeServiceRateCardItem(index),
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                      color: Color(0xFFEF4444),
                                     ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      onPressed:
-                                          () =>
-                                              _removeServiceRateCardItem(index),
-                                      icon: const Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: Color(0xFFEF4444),
-                                      ),
-                                      tooltip: 'Delete Service',
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                      ],
+                                    tooltip: 'Delete Service',
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Editable Categories Section
+                const SizedBox(height: 16),
+                _buildEditableCategoriesSection(),
+
+                // Editable Category Priority Section
+                const SizedBox(height: 16),
+                _buildCategoryPrioritySection(),
+
+                // Subscription & Financials
+                _buildSectionHeader(
+                  'Account Plan & Financials 💳',
+                  'Active subscription plan, total amount paid, and property credits',
+                  Icons.card_membership_rounded,
+                  [const Color(0xFF10B981), const Color(0xFF059669)],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _planController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Active Plan Code',
+                          Icons.card_membership_rounded,
+                          accentColor: const Color(0xFF10B981),
+                        ),
+                      ),
                     ),
-                  ),
-
-                  // Categories Overview
-                  const SizedBox(height: 16),
-                  _buildReadOnlyField(
-                    'Categories Assigned 🏷️',
-                    (data['category'] is List)
-                        ? (data['category'] as List).join(', ')
-                        : (data['category']?.toString() ?? 'None'),
-                    Icons.category_rounded,
-                  ),
-
-                  // Subscription & Financials
-                  _buildSectionHeader(
-                    'Account Plan & Financials 💳',
-                    'Active subscription plan, total amount paid, and property credits',
-                    Icons.card_membership_rounded,
-                    [const Color(0xFF10B981), const Color(0xFF059669)],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _planController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Active Plan Code',
-                            Icons.card_membership_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _ownerPaidController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Owner Paid Property Count',
+                          Icons.monetization_on_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _priorityController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Search Priority',
-                            Icons.low_priority_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _ownerPaidController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Owner Paid Property Count',
-                            Icons.monetization_on_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _userPaidController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'User Paid Property Count',
-                            Icons.account_balance_wallet_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _transactionIdController,
-                          decoration: _buildInputDecoration(
-                            'Transaction ID',
-                            Icons.receipt_long_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _paymentPlanController,
-                          decoration: _buildInputDecoration(
-                            'Payment Plan Duration',
-                            Icons.workspace_premium_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _paymentCountController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Payment Count',
-                            Icons.numbers_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _totalAmountController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Total Amount Paid (₹)',
-                            Icons.payments_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Usage Statistics Section
-                  _buildSectionHeader(
-                    'Usage Statistics & Activity 📊',
-                    'Call metrics, lead performance, and user ratings',
-                    Icons.insights_rounded,
-                    [const Color(0xFF8B5CF6), const Color(0xFF6D28D9)],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Call Logs',
-                          data['totalCallLogs']?.toString() ?? '0',
-                          Icons.call_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Today Calls',
-                          data['todayCallLogs']?.toString() ?? '0',
-                          Icons.today_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Calls Post Payment',
-                          data['callsAfterLastPayment']?.toString() ?? '0',
-                          Icons.phone_callback_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Average Rating ⭐',
-                          "${data['avgRating']?.toString() ?? '0.0'} / 5.0",
-                          Icons.star_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Ratings Received',
-                          data['totalRatings']?.toString() ?? '0',
-                          Icons.reviews_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Calls Generated',
-                          data['totalCallsGenerated']?.toString() ?? '0',
-                          Icons.trending_up_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Activity Timestamps Section
-                  _buildSectionHeader(
-                    'Activity Timeline ⏳',
-                    'Historical timestamps for verification and payments',
-                    Icons.history_rounded,
-                    [const Color(0xFFEC4899), const Color(0xFFDB2777)],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Verified At',
-                          _formatTimestamp(data['verifiedAt']),
-                          Icons.verified_user_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Last Call At',
-                          _formatTimestamp(data['lastCallAt']),
-                          Icons.history_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Last Payment At',
-                          _formatTimestamp(data['lastPaymentAt']),
-                          Icons.payment_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Category Boost Updated',
-                          _formatTimestamp(data['categoryBoostUpdatedAt']),
-                          Icons.auto_awesome_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Technical Metadata Section
-                  _buildSectionHeader(
-                    'Technical Metadata 🛠️',
-                    'FCM Push Tokens, Geolocation & Geohashes',
-                    Icons.developer_board_rounded,
-                    [const Color(0xFF64748B), const Color(0xFF334155)],
-                  ),
-                  TextFormField(
-                    controller: _fcmTokenController,
-                    decoration: _buildInputDecoration(
-                      'FCM Token',
-                      Icons.key_rounded,
-                      accentColor: const Color(0xFF64748B),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Location (Geopoint)',
-                          data['location']?['geopoint']?.toString() ?? 'N/A',
-                          Icons.map_rounded,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _userPaidController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'User Paid Property Count',
+                          Icons.account_balance_wallet_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Coordinates',
-                          "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}",
-                          Icons.gps_fixed_rounded,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _transactionIdController,
+                        decoration: _buildInputDecoration(
+                          'Transaction ID',
+                          Icons.receipt_long_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Geohash (5/7)',
-                          "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
-                          Icons.language_rounded,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _paymentPlanController,
+                        decoration: _buildInputDecoration(
+                          'Payment Plan Duration',
+                          Icons.workspace_premium_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _paymentCountController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Payment Count',
+                          Icons.numbers_rounded,
+                          accentColor: const Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _totalAmountController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Total Amount Paid (₹)',
+                          Icons.payments_rounded,
+                          accentColor: const Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
 
-                  const SizedBox(height: 40),
-                ],
-              ),
+                // Usage Statistics Section
+                _buildSectionHeader(
+                  'Usage Statistics & Activity 📊',
+                  'Call metrics, lead performance, and user ratings',
+                  Icons.insights_rounded,
+                  [const Color(0xFF8B5CF6), const Color(0xFF6D28D9)],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Total Call Logs',
+                        data['totalCallLogs']?.toString() ?? '0',
+                        Icons.call_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Today Calls',
+                        data['todayCallLogs']?.toString() ?? '0',
+                        Icons.today_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Calls Post Payment',
+                        data['callsAfterLastPayment']?.toString() ?? '0',
+                        Icons.phone_callback_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Average Rating ⭐',
+                        "${data['avgRating']?.toString() ?? '0.0'} / 5.0",
+                        Icons.star_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Total Ratings Received',
+                        data['totalRatings']?.toString() ?? '0',
+                        Icons.reviews_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Total Calls Generated',
+                        data['totalCallsGenerated']?.toString() ?? '0',
+                        Icons.trending_up_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Activity Timestamps Section
+                _buildSectionHeader(
+                  'Activity Timeline ⏳',
+                  'Historical timestamps for verification and payments',
+                  Icons.history_rounded,
+                  [const Color(0xFFEC4899), const Color(0xFFDB2777)],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Verified At',
+                        _formatTimestamp(data['verifiedAt']),
+                        Icons.verified_user_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Last Call At',
+                        _formatTimestamp(data['lastCallAt']),
+                        Icons.history_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Last Payment At',
+                        _formatTimestamp(data['lastPaymentAt']),
+                        Icons.payment_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Category Boost Updated',
+                        _formatTimestamp(data['categoryBoostUpdatedAt']),
+                        Icons.auto_awesome_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Technical Metadata Section
+                _buildSectionHeader(
+                  'Technical Metadata 🛠️',
+                  'FCM Push Tokens, Geolocation & Geohashes',
+                  Icons.developer_board_rounded,
+                  [const Color(0xFF64748B), const Color(0xFF334155)],
+                ),
+                TextFormField(
+                  controller: _fcmTokenController,
+                  decoration: _buildInputDecoration(
+                    'FCM Token',
+                    Icons.key_rounded,
+                    accentColor: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Location (Geopoint)',
+                        data['location']?['geopoint']?.toString() ?? 'N/A',
+                        Icons.map_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildCoordinatesField(
+                        "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}",
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildReadOnlyField(
+                        'Geohash (5/7)',
+                        "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
+                        Icons.language_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 40),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  /// Coordinates read-only field with a copy icon button
+  Widget _buildCoordinatesField(String coordsText) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9).withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.gps_fixed_rounded,
+              size: 20,
+              color: Color(0xFF64748B),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Coordinates',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    coordsText,
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: const Color(0xFF0F172A),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: coordsText));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(
+                          Icons.copy_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Coordinates copied!',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF6366F1),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(
+                Icons.copy_rounded,
+                size: 18,
+                color: Color(0xFF6366F1),
+              ),
+              tooltip: 'Copy Coordinates',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Star Service Provider text field (string "0" or "1")
+  Widget _buildStarProviderField() {
+    final isStar = _starServiceProviderController.text.trim() == '1';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color:
+            isStar
+                ? const Color(0xFFF59E0B).withValues(alpha: 0.1)
+                : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color:
+              isStar
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
+                  : const Color(0xFFE2E8F0),
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.star_rounded,
+            size: 16,
+            color: isStar ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Star Provider',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: isStar ? FontWeight.w700 : FontWeight.w500,
+              color: isStar ? const Color(0xFFF59E0B) : const Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 60,
+            child: TextFormField(
+              controller: _starServiceProviderController,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: '0/1',
+                hintStyle: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF94A3B8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 8,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFF59E0B),
+                    width: 1.5,
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: const Color(0xFFF59E0B),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Editable categories section with chips and add field
+  Widget _buildEditableCategoriesSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.category_rounded,
+                color: Color(0xFF8B5CF6),
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Categories Assigned 🏷️',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_categories.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'No categories assigned yet.',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  _categories.map((cat) {
+                    return Chip(
+                      label: Text(
+                        cat,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF4F46E5),
+                        ),
+                      ),
+                      backgroundColor: const Color(
+                        0xFF6366F1,
+                      ).withValues(alpha: 0.1),
+                      side: const BorderSide(
+                        color: Color(0xFF6366F1),
+                        width: 1,
+                      ),
+                      deleteIcon: const Icon(
+                        Icons.close_rounded,
+                        size: 16,
+                        color: Color(0xFFEF4444),
+                      ),
+                      onDeleted: () => _removeCategory(cat),
+                    );
+                  }).toList(),
+            ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _newCategoryController,
+                  decoration: InputDecoration(
+                    hintText: 'Add new category...',
+                    hintStyle: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.add_rounded,
+                      color: Color(0xFF8B5CF6),
+                      size: 20,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF8B5CF6),
+                        width: 1.5,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                  ),
+                  onFieldSubmitted: _addCategory,
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () => _addCategory(_newCategoryController.text),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                ),
+                child: Text(
+                  'Add',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Editable categoryPriority map section
+  Widget _buildCategoryPrioritySection() {
+    if (_categoryPriorityControllers.isEmpty && _categories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    // Ensure all categories have priority controllers
+    for (final cat in _categories) {
+      if (!_categoryPriorityControllers.containsKey(cat)) {
+        _categoryPriorityControllers[cat] = TextEditingController(text: '0');
+      }
+    }
+    final entries = _categoryPriorityControllers.entries.toList();
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFFFF7ED),
+            const Color(0xFFFEF3C7).withValues(alpha: 0.5),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.leaderboard_rounded,
+                color: Color(0xFFD97706),
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Category Priority 🏆',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF78350F),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Set priority (int) per category. Lower = higher priority.',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: const Color(0xFF92400E),
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (entries.isEmpty)
+            Text(
+              'Add categories above to set priority.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: const Color(0xFF94A3B8),
+              ),
+            )
+          else
+            ...entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFF59E0B,
+                          ).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Text(
+                          entry.key,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: const Color(0xFF78350F),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 90,
+                      child: TextFormField(
+                        controller: entry.value,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          labelText: 'Priority',
+                          labelStyle: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: const Color(0xFF92400E),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFFDE68A),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFF59E0B),
+                              width: 1.5,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: const Color(0xFFD97706),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
   }
 
   Widget _buildBadgeChip(String label, Color color, IconData icon) {

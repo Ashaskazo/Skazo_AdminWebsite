@@ -14,6 +14,7 @@ class UserPaginationState {
   final String searchQuery;
   final int? filteredCount;
   final int? totalCount;
+  final int? customerCount;
   final int? serviceProviderCount;
 
   const UserPaginationState({
@@ -27,6 +28,7 @@ class UserPaginationState {
     this.searchQuery = '',
     this.filteredCount,
     this.totalCount,
+    this.customerCount,
     this.serviceProviderCount,
   });
 
@@ -45,6 +47,7 @@ class UserPaginationState {
     String? searchQuery,
     int? filteredCount,
     int? totalCount,
+    int? customerCount,
     int? serviceProviderCount,
     bool clearCounts = false,
     bool clearError = false,
@@ -61,6 +64,7 @@ class UserPaginationState {
       searchQuery: searchQuery ?? this.searchQuery,
       filteredCount: clearCounts ? null : (filteredCount ?? this.filteredCount),
       totalCount: clearCounts ? null : (totalCount ?? this.totalCount),
+      customerCount: clearCounts ? null : (customerCount ?? this.customerCount),
       serviceProviderCount:
           clearCounts
               ? null

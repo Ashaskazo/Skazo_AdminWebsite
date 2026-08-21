@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
@@ -45,7 +46,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     super.dispose();
   }
 
-  Widget _buildTypeChips(WidgetRef ref, String currentType) {
+  Widget _buildTypeChips(String currentType) {
     const types = ['All', 'Customers', 'Service Providers'];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -239,11 +240,41 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  ref
-                      .watch(userCitiesProvider)
-                      .when(
+                  Builder(
+                    builder: (context) {
+                      final isSuper = ref.watch(isSuperAdminProvider);
+                      final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
+                      if (!isSuper && assignedCities.length <= 1) {
+                        if (assignedCities.isEmpty) return const SizedBox.shrink();
+                        return Container(
+                          height: 54,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFDBEAFE)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF2563EB)),
+                              const SizedBox(width: 8),
+                              Text(
+                                assignedCities.first,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF2563EB),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return ref.watch(userCitiesProvider).when(
                         data: (cities) {
-                          final cityNames = {...cities};
+                          final cityNames = isSuper ? {...cities} : assignedCities.toSet();
                           if (selectedCity != null) cityNames.add(selectedCity);
                           final dropdownItems = cityNames.toList()..sort();
 
@@ -261,7 +292,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                               child: DropdownButton<String?>(
                                 value: selectedCity,
                                 hint: Text(
-                                  'City',
+                                  isSuper ? 'City' : 'Select City',
                                   style: GoogleFonts.poppins(fontSize: 14),
                                 ),
                                 onChanged: (value) {
@@ -270,10 +301,11 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                                       .state = value;
                                 },
                                 items: [
-                                  const DropdownMenuItem<String?>(
-                                    value: null,
-                                    child: Text('All Cities'),
-                                  ),
+                                  if (isSuper)
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text('All Cities'),
+                                    ),
                                   ...dropdownItems.map(
                                     (item) => DropdownMenuItem<String?>(
                                       value: item,
@@ -285,13 +317,14 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                             ),
                           );
                         },
-                        loading:
-                            () => const SizedBox(
-                              width: 100,
-                              child: LinearProgressIndicator(),
-                            ),
+                        loading: () => const SizedBox(
+                          width: 100,
+                          child: LinearProgressIndicator(),
+                        ),
                         error: (_, __) => const SizedBox.shrink(),
-                      ),
+                      );
+                    },
+                  ),
                   const SizedBox(width: 16),
                   Container(
                     height: 54,
@@ -465,27 +498,34 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
               ),
               const SizedBox(height: 16),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(child: _buildTypeChips(ref, selectedType)),
-                  const SizedBox(width: 16),
-                  if (selectedType != 'Customers') ...[
-                    Text(
-                      'Verified Only',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                    Switch(
-                      value: verifiedOnly,
-                      activeThumbColor: const Color(0xFF16A34A),
-                      activeTrackColor: const Color(
-                        0xFF16A34A,
-                      ).withValues(alpha: 0.5),
-                      onChanged: (value) {
-                        ref.read(userVerifiedOnlyProvider.notifier).state =
-                            value;
-                      },
+                  _buildTypeChips(selectedType),
+                  if (selectedType == 'Service Providers' ||
+                      selectedType == 'All') ...[
+                    Row(
+                      children: [
+                        Text(
+                          'Verified Only',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: verifiedOnly,
+                          activeThumbColor: const Color(0xFF16A34A),
+                          activeTrackColor: const Color(
+                            0xFF16A34A,
+                          ).withValues(alpha: 0.5),
+                          onChanged: (value) {
+                            ref.read(userVerifiedOnlyProvider.notifier).state =
+                                value;
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -520,7 +560,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                             : selectedType == 'Service Providers'
                             ? 'Total Service Providers: ${notifier.serviceProviderCount}'
                             : selectedType == 'Customers'
-                            ? 'Total Customers: ${notifier.filteredCount}'
+                            ? 'Total Customers: ${notifier.customerCount > 0 ? notifier.customerCount : notifier.filteredCount}'
                             : 'Total Accounts: ${notifier.totalCount}',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
@@ -529,36 +569,38 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ),
                       ),
                     ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFDCFCE7)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.verified_rounded,
-                          size: 14,
-                          color: Color(0xFF16A34A),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${notifier.serviceProviderCount} Service Providers',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF16A34A),
+                  if (notifier.serviceProviderCount > 0 && selectedType == 'All') ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFDCFCE7)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.storefront_rounded,
+                            size: 14,
+                            color: Color(0xFF16A34A),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text(
+                            '${notifier.serviceProviderCount} Service Providers',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF16A34A),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ],
