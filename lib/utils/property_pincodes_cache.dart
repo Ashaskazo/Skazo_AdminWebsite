@@ -107,7 +107,7 @@ Future<Map<String, List<String>>> _loadPropertyPincodesFromFirestore() async {
       }
 
       final cityName =
-          (data['city'] ?? data['cityName'] ?? data['name'] ?? doc.id)
+          (data['displayName'] ?? data['city'] ?? data['cityName'] ?? data['name'] ?? doc.id)
               .toString()
               .trim();
       final pins = _extractNormalizedPincodes(

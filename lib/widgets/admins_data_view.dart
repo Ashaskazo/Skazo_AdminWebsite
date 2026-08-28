@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
-import 'package:skazo_admin/services/backfill_service.dart';
 
 class AdminsDataView extends ConsumerWidget {
   const AdminsDataView({super.key});
@@ -48,45 +47,22 @@ class AdminsDataView extends ConsumerWidget {
                 ],
               ),
               if (isSuperAdmin)
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _showBackfillDialog(context, ref),
-                      icon: const Icon(Icons.bolt_rounded, size: 18, color: Color(0xFFD97706)),
-                      label: const Text(
-                        'Run City Migration',
-                        style: TextStyle(
-                          color: Color(0xFFD97706),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFD97706), width: 1.5),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
+                    _showAddAdminDialog(context, ref, systemCities);
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Sales Admin'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
-                        _showAddAdminDialog(context, ref, systemCities);
-                      },
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add Sales Admin'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
             ],
           ),
@@ -765,271 +741,6 @@ class AdminsDataView extends ConsumerWidget {
       await FirebaseFirestore.instance.collection('admin').doc(id).delete();
       ref.invalidate(adminsListProvider);
     }
-  }
-
-  Future<void> _showBackfillDialog(BuildContext context, WidgetRef ref) async {
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const _BackfillDialogContent(),
-    );
-  }
-}
-
-class _BackfillDialogContent extends StatefulWidget {
-  const _BackfillDialogContent();
-
-  @override
-  State<_BackfillDialogContent> createState() => _BackfillDialogContentState();
-}
-
-class _BackfillDialogContentState extends State<_BackfillDialogContent> {
-  final BackfillService _service = BackfillService();
-  bool _isRunning = false;
-  bool _isComplete = false;
-  int _processed = 0;
-  int _updated = 0;
-  int _skipped = 0;
-  int _errors = 0;
-  String? _lastError;
-  int? _pendingEstimate;
-  bool _isLoadingPreview = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPreview();
-  }
-
-  Future<void> _loadPreview() async {
-    final count = await _service.previewPendingCount();
-    if (mounted) {
-      setState(() {
-        _pendingEstimate = count;
-        _isLoadingPreview = false;
-      });
-    }
-  }
-
-  void _startMigration() {
-    setState(() {
-      _isRunning = true;
-      _isComplete = false;
-      _processed = 0;
-      _updated = 0;
-      _skipped = 0;
-      _errors = 0;
-      _lastError = null;
-    });
-
-    _service.run().listen(
-      (progress) {
-        if (mounted) {
-          setState(() {
-            _processed = progress.processed;
-            _updated = progress.updated;
-            _skipped = progress.skipped;
-            _errors = progress.errors;
-            _lastError = progress.lastError;
-            if (progress.isComplete) {
-              _isRunning = false;
-              _isComplete = true;
-            }
-          });
-        }
-      },
-      onError: (e) {
-        if (mounted) {
-          setState(() {
-            _isRunning = false;
-            _lastError = e.toString();
-            _errors++;
-          });
-        }
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFD97706).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.bolt_rounded, color: Color(0xFFD97706), size: 24),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Performance & City Migration',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
-            ),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 540,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This one-time migration indexes all users for instant city filtering:',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF334155),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildBullet('1. Classifies users strictly into Customers vs Service Providers (isuser bool)'),
-                  const SizedBox(height: 4),
-                  _buildBullet('2. Normalizes 6-digit business pincodes & phone strings'),
-                  const SizedBox(height: 4),
-                  _buildBullet('3. Maps pincodes & address strings to universal cityKey for indexed queries'),
-                  const SizedBox(height: 4),
-                  _buildBullet('4. Completely eliminates full-collection scans in Dashboard & Users'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_isLoadingPreview)
-              const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()))
-            else
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Total users in collection:',
-                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500, color: const Color(0xFF1E40AF)),
-                    ),
-                    Text(
-                      '${_pendingEstimate ?? 0}',
-                      style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E40AF)),
-                    ),
-                  ],
-                ),
-              ),
-            if (_isRunning || _isComplete) ...[
-              const SizedBox(height: 16),
-              LinearProgressIndicator(
-                value: _isComplete ? 1.0 : null,
-                backgroundColor: const Color(0xFFE2E8F0),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  _isComplete ? Colors.green : const Color(0xFF2563EB),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStatItem('Processed', '$_processed', Colors.blue),
-                  _buildStatItem('Updated', '$_updated', Colors.green),
-                  _buildStatItem('Skipped', '$_skipped', Colors.grey),
-                  _buildStatItem('Errors', '$_errors', Colors.red),
-                ],
-              ),
-            ],
-            if (_lastError != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Error: $_lastError',
-                style: const TextStyle(color: Colors.red, fontSize: 12),
-              ),
-            ],
-            if (_isComplete) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Migration completed successfully! All future queries will use indexed Firestore lookups.',
-                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.green.shade900, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        if (!_isRunning)
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_isComplete ? 'Close' : 'Cancel'),
-          ),
-        if (!_isRunning && !_isComplete)
-          ElevatedButton.icon(
-            onPressed: _startMigration,
-            icon: const Icon(Icons.play_arrow_rounded, size: 18),
-            label: const Text('Start Migration Now'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFD97706),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBullet(String text) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('• ', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF475569)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700, color: color)),
-        Text(label, style: GoogleFonts.poppins(fontSize: 11, color: const Color(0xFF64748B))),
-      ],
-    );
   }
 }
 

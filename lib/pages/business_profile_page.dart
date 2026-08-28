@@ -175,36 +175,28 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     }
 
     // Star Service Provider as string
-    final rawStar =
-        data['StarServiceprovider']
-        ;
+    final rawStar = data['StarServiceprovider'];
     _starServiceProviderController = TextEditingController(
       text: rawStar?.toString() ?? '0',
     );
 
-    _isVerified =
-        data['isverified'] == true;
-    _isActive =
-        data['isactive'] == true;
+    _isVerified = data['isverified'] == true;
+    _isActive = data['isactive'] == true;
     _priority =
         data['priority'] == true ||
         data['priority'] == 1 ||
         data['priority'] == '1' ||
         data['priority'] == 'true';
-    _isOnline =
-        data['isonline'] == true;
+    _isOnline = data['isonline'] == true;
     // _profileComplete =
     //     data['profileComplete'] == true ||
     //     data['profileComplete'] == 1 ||
     //     data['profileComplete'] == 'true';
-    _categoryBoostEnabled =
-        data['categoryBoostEnabled'] == true ;
-    _paymentLinkSend =
-        data['paymentLinkSend'] == true;
+    _categoryBoostEnabled = data['categoryBoostEnabled'] == true;
+    _paymentLinkSend = data['paymentLinkSend'] == true;
 
     if (data.containsKey('isuser') && data['isuser'] != null) {
-      _isUser =
-          data['isuser'] == true ;
+      _isUser = data['isuser'] == true;
     } else {
       final bName = data['businessname']?.toString().trim() ?? '';
       final bPic = data['businesspic']?.toString().trim() ?? '';
@@ -319,9 +311,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
 
       final leadChargeText = _payPerLeadChargeController.text.trim();
       final int leadChargeVal =
-          leadChargeText.isEmpty
-              ? 0
-              : (int.tryParse(leadChargeText) ?? 0);
+          leadChargeText.isEmpty ? 0 : (int.tryParse(leadChargeText) ?? 0);
 
       // Build categoryPriority map
       final Map<String, dynamic> catPriorityMap = {};
@@ -945,13 +935,13 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                           //   activeColor: const Color(0xFF06B6D4),
                           //   icon: Icons.check_circle_rounded,
                           // ),
-                          _buildToggle(
-                            'Category Boost',
-                            _categoryBoostEnabled,
-                            (v) => setState(() => _categoryBoostEnabled = v),
-                            activeColor: const Color(0xFFEC4899),
-                            icon: Icons.auto_awesome_rounded,
-                          ),
+                          // _buildToggle(
+                          //   'Category Boost',
+                          //   _categoryBoostEnabled,
+                          //   (v) => setState(() => _categoryBoostEnabled = v),
+                          //   activeColor: const Color(0xFFEC4899),
+                          //   icon: Icons.auto_awesome_rounded,
+                          // ),
                           _buildToggle(
                             'Payment Link Sent',
                             _paymentLinkSend,
@@ -1588,30 +1578,67 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildReadOnlyField(
-                        'Location (Geopoint)',
-                        data['location']?['geopoint']?.toString() ?? 'N/A',
-                        Icons.map_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildCoordinatesField(
-                        "${data['coordinates']?[0] ?? '0'}, ${data['coordinates']?[1] ?? '0'}",
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildReadOnlyField(
-                        'Geohash (5/7)',
-                        "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
-                        Icons.language_rounded,
-                      ),
-                    ),
-                  ],
+                Builder(
+                  builder: (context) {
+                    final (latCoord, lngCoord) = _extractCoordinates(data);
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildCopyableCoordinateField(
+                                'Coordinate 1 (Latitude)',
+                                latCoord,
+                                Icons.north_rounded,
+                                copyLabel: 'Latitude',
+                                accentColor: const Color(0xFF6366F1),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildCopyableCoordinateField(
+                                'Coordinate 2 (Longitude)',
+                                lngCoord,
+                                Icons.east_rounded,
+                                copyLabel: 'Longitude',
+                                accentColor: const Color(0xFF8B5CF6),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Location (Geopoint)',
+                                data['location']?['geopoint']?.toString() ?? 'N/A',
+                                Icons.map_rounded,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildCopyableCoordinateField(
+                                'Combined Coordinates',
+                                '$latCoord, $lngCoord',
+                                Icons.gps_fixed_rounded,
+                                copyLabel: 'Combined Coordinates',
+                                accentColor: const Color(0xFF10B981),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Geohash (5/7)',
+                                "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
+                                Icons.language_rounded,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 40),
@@ -1623,8 +1650,38 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     );
   }
 
-  /// Coordinates read-only field with a copy icon button
-  Widget _buildCoordinatesField(String coordsText) {
+  (String, String) _extractCoordinates(Map<String, dynamic> data) {
+    if (data['coordinates'] is List && (data['coordinates'] as List).isNotEmpty) {
+      final list = data['coordinates'] as List;
+      final lat = list.isNotEmpty ? list[0]?.toString() ?? '0' : '0';
+      final lng = list.length > 1 ? list[1]?.toString() ?? '0' : '0';
+      return (lat, lng);
+    }
+    final gp = data['location']?['geopoint'] ?? data['geopoint'];
+    if (gp is GeoPoint) {
+      return (gp.latitude.toString(), gp.longitude.toString());
+    } else if (gp is Map) {
+      final lat = (gp['_latitude'] ?? gp['latitude'] ?? gp['lat'])?.toString();
+      final lng = (gp['_longitude'] ?? gp['longitude'] ?? gp['lng'])?.toString();
+      if (lat != null && lng != null) return (lat, lng);
+    }
+    final lat = (data['latitude'] ?? data['lat'])?.toString();
+    final lng = (data['longitude'] ?? data['lng'])?.toString();
+    if (lat != null && lng != null) {
+      return (lat, lng);
+    }
+    return ('0', '0');
+  }
+
+  /// Coordinate field with its own dedicated copy button
+  Widget _buildCopyableCoordinateField(
+    String label,
+    String value,
+    IconData icon, {
+    String? copyLabel,
+    Color accentColor = const Color(0xFF6366F1),
+  }) {
+    final displayCopyLabel = copyLabel ?? label;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
@@ -1636,10 +1693,17 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         ),
         child: Row(
           children: [
-            const Icon(
-              Icons.gps_fixed_rounded,
-              size: 20,
-              color: Color(0xFF64748B),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: accentColor,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1647,7 +1711,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Coordinates',
+                    label,
                     style: GoogleFonts.poppins(
                       fontSize: 11,
                       color: const Color(0xFF64748B),
@@ -1655,10 +1719,10 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    coordsText,
+                  SelectableText(
+                    value,
                     style: GoogleFonts.poppins(
-                      fontSize: 14,
+                      fontSize: 13,
                       color: const Color(0xFF0F172A),
                       fontWeight: FontWeight.w600,
                     ),
@@ -1668,7 +1732,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             ),
             IconButton(
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: coordsText));
+                Clipboard.setData(ClipboardData(text: value));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Row(
@@ -1680,14 +1744,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Coordinates copied!',
+                          '$displayCopyLabel copied!',
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
-                    backgroundColor: const Color(0xFF6366F1),
+                    backgroundColor: accentColor,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -1696,12 +1760,12 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   ),
                 );
               },
-              icon: const Icon(
+              icon: Icon(
                 Icons.copy_rounded,
                 size: 18,
-                color: Color(0xFF6366F1),
+                color: accentColor,
               ),
-              tooltip: 'Copy Coordinates',
+              tooltip: 'Copy $displayCopyLabel',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
             ),

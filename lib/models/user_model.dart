@@ -1,11 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:skazo_admin/utils/city_resolver.dart';
 
 /// Typed user document from the Firestore `users` collection.
-///
-/// SOURCE OF TRUTH:
-/// - `isuser == true`  => Customer
-/// - `isuser == false` => Service Provider
 class UserModel {
   final String id;
   final Map<String, dynamic> rawData;
@@ -15,7 +10,7 @@ class UserModel {
   final String? username;
   final String? name;
   final String? email;
-  final String? phone;
+  final int? phone;
   final String? businessname;
   final String? businessbio;
   final String? businessaddress;
@@ -24,6 +19,8 @@ class UserModel {
   final String? city;
   final String? cityCapital;
   final String? cityKey;
+  final String? pincode;
+  final String? businessPincode;
   final dynamic category;
   final bool isverified;
   final bool isactive;
@@ -45,8 +42,6 @@ class UserModel {
   final bool isonline;
   final String? StarServiceprovider;
   final num? payperLeadCharge;
-  final String? businessPincode;
-  final List<String>? serviceProviderCities;
 
   const UserModel({
     required this.id,
@@ -66,6 +61,8 @@ class UserModel {
     this.city,
     this.cityCapital,
     this.cityKey,
+    this.pincode,
+    this.businessPincode,
     this.category,
     this.isverified = false,
     this.isactive = true,
@@ -87,8 +84,6 @@ class UserModel {
     this.isonline = false,
     this.StarServiceprovider,
     this.payperLeadCharge,
-    this.businessPincode,
-    this.serviceProviderCities,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -97,25 +92,13 @@ class UserModel {
   }
 
   factory UserModel.fromMap(String id, Map<String, dynamic> data) {
-    // ── Canonical isuser resolution ──────────────────────────────────────
-    // 1. Check explicit `isuser` field (supports bool, num, string representations)
-    // 2. Fallback to `isServiceProvider` field if present
-    // 3. Fallback to structural heuristic (business fields) for legacy documents
-    final parsedIsUser = _parseBool(data['isuser']);
-    final bool resolvedIsUser;
-    if (parsedIsUser != null) {
-      resolvedIsUser = parsedIsUser;
-    } else if (data.containsKey('isServiceProvider')) {
-      final isProvider = _parseBool(data['isServiceProvider']) ?? false;
-      resolvedIsUser = !isProvider;
-    } else {
-      resolvedIsUser = !_isLegacyServiceProviderDoc(data);
-    }
+    final inferredIsUser =
+        _parseBool(data['isuser']) ?? !_looksLikeServiceProvider(data);
 
     final rawStar = data['StarServiceprovider'];
-    final starProviderStr = rawStar?.toString();
+    final starProviderStr = rawStar == null ? null : rawStar.toString();
 
-    final rawLeadCharge = data['payperLeadcharge'] ?? data['payperLeadCharge'];
+    final rawLeadCharge = data['payperLeadCharge'];
     num? leadChargeNum;
     if (rawLeadCharge != null) {
       if (rawLeadCharge is num) {
@@ -123,29 +106,6 @@ class UserModel {
       } else {
         leadChargeNum = num.tryParse(rawLeadCharge.toString().trim());
       }
-    }
-
-    // Normalized phone string
-    final phoneStr = _parsePhoneString(data['phone'] ?? data['phoneNumber'] ?? data['mobile']);
-
-    // Universal cityKey resolution
-    final directCityKey = data['cityKey']?.toString().trim().toLowerCase();
-    final explicitCity = (data['city'] ?? data['City'] ?? data['businessCity'])?.toString().trim();
-    final resolvedCityKey = (directCityKey != null && directCityKey.isNotEmpty)
-        ? directCityKey
-        : (explicitCity != null && explicitCity.isNotEmpty
-            ? explicitCity.toLowerCase().replaceAll(RegExp(r'\s+'), ' ')
-            : null);
-
-    // Business pincode
-    final storedPincode = data['businessPincode']?.toString().trim().isNotEmpty == true
-        ? data['businessPincode'].toString().trim()
-        : extractUserPincode(data);
-
-    final rawCities = data['serviceProviderCities'];
-    List<String>? storedCities;
-    if (rawCities is List) {
-      storedCities = rawCities.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
     }
 
     return UserModel(
@@ -157,26 +117,28 @@ class UserModel {
       username: data['username']?.toString(),
       name: data['name']?.toString(),
       email: data['email']?.toString(),
-      phone: phoneStr,
+      phone: _parsePhone(data['phone']),
       businessname: data['businessname']?.toString(),
       businessbio: data['businessbio']?.toString(),
       businessaddress: data['businessaddress']?.toString(),
       businesspic: data['businesspic']?.toString(),
       address: data['address']?.toString(),
-      city: explicitCity ?? data['city']?.toString(),
+      city: data['city']?.toString(),
       cityCapital: data['City']?.toString(),
-      cityKey: resolvedCityKey,
+      cityKey: data['cityKey']?.toString(),
+      pincode: (data['pincode'] ?? data['customerPincode'] ?? data['postalCode'])?.toString(),
+      businessPincode: (data['businessPincode'] ?? data['business_pincode'])?.toString(),
       category: data['category'],
       isverified: _parseBool(data['isverified']) ?? false,
       isactive: _parseBool(data['isactive']) ?? true,
       isDeactivated: _parseBool(data['isDeactivated']) ?? false,
-      isuser: resolvedIsUser,
+      isuser: inferredIsUser,
       profileComplete: _parseBool(data['profileComplete']) ?? false,
       priority: _parseInt(data['priority']),
       createdAt: _parseDateTime(data['createdAt']),
       updatedAt: _parseDateTime(data['updatedAt']),
       verifiedAt: _parseDateTime(data['verifiedAt']),
-      activePlan: _parseInt(data['AtivePlan'] ?? data['activePlan']),
+      activePlan: _parseInt(data['AtivePlan']),
       gender: data['gender']?.toString(),
       ownerPropertyPaid: _parseInt(data['ownerPropertyPaid']),
       userPropertyPaid: _parseInt(data['userPropertyPaid']),
@@ -187,12 +149,10 @@ class UserModel {
       isonline: _parseBool(data['isonline']) ?? false,
       StarServiceprovider: starProviderStr,
       payperLeadCharge: leadChargeNum,
-      businessPincode: storedPincode,
-      serviceProviderCities: storedCities,
     );
   }
 
-  /// Backward-compatible map for UI pages.
+  /// Backward-compatible map for existing UI pages (e.g. BusinessProfilePage).
   Map<String, dynamic> toMap() {
     return {
       ...rawData,
@@ -212,6 +172,8 @@ class UserModel {
       if (city != null) 'city': city,
       if (cityCapital != null) 'City': cityCapital,
       if (cityKey != null) 'cityKey': cityKey,
+      if (pincode != null) 'pincode': pincode,
+      if (businessPincode != null) 'businessPincode': businessPincode,
       if (category != null) 'category': category,
       'isverified': isverified,
       'isactive': isactive,
@@ -231,31 +193,31 @@ class UserModel {
       'categoryBoostEnabled': categoryBoostEnabled,
       'paymentLinkSend': paymentLinkSend,
       'isonline': isonline,
-      if (StarServiceprovider != null) 'StarServiceprovider': StarServiceprovider,
-      if (payperLeadCharge != null) 'payperLeadcharge': payperLeadCharge,
-      if (businessPincode != null) 'businessPincode': businessPincode,
-      if (serviceProviderCities != null) 'serviceProviderCities': serviceProviderCities,
+      if (StarServiceprovider != null)
+        'StarServiceprovider': StarServiceprovider,
+      if (payperLeadCharge != null) 'payperLeadCharge': payperLeadCharge,
     };
   }
 
   String get displayName =>
       businessname?.trim().isNotEmpty == true
-          ? businessname!.trim()
+          ? businessname!
           : firstname?.trim().isNotEmpty == true
-              ? firstname!.trim()
-              : name?.trim().isNotEmpty == true
-                  ? name!.trim()
-                  : (username?.trim().isNotEmpty == true ? username!.trim() : 'Unknown User');
+          ? firstname!
+          : name?.trim().isNotEmpty == true
+          ? name!
+          : 'Unknown User';
 
-  /// Unified source of truth:
-  bool get isCustomer => isuser == true;
-  bool get isServiceProvider => isuser == false;
+  bool get isServiceProvider {
+    final hasBusinessName = businessname?.trim().isNotEmpty == true;
+    final hasBusinessPic = businesspic?.trim().isNotEmpty == true;
+    return hasBusinessName || hasBusinessPic;
+  }
 
-  static String? _parsePhoneString(dynamic value) {
+  static int? _parsePhone(dynamic value) {
     if (value == null) return null;
-    final str = value.toString().trim();
-    if (str.isEmpty) return null;
-    return str;
+    if (value is int) return value;
+    return int.tryParse(value.toString());
   }
 
   static int? _parseInt(dynamic value) {
@@ -282,26 +244,20 @@ class UserModel {
     return null;
   }
 
-  /// Structural check for legacy documents missing `isuser`
-  static bool _isLegacyServiceProviderDoc(Map<String, dynamic> data) {
-    final businessName = (data['businessname'] ?? data['businessName'] ?? data['business_name'])?.toString().trim() ?? '';
-    final businessPic = (data['businesspic'] ?? data['businessPic'] ?? data['business_pic'])?.toString().trim() ?? '';
-    final businessAddress = (data['businessaddress'] ?? data['businessAddress'] ?? data['business_address'] ?? data['address'])?.toString().trim() ?? '';
+  static bool _looksLikeServiceProvider(Map<String, dynamic> data) {
+    final businessName = data['businessname']?.toString().trim() ?? '';
+    final businessPic = data['businesspic']?.toString().trim() ?? '';
+    final category = data['category'];
 
-    return businessName.isNotEmpty && businessPic.isNotEmpty && businessAddress.isNotEmpty;
-  }
-
-  /// Single classification method for external maps/documents.
-  static bool isServiceProviderDoc(Map<String, dynamic> data) {
-    if (data.containsKey('isuser')) {
-      final parsed = _parseBool(data['isuser']);
-      if (parsed != null) return !parsed;
+    if (businessName.isNotEmpty || businessPic.isNotEmpty) {
+      return true;
     }
-    if (data.containsKey('isServiceProvider')) {
-      final parsed = _parseBool(data['isServiceProvider']);
-      if (parsed != null) return parsed;
+    if (category is List) {
+      return category.any(
+        (value) => value?.toString().trim().isNotEmpty == true,
+      );
     }
-    return _isLegacyServiceProviderDoc(data);
+    return category?.toString().trim().isNotEmpty == true;
   }
 
   static DateTime? _parseDateTime(dynamic value) {

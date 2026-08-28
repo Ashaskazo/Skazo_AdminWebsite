@@ -93,16 +93,14 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
     final repository = ref.read(userRepositoryProvider);
     final category = arg;
     final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
-    final isSuper = ref.read(isSuperAdminProvider);
 
     try {
-      final pincodesMap = (ref.read(propertyPincodesProvider).value) ?? const <String, List<String>>{};
+      final pincodesMap = await ref.read(propertyPincodesProvider.future);
       final result = await repository.fetchUnverifiedUsers(
         timeFilter: _timeFilter,
         city: _city,
         category: category,
         assignedCities: assignedCities,
-        isSuperAdmin: isSuper,
         pincodesMap: pincodesMap,
         startAfter: isRefresh ? null : state.lastDocument,
       );
@@ -143,16 +141,14 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
   final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
-  final isSuper = ref.watch(isSuperAdminProvider);
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
-  final pincodesMap = (ref.watch(propertyPincodesProvider).value) ?? const <String, List<String>>{};
+  final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
   return repository.countUnverifiedByCategories(
     categories: kBusinessCategories,
     timeFilter: timeFilter,
     city: city,
     assignedCities: assignedCities,
-    isSuperAdmin: isSuper,
     pincodesMap: pincodesMap,
   );
 });
@@ -162,15 +158,13 @@ final unverifiedPendingCountProvider = FutureProvider<int>((ref) async {
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
   final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
-  final isSuper = ref.watch(isSuperAdminProvider);
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
-  final pincodesMap = (ref.watch(propertyPincodesProvider).value) ?? const <String, List<String>>{};
+  final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
   return repository.countUnverifiedPending(
     timeFilter: timeFilter,
     city: city,
     assignedCities: assignedCities,
-    isSuperAdmin: isSuper,
     pincodesMap: pincodesMap,
   );
 });

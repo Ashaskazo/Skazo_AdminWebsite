@@ -2,10 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
-import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 export 'package:skazo_admin/utils/city_resolver.dart' show getSmartCity;
@@ -823,28 +821,6 @@ final collectionCountProvider = FutureProvider.family<int, String>((
   ref,
   collectionName,
 ) async {
-  final selectedCity = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
-  final isSuper = ref.watch(isSuperAdminProvider);
-
-  if (collectionName == 'users') {
-    final repository = ref.watch(userRepositoryProvider);
-    return repository.countUsers(
-      filters: UserFilters(city: selectedCity, userType: 'Customers'),
-      assignedCities: assignedCities,
-      isSuperAdmin: isSuper,
-    );
-  }
-
-  if (collectionName == 'service_providers') {
-    final repository = ref.watch(userRepositoryProvider);
-    return repository.countUsers(
-      filters: UserFilters(city: selectedCity, userType: 'Service Providers'),
-      assignedCities: assignedCities,
-      isSuperAdmin: isSuper,
-    );
-  }
-
   final snapshot =
       await FirebaseFirestore.instance.collection(collectionName).count().get();
   return snapshot.count ?? 0;
@@ -1052,14 +1028,6 @@ final Map<String, CollectionDateFieldInfo> _knownCollectionDateFields = {
   ),
   'callLogs': CollectionDateFieldInfo(
     fieldName: 'timestamp',
-    fieldType: 'Timestamp',
-  ),
-  'deactivatedServiceProviders': CollectionDateFieldInfo(
-    fieldName: 'deactivatedAt',
-    fieldType: 'Timestamp',
-  ),
-  'deactivatedserviceproviders': CollectionDateFieldInfo(
-    fieldName: 'deactivatedAt',
     fieldType: 'Timestamp',
   ),
 };
