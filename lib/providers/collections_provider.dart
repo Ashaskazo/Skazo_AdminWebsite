@@ -6,6 +6,9 @@ import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
+
+import '../models/user_filters.dart';
+import '../repositories/user_repository.dart';
 export 'package:skazo_admin/utils/city_resolver.dart' show getSmartCity;
 
 // Generic provider for fetching data from any Firestore collection
@@ -475,15 +478,16 @@ class PaginatedRentalNotifier
     List<Map<String, dynamic>> temp = List.from(_allProperties);
 
     // 1. Filter by City and Admin Assigned Cities Scope
-    temp = temp.where((p) {
-      return userMatchesAssignedCities(
-        p,
-        selectedCity,
-        assignedCities,
-        pincodesMap,
-        pincodeCityLookup,
-      );
-    }).toList();
+    temp =
+        temp.where((p) {
+          return userMatchesAssignedCities(
+            p,
+            selectedCity,
+            assignedCities,
+            pincodesMap,
+            pincodeCityLookup,
+          );
+        }).toList();
 
     // 2. Filter by Verification / Premium Type
     if (filterType == 'Verified') {
@@ -574,8 +578,10 @@ class PaginatedRentalNotifier
 
     final sortAscending = ref.read(rentalSortAscendingProvider);
     temp.sort((a, b) {
-      final aDate = _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
-      final bDate = _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
+      final aDate =
+          _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
+      final bDate =
+          _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
       return sortAscending ? aDate.compareTo(bDate) : bDate.compareTo(aDate);
     });
 
@@ -821,6 +827,54 @@ final collectionCountProvider = FutureProvider.family<int, String>((
   ref,
   collectionName,
 ) async {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  final assignedCities =
+      isSuper
+          ? const <String>[]
+          : ref.watch(currentAdminAssignedCitiesProvider);
+
+  if (!isSuper && assignedCities.isNotEmpty) {
+    if (collectionName == 'users') {
+      final repo = ref.watch(userRepositoryProvider);
+      return repo.countUsers(
+        filters: const UserFilters(),
+        assignedCities: assignedCities,
+      );
+    }
+    Query query = FirebaseFirestore.instance.collection(collectionName);
+    if (assignedCities.length == 1) {
+      final snap =
+          await query
+              .where('city', isEqualTo: assignedCities.first)
+              .count()
+              .get();
+      if ((snap.count ?? 0) > 0) return snap.count!;
+      final snapKey =
+          await query
+              .where(
+                'cityKey',
+                isEqualTo: assignedCities.first.trim().toLowerCase(),
+              )
+              .count()
+              .get();
+      return snapKey.count ?? 0;
+    } else if (assignedCities.length <= 30) {
+      final snap =
+          await query.where('city', whereIn: assignedCities).count().get();
+      if ((snap.count ?? 0) > 0) return snap.count!;
+      final snapKey =
+          await query
+              .where(
+                'cityKey',
+                whereIn:
+                    assignedCities.map((c) => c.trim().toLowerCase()).toList(),
+              )
+              .count()
+              .get();
+      return snapKey.count ?? 0;
+    }
+  }
+
   final snapshot =
       await FirebaseFirestore.instance.collection(collectionName).count().get();
   return snapshot.count ?? 0;
@@ -1026,6 +1080,10 @@ final Map<String, CollectionDateFieldInfo> _knownCollectionDateFields = {
     fieldName: 'timestamp',
     fieldType: 'Timestamp',
   ),
+  'local_promotions': CollectionDateFieldInfo(
+    fieldName: 'createdAt',
+    fieldType: 'Timestamp',
+  ),
   'callLogs': CollectionDateFieldInfo(
     fieldName: 'timestamp',
     fieldType: 'Timestamp',
@@ -1047,6 +1105,12 @@ final collectionTodayCountProvider = FutureProvider.family<int, String>((
   ref,
   collectionName,
 ) async {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  final assignedCities =
+      isSuper
+          ? const <String>[]
+          : ref.watch(currentAdminAssignedCitiesProvider);
+
   final dateFieldInfo = await ref.watch(
     collectionDateFieldInfoProvider(collectionName).future,
   );
@@ -1059,9 +1123,31 @@ final collectionTodayCountProvider = FutureProvider.family<int, String>((
     final fieldType = dateFieldInfo.fieldType;
     final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
 
+    Query query = FirebaseFirestore.instance.collection(collectionName);
+    if (!isSuper && assignedCities.isNotEmpty) {
+      if (collectionName == 'users') {
+        if (assignedCities.length == 1) {
+          query = query.where(
+            'cityKey',
+            isEqualTo: assignedCities.first.trim().toLowerCase(),
+          );
+        } else if (assignedCities.length <= 30) {
+          query = query.where(
+            'cityKey',
+            whereIn: assignedCities.map((c) => c.trim().toLowerCase()).toList(),
+          );
+        }
+      } else {
+        if (assignedCities.length == 1) {
+          query = query.where('city', isEqualTo: assignedCities.first);
+        } else if (assignedCities.length <= 30) {
+          query = query.where('city', whereIn: assignedCities);
+        }
+      }
+    }
+
     final snapshot =
-        await FirebaseFirestore.instance
-            .collection(collectionName)
+        await query
             .where(fieldName, isGreaterThanOrEqualTo: todayVal)
             .count()
             .get();
@@ -1075,6 +1161,12 @@ final collectionPeriodStatsProvider = FutureProvider.family<
   CollectionPeriodStats,
   String
 >((ref, collectionName) async {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  final assignedCities =
+      isSuper
+          ? const <String>[]
+          : ref.watch(currentAdminAssignedCitiesProvider);
+
   final dateFieldInfo = await ref.watch(
     collectionDateFieldInfoProvider(collectionName).future,
   );
@@ -1104,17 +1196,42 @@ final collectionPeriodStatsProvider = FutureProvider.family<
     );
 
     try {
+      Query baseQuery = FirebaseFirestore.instance.collection(collectionName);
+      if (!isSuper && assignedCities.isNotEmpty) {
+        if (collectionName == 'users') {
+          if (assignedCities.length == 1) {
+            baseQuery = baseQuery.where(
+              'cityKey',
+              isEqualTo: assignedCities.first.trim().toLowerCase(),
+            );
+          } else if (assignedCities.length <= 30) {
+            baseQuery = baseQuery.where(
+              'cityKey',
+              whereIn:
+                  assignedCities.map((c) => c.trim().toLowerCase()).toList(),
+            );
+          }
+        } else {
+          if (assignedCities.length == 1) {
+            baseQuery = baseQuery.where(
+              'city',
+              isEqualTo: assignedCities.first,
+            );
+          } else if (assignedCities.length <= 30) {
+            baseQuery = baseQuery.where('city', whereIn: assignedCities);
+          }
+        }
+      }
+
       final todaySnap =
-          await FirebaseFirestore.instance
-              .collection(collectionName)
+          await baseQuery
               .where(fieldName, isGreaterThanOrEqualTo: todayVal)
               .count()
               .get();
       final todayCount = todaySnap.count ?? 0;
 
       final yesterdaySnap =
-          await FirebaseFirestore.instance
-              .collection(collectionName)
+          await baseQuery
               .where(fieldName, isGreaterThanOrEqualTo: yesterdayVal)
               .where(fieldName, isLessThan: todayVal)
               .count()
@@ -1122,16 +1239,14 @@ final collectionPeriodStatsProvider = FutureProvider.family<
       final yesterdayCount = yesterdaySnap.count ?? 0;
 
       final sevenDaysSnap =
-          await FirebaseFirestore.instance
-              .collection(collectionName)
+          await baseQuery
               .where(fieldName, isGreaterThanOrEqualTo: sevenDaysAgoVal)
               .count()
               .get();
       final sevenDaysCount = sevenDaysSnap.count ?? 0;
 
       final thirtyDaysSnap =
-          await FirebaseFirestore.instance
-              .collection(collectionName)
+          await baseQuery
               .where(fieldName, isGreaterThanOrEqualTo: thirtyDaysAgoVal)
               .count()
               .get();
@@ -1212,7 +1327,9 @@ final localPromotionsTypeFilterProvider = StateProvider<String>((ref) => 'All');
 final localPromotionsTimeFilterProvider = StateProvider<String>(
   (ref) => 'All Time',
 );
-final localPromotionsSortAscendingProvider = StateProvider<bool>((ref) => false);
+final localPromotionsSortAscendingProvider = StateProvider<bool>(
+  (ref) => false,
+);
 
 // Helper to extract image URLs from promotion map
 List<String> extractPromotionImageUrls(Map<String, dynamic> promo) {
@@ -1367,15 +1484,16 @@ class PaginatedLocalPromotionsNotifier
     List<Map<String, dynamic>> temp = List.from(_allPromotions);
 
     // 1. Filter by City and Admin Assigned Cities Scope
-    temp = temp.where((p) {
-      return userMatchesAssignedCities(
-        p,
-        selectedCity,
-        assignedCities,
-        pincodesMap,
-        pincodeCityLookup,
-      );
-    }).toList();
+    temp =
+        temp.where((p) {
+          return userMatchesAssignedCities(
+            p,
+            selectedCity,
+            assignedCities,
+            pincodesMap,
+            pincodeCityLookup,
+          );
+        }).toList();
 
     // 2. Filter by Verification Status Type
     if (filterType == 'Verified') {
@@ -1462,8 +1580,10 @@ class PaginatedLocalPromotionsNotifier
 
     final sortAscending = ref.read(localPromotionsSortAscendingProvider);
     temp.sort((a, b) {
-      final aDate = _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
-      final bDate = _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
+      final aDate =
+          _parseDateTime(a['createdAt'] ?? a['timestamp']) ?? DateTime(2000);
+      final bDate =
+          _parseDateTime(b['createdAt'] ?? b['timestamp']) ?? DateTime(2000);
       return sortAscending ? aDate.compareTo(bDate) : bDate.compareTo(aDate);
     });
 
@@ -1558,10 +1678,8 @@ DateTime? _parseCustomDateTime(String val) {
       final timePart = parts[4];
       final timeParts = timePart.split(':');
       final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 0 : 0;
-      final minute =
-          timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-      final second =
-          timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
+      final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
+      final second = timeParts.length > 2 ? int.tryParse(timeParts[2]) ?? 0 : 0;
 
       final months = {
         'january': 1,
@@ -1594,27 +1712,15 @@ DateTime? _parseCustomDateTime(String val) {
         if (parts.length >= 6 && parts[5].startsWith('UTC')) {
           final offsetStr = parts[5].substring(3);
           final isNegative = offsetStr.startsWith('-');
-          final cleanOffset = offsetStr
-              .replaceAll('+', '')
-              .replaceAll('-', '');
+          final cleanOffset = offsetStr.replaceAll('+', '').replaceAll('-', '');
           final offsetParts = cleanOffset.split(':');
           final offsetHours =
               offsetParts.isNotEmpty ? int.tryParse(offsetParts[0]) ?? 0 : 0;
           final offsetMinutes =
               offsetParts.length > 1 ? int.tryParse(offsetParts[1]) ?? 0 : 0;
 
-          final utcTime = DateTime.utc(
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            second,
-          );
-          final duration = Duration(
-            hours: offsetHours,
-            minutes: offsetMinutes,
-          );
+          final utcTime = DateTime.utc(year, month, day, hour, minute, second);
+          final duration = Duration(hours: offsetHours, minutes: offsetMinutes);
           return isNegative
               ? utcTime.add(duration)
               : utcTime.subtract(duration);

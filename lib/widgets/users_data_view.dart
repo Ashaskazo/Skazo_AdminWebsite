@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
@@ -99,6 +100,12 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
     final verifiedOnly = ref.watch(userVerifiedOnlyProvider);
     final dateFilter = ref.watch(userDateFilterProvider);
     final selectedType = ref.watch(userTypeFilterProvider);
+
+    final isSuper = ref.watch(isSuperAdminProvider);
+    final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
+    final cityScopeLabel = (!isSuper && assignedCities.isNotEmpty)
+        ? (selectedCity ?? assignedCities.join(', '))
+        : selectedCity;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,9 +277,13 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                                       .state = value;
                                 },
                                 items: [
-                                  const DropdownMenuItem<String?>(
+                                  DropdownMenuItem<String?>(
                                     value: null,
-                                    child: Text('All Cities'),
+                                    child: Text(
+                                      (!isSuper && assignedCities.isNotEmpty)
+                                          ? 'My Assigned Cities (${assignedCities.join(', ')})'
+                                          : 'All Cities',
+                                    ),
                                   ),
                                   ...dropdownItems.map(
                                     (item) => DropdownMenuItem<String?>(
@@ -505,12 +516,12 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         border: Border.all(color: const Color(0xFFDBEAFE)),
                       ),
                       child: Text(
-                        selectedCity != null
+                        cityScopeLabel != null
                             ? 'Found ${notifier.filteredCount} ${selectedType == 'Service Providers'
                                 ? 'providers'
                                 : selectedType == 'Customers'
                                 ? 'customers'
-                                : 'accounts'} in $selectedCity'
+                                : 'accounts'} in $cityScopeLabel'
                             : searchQuery.isNotEmpty
                             ? 'Found ${notifier.filteredCount} matching ${selectedType == 'Service Providers'
                                 ? 'providers'
@@ -549,7 +560,9 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          '${notifier.serviceProviderCount} Service Providers',
+                          cityScopeLabel != null
+                              ? '${notifier.serviceProviderCount} Service Providers in $cityScopeLabel'
+                              : '${notifier.serviceProviderCount} Service Providers',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,

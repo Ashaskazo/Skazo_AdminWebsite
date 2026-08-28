@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/models/page_result.dart';
 import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/models/user_model.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -126,11 +127,13 @@ class UserRepository {
       final selectedCity = cityFilter;
       final filtersWithoutCity = filters.copyWith(clearCity: true);
       final search = UserSearchParams.fromQuery(searchQuery);
-      if (selectedCity != null && assignedCities.isEmpty) {
+      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+
+      if (effectiveCity != null) {
         final cityKeyResult = await _tryFetchUsersByCityKey(
           filters: filtersWithoutCity,
           search: search,
-          selectedCity: selectedCity,
+          selectedCity: effectiveCity,
           startAfter: startAfter,
           limit: limit,
         );
@@ -183,11 +186,14 @@ class UserRepository {
   }) async {
     final cityFilter = filters.city?.trim();
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
-      if (cityFilter != null && assignedCities.isEmpty) {
+      final selectedCity = cityFilter;
+      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+
+      if (effectiveCity != null) {
         final cityKeyCount = await _tryCountUsersByCityKey(
           filters: filters.copyWith(clearCity: true),
           search: UserSearchParams.fromQuery(searchQuery),
-          selectedCity: cityFilter,
+          selectedCity: effectiveCity,
         );
         if (cityKeyCount != null) {
           return cityKeyCount;
@@ -217,11 +223,38 @@ class UserRepository {
     });
   }
 
-  Future<UserStats> fetchUserStats() async {
+  Future<UserStats> fetchUserStats({List<String> assignedCities = const []}) async {
     return _withRetry(() async {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayTs = Timestamp.fromDate(todayStart);
+
+      if (assignedCities.isNotEmpty) {
+        final cityKeys = assignedCities.map(_normalizeQueryableCityKey).toList();
+        Query<Map<String, dynamic>> baseQuery = _users;
+        if (cityKeys.length == 1) {
+          baseQuery = baseQuery.where('cityKey', isEqualTo: cityKeys.first);
+        } else if (cityKeys.length <= 30) {
+          baseQuery = baseQuery.where('cityKey', whereIn: cityKeys);
+        }
+
+        final results = await Future.wait([
+          baseQuery.count().get(),
+          baseQuery.where('isverified', isEqualTo: true).count().get(),
+          baseQuery.where('isverified', isEqualTo: false).count().get(),
+          baseQuery
+              .where('createdAt', isGreaterThanOrEqualTo: todayTs)
+              .count()
+              .get(),
+        ]);
+
+        return UserStats(
+          total: results[0].count ?? 0,
+          verified: results[1].count ?? 0,
+          unverified: results[2].count ?? 0,
+          today: results[3].count ?? 0,
+        );
+      }
 
       final results = await Future.wait([
         _users.count().get(),
@@ -262,10 +295,11 @@ class UserRepository {
   }) async {
     final selectedCity = city?.trim();
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      if (selectedCity != null && assignedCities.isEmpty) {
+      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      if (effectiveCity != null) {
         final directCount = await _tryCountUnverifiedByCityKey(
           timeFilter: timeFilter,
-          selectedCity: selectedCity,
+          selectedCity: effectiveCity,
           category: category,
         );
         if (directCount != null) {
@@ -307,11 +341,12 @@ class UserRepository {
   }) async {
     final selectedCity = city?.trim();
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      if (selectedCity != null && assignedCities.isEmpty) {
+      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      if (effectiveCity != null) {
         final cityKeyResult = await _tryFetchUnverifiedByCityKey(
           timeFilter: timeFilter,
           category: category,
-          selectedCity: selectedCity,
+          selectedCity: effectiveCity,
           startAfter: startAfter,
           limit: limit,
         );
@@ -367,7 +402,7 @@ class UserRepository {
   }) async {
     final selectedCity = city?.trim();
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      if (selectedCity != null && assignedCities.isEmpty && await _supportsDirectCityKeyQueries()) {
+      if (await _supportsDirectCityKeyQueries()) {
         final entries = await Future.wait(
           categories.map((category) async {
             final count = await countUnverifiedPending(
@@ -393,19 +428,23 @@ class UserRepository {
       );
     }
 
-    final entries = await Future.wait(
-      categories.map((category) async {
-        final count = await countUnverifiedPending(
-          timeFilter: timeFilter,
-          city: city,
-          category: category,
-          assignedCities: assignedCities,
-          pincodesMap: pincodesMap,
-        );
-        return MapEntry(category, count);
-      }),
-    );
-    return Map.fromEntries(entries);
+    return _withRetry(() async {
+      final counts = <String, int>{for (final category in categories) category: 0};
+      final entries = await Future.wait(
+        categories.map((category) async {
+          final query = _buildUnverifiedBaseQuery(
+            timeFilter: timeFilter,
+            category: category,
+          );
+          final snapshot = await query.count().get();
+          return MapEntry(category, snapshot.count ?? 0);
+        }),
+      );
+      for (final entry in entries) {
+        counts[entry.key] = entry.value;
+      }
+      return counts;
+    });
   }
 
   Future<void> verifyUser(String userId) async {
@@ -836,11 +875,12 @@ class UserRepository {
     final cityFilter = filters.city?.trim();
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
-      if (selectedCity != null && assignedCities.isEmpty) {
+      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      if (effectiveCity != null) {
         final directResult = await _tryFetchUsersByCityKey(
           filters: filters.copyWith(clearCity: true),
           search: usernameSearch,
-          selectedCity: selectedCity,
+          selectedCity: effectiveCity,
           startAfter: startAfter,
           limit: limit,
         );
@@ -1060,5 +1100,7 @@ final userRepositoryProvider = Provider<UserRepository>((ref) {
 
 final userStatsProvider = FutureProvider<UserStats>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
-  return repository.fetchUserStats();
+  final isSuper = ref.watch(isSuperAdminProvider);
+  final assignedCities = isSuper ? const <String>[] : ref.watch(currentAdminAssignedCitiesProvider);
+  return repository.fetchUserStats(assignedCities: assignedCities);
 });

@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/dashboard_provider.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
 /// Provider that checks if a user's email is in the admins collection
@@ -145,18 +147,49 @@ class AdminAuthNotifier extends StateNotifier<bool> {
     try {
       await FirebaseAuth.instance.signOut();
       
+      // Reset view to summary default
+      ref.read(currentDashboardViewProvider.notifier).state = DashboardView.summary;
+      ref.read(sidebarCollapsedProvider.notifier).state = false;
+
+      // Reset all user management filters
+      ref.read(userSearchQueryProvider.notifier).state = '';
+      ref.read(userSelectedCityProvider.notifier).state = null;
+      ref.read(userVerifiedOnlyProvider.notifier).state = false;
+      ref.read(userDateFilterProvider.notifier).state = null;
+      ref.read(userTypeFilterProvider.notifier).state = 'All';
+      ref.read(userCategoryFilterProvider.notifier).state = null;
+      ref.read(userPriorityFilterProvider.notifier).state = null;
+      ref.read(userProfileCompleteFilterProvider.notifier).state = null;
+      ref.read(userBusinessNameFilterProvider.notifier).state = null;
+      ref.read(userSortAscendingProvider.notifier).state = false;
+
+      // Reset dashboard filter state
+      ref.read(dashboardSelectedCategoryProvider.notifier).state = null;
+      ref.read(dashboardSelectedCityProvider.notifier).state = null;
+      ref.read(dashboardSelectedDateFilterProvider.notifier).state = null;
+
       // Invalidate all cached data providers to release resources and prevent stale access
-      final selectedCategory = ref.read(dashboardSelectedCategoryProvider);
+      final userPaginationNotifier = ref.read(userPaginationProvider.notifier);
+      userPaginationNotifier.clearOptimizationCaches();
       ref.invalidate(userPaginationProvider);
       clearPropertyPincodesCache();
       ref.invalidate(propertyPincodesProvider);
-      ref.invalidate(unverifiedPaginationProvider(selectedCategory));
+      ref.invalidate(unverifiedPaginationProvider);
       ref.invalidate(unverifiedPendingCountProvider);
       ref.invalidate(categoryCountsProvider);
+      ref.invalidate(userStatsProvider);
       ref.invalidate(adminsStreamProvider);
       ref.invalidate(paginatedLocalPromotionsProvider);
-      ref.invalidate(adminsStreamProvider);
-      // ref.invalidate(paginatedRentalPropertiesProvider);
+      ref.invalidate(paginatedRentalProvider);
+      ref.invalidate(paginatedPaymentProvider);
+      ref.invalidate(collectionCountProvider);
+      ref.invalidate(collectionTodayCountProvider);
+      ref.invalidate(collectionPeriodStatsProvider);
+      ref.invalidate(collectionDateFieldInfoProvider);
+      ref.invalidate(currentAdminProfileProvider);
+      ref.invalidate(isSuperAdminProvider);
+      ref.invalidate(currentAdminAssignedCitiesProvider);
+      ref.invalidate(allowedCitiesProvider);
     } catch (e) {
       debugPrint('Error signing out: $e');
     } finally {

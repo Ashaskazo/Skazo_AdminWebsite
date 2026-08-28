@@ -48,6 +48,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       _filterDebounce?.cancel();
       _countRequests.clear();
       _pageRequests.clear();
+      _countCache.clear();
     });
 
     ref.listen(userSearchQueryProvider, (_, __) => _scheduleRefresh());
@@ -63,7 +64,18 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     );
     ref.listen(userBusinessNameFilterProvider, (_, __) => _scheduleRefresh());
     ref.listen(userSortAscendingProvider, (_, __) => _scheduleRefresh());
-    ref.listen(currentAdminAssignedCitiesProvider, (_, __) => _scheduleRefresh());
+    ref.listen(currentAdminAssignedCitiesProvider, (_, __) {
+      clearOptimizationCaches();
+      _scheduleRefresh();
+    });
+    ref.listen(isSuperAdminProvider, (_, __) {
+      clearOptimizationCaches();
+      _scheduleRefresh();
+    });
+    ref.listen(currentAdminProfileProvider, (_, __) {
+      clearOptimizationCaches();
+      _scheduleRefresh();
+    });
 
     Future.microtask(refresh);
     return UserPaginationState.initial();
@@ -331,7 +343,11 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
   }
 
   String _buildCountsKey(UserFilters filters, String searchQuery) {
+    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final isSuper = ref.read(isSuperAdminProvider);
     return [
+      isSuper ? 'super' : 'admin',
+      assignedCities.join(','),
       filters.timeFilter.name,
       filters.verifiedOnly?.toString() ?? '',
       filters.city?.trim().toLowerCase() ?? '',
