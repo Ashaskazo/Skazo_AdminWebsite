@@ -47,9 +47,21 @@ final collectionDataProvider = FutureProvider.family<
 
 // Shared provider for user-related city filters across User Management and dashboard.
 final userFilterCitiesProvider = FutureProvider<List<String>>((ref) async {
-  final pincodesMap = await ref.watch(propertyPincodesProvider.future);
-  final sortedCities = pincodesMap.keys.toList()..sort();
-  return sortedCities;
+  try {
+    final pincodesMap = await ref.watch(propertyPincodesProvider.future);
+    final sortedCities = pincodesMap.keys.toList()..sort();
+    if (sortedCities.isNotEmpty) return sortedCities;
+  } catch (e) {
+    debugPrint('Error in userFilterCitiesProvider: $e');
+  }
+  return const [
+    'Vijayawada',
+    'Hyderabad',
+    'Guntur',
+    'Bangalore',
+    'Bheemavaram',
+    'Tirupathi',
+  ];
 });
 
 // Backward-compatible city set provider for existing users page code.
@@ -828,51 +840,67 @@ final collectionCountProvider = FutureProvider.family<int, String>((
   collectionName,
 ) async {
   final isSuper = ref.watch(isSuperAdminProvider);
+  final dashboardCity = ref.watch(dashboardSelectedCityProvider);
   final assignedCities =
       isSuper
-          ? const <String>[]
+          ? (dashboardCity != null && dashboardCity.isNotEmpty
+              ? [dashboardCity]
+              : const <String>[])
           : ref.watch(currentAdminAssignedCitiesProvider);
 
-  if (!isSuper && assignedCities.isNotEmpty) {
+  if (assignedCities.isNotEmpty) {
     if (collectionName == 'users') {
       final repo = ref.watch(userRepositoryProvider);
       return repo.countUsers(
-        filters: const UserFilters(),
+        filters: UserFilters(city: assignedCities.first),
         assignedCities: assignedCities,
       );
     }
-    Query query = FirebaseFirestore.instance.collection(collectionName);
-    if (assignedCities.length == 1) {
-      final snap =
-          await query
-              .where('city', isEqualTo: assignedCities.first)
-              .count()
-              .get();
-      if ((snap.count ?? 0) > 0) return snap.count!;
-      final snapKey =
-          await query
-              .where(
-                'cityKey',
-                isEqualTo: assignedCities.first.trim().toLowerCase(),
-              )
-              .count()
-              .get();
-      return snapKey.count ?? 0;
-    } else if (assignedCities.length <= 30) {
-      final snap =
-          await query.where('city', whereIn: assignedCities).count().get();
-      if ((snap.count ?? 0) > 0) return snap.count!;
-      final snapKey =
-          await query
-              .where(
-                'cityKey',
-                whereIn:
-                    assignedCities.map((c) => c.trim().toLowerCase()).toList(),
-              )
-              .count()
-              .get();
-      return snapKey.count ?? 0;
-    }
+
+    final query = FirebaseFirestore.instance.collection(collectionName);
+    final normalizedKey = assignedCities.first.trim().toLowerCase();
+
+    try {
+      if (assignedCities.length == 1) {
+        final snapKey =
+            await query
+                .where('cityKey', isEqualTo: normalizedKey)
+                .count()
+                .get();
+        if ((snapKey.count ?? 0) > 0) return snapKey.count!;
+
+        final snapCity =
+            await query
+                .where('city', isEqualTo: assignedCities.first)
+                .count()
+                .get();
+        if ((snapCity.count ?? 0) > 0) return snapCity.count!;
+      } else if (assignedCities.length <= 30) {
+        final keys =
+            assignedCities.map((c) => c.trim().toLowerCase()).toList();
+        final snapKey = await query.where('cityKey', whereIn: keys).count().get();
+        if ((snapKey.count ?? 0) > 0) return snapKey.count!;
+
+        final snapCity =
+            await query.where('city', whereIn: assignedCities).count().get();
+        if ((snapCity.count ?? 0) > 0) return snapCity.count!;
+      }
+    } catch (_) {}
+
+    final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+    final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
+    final snapshot =
+        await FirebaseFirestore.instance.collection(collectionName).get();
+    return snapshot.docs.where((doc) {
+      return userMatchesAssignedCities(
+        doc.data(),
+        null,
+        assignedCities,
+        pincodesMap,
+        pincodeCityLookup,
+      );
+    }).length;
   }
 
   final snapshot =
@@ -1101,60 +1129,183 @@ final collectionDateFieldInfoProvider =
       return _detectDateField(collectionName);
     });
 
-final collectionTodayCountProvider = FutureProvider.family<int, String>((
-  ref,
-  collectionName,
-) async {
-  final isSuper = ref.watch(isSuperAdminProvider);
-  final assignedCities =
-      isSuper
-          ? const <String>[]
-          : ref.watch(currentAdminAssignedCitiesProvider);
+DateTime _nowIst() {
+  final utcNow = DateTime.now().toUtc();
+  return utcNow.add(const Duration(hours: 5, minutes: 30));
+}
 
-  final dateFieldInfo = await ref.watch(
-    collectionDateFieldInfoProvider(collectionName).future,
+({DateTime startUtc, DateTime endUtc}) _getIstTodayRange() {
+  final istNow = _nowIst();
+  final istTodayStart = DateTime.utc(istNow.year, istNow.month, istNow.day);
+  final istTomorrowStart = istTodayStart.add(const Duration(days: 1));
+
+  // Convert IST midnight back to UTC
+  final startUtc = istTodayStart.subtract(
+    const Duration(hours: 5, minutes: 30),
+  );
+  final endUtc = istTomorrowStart.subtract(
+    const Duration(hours: 5, minutes: 30),
   );
 
-  final now = DateTime.now();
-  final todayStart = DateTime(now.year, now.month, now.day);
+  return (startUtc: startUtc, endUtc: endUtc);
+}
 
-  if (dateFieldInfo != null) {
-    final fieldName = dateFieldInfo.fieldName;
-    final fieldType = dateFieldInfo.fieldType;
-    final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
+final collectionTodayCountProvider = StreamProvider.family<int, String>((
+  ref,
+  collectionName,
+) {
+  final isSuper = ref.watch(isSuperAdminProvider);
+  final dashboardCity = ref.watch(dashboardSelectedCityProvider);
+  final assignedCities =
+      isSuper
+          ? (dashboardCity != null && dashboardCity.isNotEmpty
+              ? [dashboardCity]
+              : const <String>[])
+          : ref.watch(currentAdminAssignedCitiesProvider);
 
-    Query query = FirebaseFirestore.instance.collection(collectionName);
-    if (!isSuper && assignedCities.isNotEmpty) {
-      if (collectionName == 'users') {
-        if (assignedCities.length == 1) {
-          query = query.where(
-            'cityKey',
-            isEqualTo: assignedCities.first.trim().toLowerCase(),
-          );
-        } else if (assignedCities.length <= 30) {
-          query = query.where(
-            'cityKey',
-            whereIn: assignedCities.map((c) => c.trim().toLowerCase()).toList(),
-          );
-        }
-      } else {
-        if (assignedCities.length == 1) {
-          query = query.where('city', isEqualTo: assignedCities.first);
-        } else if (assignedCities.length <= 30) {
-          query = query.where('city', whereIn: assignedCities);
-        }
-      }
-    }
+  final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+  final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+  final range = _getIstTodayRange();
 
-    final snapshot =
-        await query
-            .where(fieldName, isGreaterThanOrEqualTo: todayVal)
-            .count()
-            .get();
-    return snapshot.count ?? 0;
+  final startTs = Timestamp.fromDate(range.startUtc);
+  final endTs = Timestamp.fromDate(range.endUtc);
+
+  if (collectionName == 'users') {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .where('createdAt', isGreaterThanOrEqualTo: startTs)
+        .where('createdAt', isLessThan: endTs)
+        .snapshots()
+        .map((snapshot) {
+          if (assignedCities.isEmpty) {
+            return snapshot.docs.length;
+          }
+          return snapshot.docs.where((doc) {
+            return userMatchesAssignedCities(
+              doc.data(),
+              null,
+              assignedCities,
+              pincodesMap,
+              pincodeCityLookup,
+            );
+          }).length;
+        });
   }
 
-  return 0;
+  if (collectionName == 'callLogs') {
+    return FirebaseFirestore.instance
+        .collection('callLogs')
+        .where('timestamp', isGreaterThanOrEqualTo: startTs)
+        .where('timestamp', isLessThan: endTs)
+        .snapshots()
+        .map((snapshot) {
+          if (assignedCities.isEmpty) {
+            return snapshot.docs.length;
+          }
+          return snapshot.docs.where((doc) {
+            return userMatchesAssignedCities(
+              doc.data(),
+              null,
+              assignedCities,
+              pincodesMap,
+              pincodeCityLookup,
+            );
+          }).length;
+        });
+  }
+
+  if (collectionName == 'local_promotions') {
+    return FirebaseFirestore.instance
+        .collection('local_promotions')
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.where((doc) {
+            final data = doc.data();
+            final dt = _parseDateTime(
+              data['createdAt'] ?? data['timestamp'] ?? data['date'],
+            );
+            if (dt == null) return false;
+            final dtUtc = dt.toUtc();
+            if (dtUtc.isBefore(range.startUtc) ||
+                !dtUtc.isBefore(range.endUtc)) {
+              return false;
+            }
+            if (assignedCities.isEmpty) {
+              return true;
+            }
+            return userMatchesAssignedCities(
+              data,
+              null,
+              assignedCities,
+              pincodesMap,
+              pincodeCityLookup,
+            );
+          }).length;
+        });
+  }
+
+  if (collectionName == 'rental_properties') {
+    return FirebaseFirestore.instance
+        .collection('rental_properties')
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.where((doc) {
+            final data = doc.data();
+            final dt = _parseDateTime(
+              data['createdAt'] ?? data['timestamp'] ?? data['date'],
+            );
+            if (dt == null) return false;
+            final dtUtc = dt.toUtc();
+            if (dtUtc.isBefore(range.startUtc) ||
+                !dtUtc.isBefore(range.endUtc)) {
+              return false;
+            }
+            if (assignedCities.isEmpty) {
+              return true;
+            }
+            return userMatchesAssignedCities(
+              data,
+              null,
+              assignedCities,
+              pincodesMap,
+              pincodeCityLookup,
+            );
+          }).length;
+        });
+  }
+
+  // Fallback for any other collection
+  return FirebaseFirestore.instance
+      .collection(collectionName)
+      .snapshots()
+      .map((snapshot) {
+        return snapshot.docs.where((doc) {
+          final data = doc.data();
+          final dt = _parseDateTime(
+            data['createdAt'] ??
+                data['timestamp'] ??
+                data['dateTime'] ??
+                data['date'] ??
+                data['created_at'],
+          );
+          if (dt == null) return false;
+          final dtUtc = dt.toUtc();
+          if (dtUtc.isBefore(range.startUtc) ||
+              !dtUtc.isBefore(range.endUtc)) {
+            return false;
+          }
+          if (assignedCities.isEmpty) {
+            return true;
+          }
+          return userMatchesAssignedCities(
+            data,
+            null,
+            assignedCities,
+            pincodesMap,
+            pincodeCityLookup,
+          );
+        }).length;
+      });
 });
 
 final collectionPeriodStatsProvider = FutureProvider.family<
@@ -1162,160 +1313,145 @@ final collectionPeriodStatsProvider = FutureProvider.family<
   String
 >((ref, collectionName) async {
   final isSuper = ref.watch(isSuperAdminProvider);
+  final dashboardCity = ref.watch(dashboardSelectedCityProvider);
   final assignedCities =
       isSuper
-          ? const <String>[]
+          ? (dashboardCity != null && dashboardCity.isNotEmpty
+              ? [dashboardCity]
+              : const <String>[])
           : ref.watch(currentAdminAssignedCitiesProvider);
+
+  final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+  final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
+  final range = _getIstTodayRange();
+  final todayStartUtc = range.startUtc;
+  final yesterdayStartUtc = todayStartUtc.subtract(const Duration(days: 1));
+  final sevenDaysAgoStartUtc = todayStartUtc.subtract(const Duration(days: 7));
+  final thirtyDaysAgoStartUtc = todayStartUtc.subtract(
+    const Duration(days: 30),
+  );
 
   final dateFieldInfo = await ref.watch(
     collectionDateFieldInfoProvider(collectionName).future,
   );
 
-  final now = DateTime.now();
-  final todayStart = DateTime(now.year, now.month, now.day);
-  final yesterdayStart = todayStart.subtract(const Duration(days: 1));
-  final sevenDaysAgoStart = todayStart.subtract(const Duration(days: 7));
-  final thirtyDaysAgoStart = todayStart.subtract(const Duration(days: 30));
+  if (dateFieldInfo == null) {
+    return CollectionPeriodStats(
+      today: 0,
+      yesterday: 0,
+      last7Days: 0,
+      last30Days: 0,
+    );
+  }
 
-  Future<CollectionPeriodStats?> queryStats(
-    String fieldName,
-    String fieldType,
-  ) async {
-    final todayVal = _convertDateTimeToQueryValue(todayStart, fieldType);
-    final yesterdayVal = _convertDateTimeToQueryValue(
-      yesterdayStart,
-      fieldType,
-    );
-    final sevenDaysAgoVal = _convertDateTimeToQueryValue(
-      sevenDaysAgoStart,
-      fieldType,
-    );
-    final thirtyDaysAgoVal = _convertDateTimeToQueryValue(
-      thirtyDaysAgoStart,
-      fieldType,
-    );
+  final fieldName = dateFieldInfo.fieldName;
+  final fieldType = dateFieldInfo.fieldType;
 
-    try {
-      Query baseQuery = FirebaseFirestore.instance.collection(collectionName);
-      if (!isSuper && assignedCities.isNotEmpty) {
-        if (collectionName == 'users') {
-          if (assignedCities.length == 1) {
-            baseQuery = baseQuery.where(
-              'cityKey',
-              isEqualTo: assignedCities.first.trim().toLowerCase(),
-            );
-          } else if (assignedCities.length <= 30) {
-            baseQuery = baseQuery.where(
-              'cityKey',
-              whereIn:
-                  assignedCities.map((c) => c.trim().toLowerCase()).toList(),
-            );
-          }
-        } else {
-          if (assignedCities.length == 1) {
-            baseQuery = baseQuery.where(
-              'city',
-              isEqualTo: assignedCities.first,
-            );
-          } else if (assignedCities.length <= 30) {
-            baseQuery = baseQuery.where('city', whereIn: assignedCities);
-          }
-        }
+  final todayVal = _convertDateTimeToQueryValue(todayStartUtc, fieldType);
+  final yesterdayVal = _convertDateTimeToQueryValue(
+    yesterdayStartUtc,
+    fieldType,
+  );
+  final sevenDaysAgoVal = _convertDateTimeToQueryValue(
+    sevenDaysAgoStartUtc,
+    fieldType,
+  );
+  final thirtyDaysAgoVal = _convertDateTimeToQueryValue(
+    thirtyDaysAgoStartUtc,
+    fieldType,
+  );
+
+  try {
+    if (isSuper || assignedCities.isEmpty) {
+      final baseQuery = FirebaseFirestore.instance.collection(collectionName);
+      final results = await Future.wait([
+        baseQuery
+            .where(fieldName, isGreaterThanOrEqualTo: todayVal)
+            .count()
+            .get(),
+        baseQuery
+            .where(fieldName, isGreaterThanOrEqualTo: yesterdayVal)
+            .where(fieldName, isLessThan: todayVal)
+            .count()
+            .get(),
+        baseQuery
+            .where(fieldName, isGreaterThanOrEqualTo: sevenDaysAgoVal)
+            .count()
+            .get(),
+        baseQuery
+            .where(fieldName, isGreaterThanOrEqualTo: thirtyDaysAgoVal)
+            .count()
+            .get(),
+      ]);
+
+      return CollectionPeriodStats(
+        today: results[0].count ?? 0,
+        yesterday: results[1].count ?? 0,
+        last7Days: results[2].count ?? 0,
+        last30Days: results[3].count ?? 0,
+      );
+    }
+
+    // For Admin with assigned cities:
+    // Query documents from 30 days ago to now (single field index on date),
+    // and bucket in-memory by assigned city and date range
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where(fieldName, isGreaterThanOrEqualTo: thirtyDaysAgoVal)
+            .get();
+
+    int todayCount = 0;
+    int yesterdayCount = 0;
+    int sevenDaysCount = 0;
+    int thirtyDaysCount = 0;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      if (!userMatchesAssignedCities(
+        data,
+        null,
+        assignedCities,
+        pincodesMap,
+        pincodeCityLookup,
+      )) {
+        continue;
+      }
+      final dt = _parseDateTime(data[fieldName]);
+      if (dt == null) continue;
+      final dtUtc = dt.toUtc();
+
+      if (!dtUtc.isBefore(todayStartUtc)) {
+        todayCount++;
+      } else if (!dtUtc.isBefore(yesterdayStartUtc) &&
+          dtUtc.isBefore(todayStartUtc)) {
+        yesterdayCount++;
       }
 
-      final todaySnap =
-          await baseQuery
-              .where(fieldName, isGreaterThanOrEqualTo: todayVal)
-              .count()
-              .get();
-      final todayCount = todaySnap.count ?? 0;
-
-      final yesterdaySnap =
-          await baseQuery
-              .where(fieldName, isGreaterThanOrEqualTo: yesterdayVal)
-              .where(fieldName, isLessThan: todayVal)
-              .count()
-              .get();
-      final yesterdayCount = yesterdaySnap.count ?? 0;
-
-      final sevenDaysSnap =
-          await baseQuery
-              .where(fieldName, isGreaterThanOrEqualTo: sevenDaysAgoVal)
-              .count()
-              .get();
-      final sevenDaysCount = sevenDaysSnap.count ?? 0;
-
-      final thirtyDaysSnap =
-          await baseQuery
-              .where(fieldName, isGreaterThanOrEqualTo: thirtyDaysAgoVal)
-              .count()
-              .get();
-      final thirtyDaysCount = thirtyDaysSnap.count ?? 0;
-
-      final stats = CollectionPeriodStats(
-        today: todayCount,
-        yesterday: yesterdayCount,
-        last7Days: sevenDaysCount,
-        last30Days: thirtyDaysCount,
-      );
-      _logToWorkspace(
-        'Successful queryStats for $collectionName using field $fieldName ($fieldType): Today=${stats.today}, Yesterday=${stats.yesterday}, 7d=${stats.last7Days}, 30d=${stats.last30Days}',
-      );
-      return stats;
-    } catch (e) {
-      _logToWorkspace(
-        'Error querying stats for $collectionName on field $fieldName: $e',
-      );
-      debugPrint(
-        'Error querying stats for $collectionName on field $fieldName: $e',
-      );
-      return null;
+      if (!dtUtc.isBefore(sevenDaysAgoStartUtc)) {
+        sevenDaysCount++;
+      }
+      if (!dtUtc.isBefore(thirtyDaysAgoStartUtc)) {
+        thirtyDaysCount++;
+      }
     }
-  }
 
-  // 1. Try with detected field
-  if (dateFieldInfo != null) {
-    _logToWorkspace(
-      'Attempting queryStats using detected field: ${dateFieldInfo.fieldName}',
+    return CollectionPeriodStats(
+      today: todayCount,
+      yesterday: yesterdayCount,
+      last7Days: sevenDaysCount,
+      last30Days: thirtyDaysCount,
     );
-    final stats = await queryStats(
-      dateFieldInfo.fieldName,
-      dateFieldInfo.fieldType,
-    );
-    if (stats != null) return stats;
-  } else {
-    _logToWorkspace(
-      'No date field detected for $collectionName. Proceeding to fallback fields.',
+  } catch (e) {
+    debugPrint('Error fetching period stats for $collectionName: $e');
+    return CollectionPeriodStats(
+      today: 0,
+      yesterday: 0,
+      last7Days: 0,
+      last30Days: 0,
     );
   }
-
-  // 2. Fallback: try common fields sequentially as Timestamp
-  final fallbackFields = ['createdAt', 'timestamp', 'date', 'updatedAt'];
-  for (final field in fallbackFields) {
-    _logToWorkspace('Attempting fallback queryStats using field: $field');
-    final stats = await queryStats(field, 'Timestamp');
-    if (stats != null &&
-        (stats.today > 0 ||
-            stats.yesterday > 0 ||
-            stats.last7Days > 0 ||
-            stats.last30Days > 0)) {
-      _logToWorkspace(
-        'Fallback succeeded for $collectionName using field $field: Today=${stats.today}, Yesterday=${stats.yesterday}, 7d=${stats.last7Days}, 30d=${stats.last30Days}',
-      );
-      return stats;
-    }
-  }
-
-  _logToWorkspace(
-    'All queries and fallbacks returned zero or failed for $collectionName',
-  );
-
-  return CollectionPeriodStats(
-    today: 0,
-    yesterday: 0,
-    last7Days: 0,
-    last30Days: 0,
-  );
 });
 
 // Local Promotions State Providers

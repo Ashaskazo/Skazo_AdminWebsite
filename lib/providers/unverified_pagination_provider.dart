@@ -57,11 +57,19 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
     String?> {
   @override
   UnverifiedPaginationState build(String? category) {
-    ref.listen(dashboardSelectedDateFilterProvider, (_, __) => refresh());
-    ref.listen(dashboardSelectedCityProvider, (_, __) => refresh());
-    ref.listen(currentAdminAssignedCitiesProvider, (_, __) => refresh());
-    Future.microtask(refresh);
-    return UnverifiedPaginationState.initial();
+    ref.listen(dashboardSelectedDateFilterProvider, (_, __) {
+      if (arg != null) refresh();
+    });
+    ref.listen(dashboardSelectedCityProvider, (_, __) {
+      if (arg != null) refresh();
+    });
+    ref.listen(currentAdminAssignedCitiesProvider, (_, __) {
+      if (arg != null) refresh();
+    });
+    if (category != null) {
+      Future.microtask(refresh);
+    }
+    return UnverifiedPaginationState(loading: category != null);
   }
 
   TimeFilterOption get _timeFilter {

@@ -17,9 +17,7 @@ final dashboardSelectedDateFilterProvider = StateProvider<String?>(
 );
 
 // Provider to get all allowed cities for the current admin
-final unverifiedCitiesProvider = FutureProvider<List<String>>((ref) async {
-  return ref.watch(allowedCitiesProvider.future);
-});
+final unverifiedCitiesProvider = allowedCitiesProvider;
 
 class UserVerificationNotifier extends StateNotifier<bool> {
   final Ref ref;

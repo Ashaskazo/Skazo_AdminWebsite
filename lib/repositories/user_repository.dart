@@ -401,48 +401,65 @@ class UserRepository {
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final selectedCity = city?.trim();
-    if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      if (await _supportsDirectCityKeyQueries()) {
-        final entries = await Future.wait(
-          categories.map((category) async {
-            final count = await countUnverifiedPending(
-              timeFilter: timeFilter,
-              city: city,
-              category: category,
-              assignedCities: assignedCities,
-              pincodesMap: pincodesMap,
-            );
-            return MapEntry(category, count);
-          }),
-        );
-        return Map.fromEntries(entries);
-      }
-
-      final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
-      return _countCityFilteredUnverifiedCategories(
-        categories: categories,
-        timeFilter: timeFilter,
-        selectedCity: selectedCity,
-        assignedCities: assignedCities,
-        pincodesMap: effectivePincodesMap,
-      );
-    }
+    final effectiveCity =
+        selectedCity ??
+        (assignedCities.length == 1 ? assignedCities.first : null);
+    final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
+    final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
 
     return _withRetry(() async {
-      final counts = <String, int>{for (final category in categories) category: 0};
-      final entries = await Future.wait(
-        categories.map((category) async {
-          final query = _buildUnverifiedBaseQuery(
-            timeFilter: timeFilter,
-            category: category,
-          );
-          final snapshot = await query.count().get();
-          return MapEntry(category, snapshot.count ?? 0);
-        }),
-      );
-      for (final entry in entries) {
-        counts[entry.key] = entry.value;
+      final counts = <String, int>{
+        for (final category in categories) category: 0,
+      };
+
+      String? directCityKey;
+      if (effectiveCity != null && await _supportsDirectCityKeyQueries()) {
+        directCityKey = _normalizeQueryableCityKey(effectiveCity);
       }
+
+      var query = _buildUnverifiedBaseQuery(
+        timeFilter: timeFilter,
+        category: null,
+        directCityKey: directCityKey,
+      );
+
+      var snapshot = await query.get();
+      if (snapshot.docs.isEmpty && directCityKey != null) {
+        query = _buildUnverifiedBaseQuery(
+          timeFilter: timeFilter,
+          category: null,
+        );
+        snapshot = await query.get();
+      }
+
+      for (final doc in snapshot.docs) {
+        final userData = doc.data();
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+          if (!userMatchesAssignedCities(
+            userData,
+            selectedCity,
+            assignedCities,
+            effectivePincodesMap,
+            pincodeCityLookup,
+          )) {
+            continue;
+          }
+        }
+
+        final userCategories = userData['category'];
+        if (userCategories is List) {
+          for (final value in userCategories) {
+            final catStr = value?.toString();
+            if (catStr != null && counts.containsKey(catStr)) {
+              counts[catStr] = (counts[catStr] ?? 0) + 1;
+            }
+          }
+        } else if (userCategories is String &&
+            counts.containsKey(userCategories)) {
+          counts[userCategories] = (counts[userCategories] ?? 0) + 1;
+        }
+      }
+
       return counts;
     });
   }

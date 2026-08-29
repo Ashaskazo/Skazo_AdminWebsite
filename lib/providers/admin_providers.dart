@@ -112,11 +112,44 @@ final currentAdminAssignedCitiesProvider = Provider<List<String>>((ref) {
 /// Provider returning all cities accessible to the current admin for UI dropdowns.
 /// Returns all system cities for Super Admin, or assigned cities for regular Admin.
 final allowedCitiesProvider = FutureProvider<List<String>>((ref) async {
+  final profileAsync = ref.watch(currentAdminProfileProvider);
+  final profile = profileAsync.value;
   final isSuper = ref.watch(isSuperAdminProvider);
+
   if (isSuper) {
-    final allCities = await ref.watch(userFilterCitiesProvider.future);
-    return allCities;
+    try {
+      final allCities = await ref.watch(userFilterCitiesProvider.future);
+      if (allCities.isNotEmpty) return allCities;
+    } catch (_) {}
+    return const [
+      'Vijayawada',
+      'Hyderabad',
+      'Guntur',
+      'Bangalore',
+      'Bheemavaram',
+      'Tirupathi',
+    ];
   }
+
+  if (profile != null) {
+    final dynamic rawCities =
+        profile['assignedCities'] ?? profile['assigned_cities'];
+    if (rawCities is List) {
+      final list =
+          rawCities
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+      if (list.isNotEmpty) return list;
+    }
+
+    final singleCity =
+        (profile['assignedCity'] ?? profile['city'])?.toString().trim();
+    if (singleCity != null && singleCity.isNotEmpty) {
+      return [singleCity];
+    }
+  }
+
   final assigned = ref.watch(currentAdminAssignedCitiesProvider);
   return assigned;
 });
@@ -146,9 +179,10 @@ class AdminAuthNotifier extends StateNotifier<bool> {
     state = true; // Processing
     try {
       await FirebaseAuth.instance.signOut();
-      
+
       // Reset view to summary default
-      ref.read(currentDashboardViewProvider.notifier).state = DashboardView.summary;
+      ref.read(currentDashboardViewProvider.notifier).state =
+          DashboardView.summary;
       ref.read(sidebarCollapsedProvider.notifier).state = false;
 
       // Reset all user management filters
@@ -174,6 +208,9 @@ class AdminAuthNotifier extends StateNotifier<bool> {
       ref.invalidate(userPaginationProvider);
       clearPropertyPincodesCache();
       ref.invalidate(propertyPincodesProvider);
+      ref.invalidate(userFilterCitiesProvider);
+      ref.invalidate(userCitiesProvider);
+      ref.invalidate(unverifiedCitiesProvider);
       ref.invalidate(unverifiedPaginationProvider);
       ref.invalidate(unverifiedPendingCountProvider);
       ref.invalidate(categoryCountsProvider);

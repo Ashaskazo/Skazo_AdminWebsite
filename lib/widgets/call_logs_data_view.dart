@@ -61,17 +61,16 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   String? _selectedDocId;
   Map<String, dynamic>? _selectedDocData;
 
+  // Selected City Scope for Super Admin (null means All Cities)
+  String? _selectedCity;
+
   // Header Dashboard Stats
-  int _statTotalLogs = 0;
+  int _statOverallCalls = 0;
+  int _statOverallLeads = 0;
   int _statTodayCalls = 0;
   int _statInterested = 0;
   int _statConverted = 0;
   int _statFollowUpsDue = 0;
-
-  // // Follow-up Reminders
-  // int _countFollowUpToday = 0;
-  // int _countFollowUpOverdue = 0;
-  // int _countFollowUpTomorrow = 0;
 
   @override
   void initState() {
@@ -135,7 +134,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       _hasNextPage = false;
       _selectedDocId = null;
       _selectedDocData = null;
-      _statTotalLogs = 0;
+      _statOverallCalls = 0;
+      _statOverallLeads = 0;
       _statTodayCalls = 0;
       _statInterested = 0;
       _statConverted = 0;
@@ -163,30 +163,51 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     }
   }
 
+  ({DateTime startUtc, DateTime endUtc}) _getIstTodayRange() {
+    final nowUtc = DateTime.now().toUtc();
+    final nowIst = nowUtc.add(const Duration(hours: 5, minutes: 30));
+    final istMidnight = DateTime.utc(nowIst.year, nowIst.month, nowIst.day);
+    final istTomorrowMidnight = istMidnight.add(const Duration(days: 1));
+
+    final startUtc = istMidnight.subtract(
+      const Duration(hours: 5, minutes: 30),
+    );
+    final endUtc = istTomorrowMidnight.subtract(
+      const Duration(hours: 5, minutes: 30),
+    );
+
+    return (startUtc: startUtc, endUtc: endUtc);
+  }
+
   Future<void> _fetchDashboardStats() async {
     final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
     if (assignedCities.isNotEmpty) {
       // Regular admin with assigned city: skip unfiltered global collection count query
-      // so global counts are never temporarily flashed.
       return;
     }
 
-    final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
-    final tomorrowStart = todayStart.add(const Duration(days: 1));
+    final range = _getIstTodayRange();
+    final todayStart = range.startUtc;
+    final tomorrowStart = range.endUtc;
 
     try {
       final baseCol = FirebaseFirestore.instance.collection('callLogs');
 
       // Total count
       final totalSnap = await baseCol.count().get();
-      _statTotalLogs = totalSnap.count ?? 0;
+      _statOverallCalls = totalSnap.count ?? 0;
+      _statOverallLeads = _statOverallCalls;
+
       // Today calls
       final todaySnap =
           await baseCol
               .where(
                 'timestamp',
                 isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
+              )
+              .where(
+                'timestamp',
+                isLessThan: Timestamp.fromDate(tomorrowStart),
               )
               .count()
               .get();
@@ -200,10 +221,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               .get();
       _statInterested = interestedSnap.count ?? 0;
 
-      // Converted (salesStatus == 'converted')
+      // Converted (feedbackStatus == 'converted')
       final convertedSnap =
           await baseCol
-              .where('salesStatus', isEqualTo: 'converted')
+              .where('feedbackStatus', isEqualTo: 'converted')
               .count()
               .get();
       _statConverted = convertedSnap.count ?? 0;
@@ -229,23 +250,20 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   DateTime? _getDateFilterDate() {
-    final now = DateTime.now();
+    final range = _getIstTodayRange();
+    final todayStart = range.startUtc;
+
     if (_dateFilter == 'Today') {
-      return DateTime(now.year, now.month, now.day);
+      return todayStart;
+    }
+    if (_dateFilter == 'Yesterday') {
+      return todayStart.subtract(const Duration(days: 1));
     }
     if (_dateFilter == 'Last 7 Days') {
-      return DateTime(
-        now.year,
-        now.month,
-        now.day,
-      ).subtract(const Duration(days: 7));
+      return todayStart.subtract(const Duration(days: 7));
     }
     if (_dateFilter == 'Last 30 Days') {
-      return DateTime(
-        now.year,
-        now.month,
-        now.day,
-      ).subtract(const Duration(days: 30));
+      return todayStart.subtract(const Duration(days: 30));
     }
     return null;
   }
@@ -292,16 +310,27 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   void _applyFilters() {
     if (!mounted) return;
 
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final isSuper = ref.read(isSuperAdminProvider);
+    final assignedCities =
+        isSuper
+            ? const <String>[]
+            : ref.read(currentAdminAssignedCitiesProvider);
 
-    // 0. Filter by Admin Assigned Cities scope first
-    List<Map<String, dynamic>> cityScopedDocs = _allDocs;
-    if (assignedCities.isNotEmpty) {
-      cityScopedDocs = _allDocs.where((log) {
-        final raw = log['rawData'] ?? {};
+    final cityFilter = _selectedCity ?? _cityController.text.trim();
+    final effectiveCityFilter =
+        (cityFilter.isNotEmpty && cityFilter != 'All Cities' && cityFilter != 'All')
+            ? cityFilter
+            : null;
+
+    // 0. Filter by City Scope (Admin assigned cities OR Super Admin selected city)
+    final cityScopedDocs = _allDocs.where((log) {
+      final raw = log['rawData'] ?? {};
+
+      // If Admin has assigned cities, restrict to them
+      if (assignedCities.isNotEmpty) {
         final matchesResolver = userMatchesAssignedCities(
           raw,
-          null,
+          effectiveCityFilter,
           assignedCities,
           _pincodesMap,
           _pincodeCityLookup,
@@ -310,47 +339,89 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
         final logCity = _normalizeString(log['city']);
         if (logCity.isNotEmpty &&
-            assignedCities.any((c) => logCity.contains(c.toLowerCase()) || c.toLowerCase().contains(logCity))) {
+            assignedCities.any((c) =>
+                logCity.contains(c.toLowerCase()) ||
+                c.toLowerCase().contains(logCity))) {
           return true;
         }
         return false;
-      }).toList();
-    }
+      }
 
-    // Update Header Dashboard Stats to match assigned city scope
-    _statTotalLogs = cityScopedDocs.length;
-    final nowLocal = DateTime.now();
-    final todayStartLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
-    final tomorrowStartLocal = todayStartLocal.add(const Duration(days: 1));
+      // If Super Admin selected a specific city
+      if (effectiveCityFilter != null) {
+        final matchesCity = userMatchesCity(
+          raw,
+          effectiveCityFilter,
+          _pincodesMap,
+          _pincodeCityLookup,
+        );
+        if (matchesCity) return true;
 
+        final logCity = _normalizeString(log['city']);
+        if (logCity.isNotEmpty &&
+            (logCity.contains(effectiveCityFilter.toLowerCase()) ||
+                effectiveCityFilter.toLowerCase().contains(logCity))) {
+          return true;
+        }
+        return false;
+      }
+
+      // Super Admin with All Cities: include all
+      return true;
+    }).toList();
+
+    // Update Header Dashboard Stats to match selected city and active date scope
+    _statOverallCalls = cityScopedDocs.length;
+
+    final uniqueLeadKeys = <String>{};
     int todayCount = 0;
     int interestedCount = 0;
     int convertedCount = 0;
     int followUpsDueCount = 0;
 
+    final range = _getIstTodayRange();
+    final todayStartUtc = range.startUtc;
+    final todayEndUtc = range.endUtc;
+
     for (final log in cityScopedDocs) {
       final raw = log['rawData'] ?? {};
       final ts = log['timestamp'];
+
+      // Unique lead calculation (caller/customer phone or fallback to doc ID)
+      final phone = (log['phone'] ?? '').toString().trim();
+      final leadKey = phone.isNotEmpty ? phone : log['id'].toString();
+      uniqueLeadKeys.add(leadKey);
+
+      // Today calls (IST calendar day)
       if (ts is DateTime) {
-        if (ts.isAfter(todayStartLocal) || ts.isAtSameMomentAs(todayStartLocal)) {
+        final tsUtc = ts.toUtc();
+        if (!tsUtc.isBefore(todayStartUtc) && tsUtc.isBefore(todayEndUtc)) {
           todayCount++;
         }
       }
+
+      // Converted count: strictly feedbackStatus == 'converted'
+      final feedbackStatus =
+          (raw['feedbackStatus'] ?? '').toString().toLowerCase().trim();
+      if (feedbackStatus == 'converted') {
+        convertedCount++;
+      }
+
+      // Sales Status stats
       final salesStatus = (raw['salesStatus'] ?? '').toString().toLowerCase();
       if (salesStatus == 'interested') {
         interestedCount++;
-      } else if (salesStatus == 'converted') {
-        convertedCount++;
       } else if (salesStatus == 'follow_up') {
         if (raw['followUpDate'] is Timestamp) {
-          final followUpDt = (raw['followUpDate'] as Timestamp).toDate();
-          if (followUpDt.isBefore(tomorrowStartLocal)) {
+          final followUpDt = (raw['followUpDate'] as Timestamp).toDate().toUtc();
+          if (followUpDt.isBefore(todayEndUtc)) {
             followUpsDueCount++;
           }
         }
       }
     }
 
+    _statOverallLeads = uniqueLeadKeys.length;
     _statTodayCalls = todayCount;
     _statInterested = interestedCount;
     _statConverted = convertedCount;
@@ -367,8 +438,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             if (!deepSearchStr.contains(sQuery)) return false;
           }
 
-          // 2. City filter
-          if (_cityController.text.trim().isNotEmpty) {
+          // 2. Additional text city filter if different from selected city
+          if (_cityController.text.trim().isNotEmpty &&
+              _selectedCity == null) {
             final filterCity = _cityController.text.trim();
             final matchesCity = userMatchesCity(
               raw,
@@ -421,42 +493,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             }
           }
 
-          // 7. Assigned Sales Person filter
-          // if (_assignedPersonController.text.trim().isNotEmpty) {
-          //   final assigned = _normalizeString(raw['assignedTo']);
-          //   if (!assigned.contains(
-          //     _assignedPersonController.text.trim().toLowerCase(),
-          //   )) {
-          //     return false;
-          //   }
-          // }
-
-          // 8. Call Status
-          // if (_filterCallStatus != 'All') {
-          //   final status = _normalizeString(raw['callType'] ?? raw['status']);
-          //   if (status != _filterCallStatus.toLowerCase()) return false;
-          // }
-
-          // 9. Payment Status
-          // if (_filterPaymentStatus != 'All') {
-          //   final payStatus = _normalizeString(raw['paymentStatus']);
-          //   if (payStatus != _filterPaymentStatus.toLowerCase()) return false;
-          // }
-
-          // 10. Follow-up Status
-          // if (_filterFollowUpStatus != 'All') {
-          //   final salesStatus = _normalizeString(raw['salesStatus']);
-          //   if (salesStatus != _filterFollowUpStatus.toLowerCase()) return false;
-          // }
-
-          // 11. Boost Sent
-          // if (_filterBoostSent != 'All') {
-          //   final boostSent =
-          //       raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-          //   final expected = _filterBoostSent == 'Sent';
-          //   if (boostSent != expected) return false;
-          // }
-
           // 12. Plan Type
           if (_filterPlan != 'All') {
             final plan = _normalizeString(raw['plan']);
@@ -468,10 +504,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             switch (_activeSavedView) {
               case 'Today Calls':
                 final logDate = log['timestamp'] as DateTime;
-                final today = DateTime.now();
-                if (logDate.year != today.year ||
-                    logDate.month != today.month ||
-                    logDate.day != today.day) {
+                final tsUtc = logDate.toUtc();
+                if (tsUtc.isBefore(todayStartUtc) || !tsUtc.isBefore(todayEndUtc)) {
                   return false;
                 }
                 break;
@@ -481,20 +515,11 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               case 'Interested Leads':
                 if (raw['salesStatus'] != 'interested') return false;
                 break;
-              // case 'Not Called':
-              //   final status = raw['salesStatus'];
-              //   if (status != null && status != 'new' && status != '') {
-              //     return false;
-              //   }
-              // break;
               case 'Converted':
-                if (raw['salesStatus'] != 'converted') return false;
+                final fStatus = (raw['feedbackStatus'] ?? '').toString().toLowerCase().trim();
+                final sStatus = (raw['salesStatus'] ?? '').toString().toLowerCase().trim();
+                if (fStatus != 'converted' && sStatus != 'converted') return false;
                 break;
-              // case 'Boost Calls':
-              //   final boost =
-              //       raw['categoryBoostSent'] ?? raw['boostSent'] ?? false;
-              //   if (boost != true) return false;
-              //   break;
               case 'Paid Providers':
                 final plan = _normalizeString(raw['plan']);
                 if (plan != 'paid' && plan != '599' && plan != 'premium') {
@@ -1061,7 +1086,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           _buildLeftDropdownFilter(
             'Date Range',
             _dateFilter,
-            ['All', 'Today', 'Last 7 Days', 'Last 30 Days'],
+            ['All', 'Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days'],
             (val) {
               setState(() {
                 _dateFilter = val;
@@ -1071,8 +1096,130 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             },
           ),
           if (ref.watch(isSuperAdminProvider)) ...[
-            _buildLeftSearchTextField('City', _cityController, Icons.location_on),
-            const SizedBox(height: 12),
+            ref.watch(allowedCitiesProvider).when(
+              data: (cities) {
+                final dropdownCities = ['All Cities', ...cities];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'City Scope 🌆',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.grey.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedCity ?? 'All Cities',
+                          isExpanded: true,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: const Color(0xFF0F172A),
+                          ),
+                          items: dropdownCities.map((city) {
+                            return DropdownMenuItem(
+                              value: city,
+                              child: Text(
+                                city,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: (city == _selectedCity ||
+                                          (_selectedCity == null &&
+                                              city == 'All Cities'))
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedCity =
+                                  (val == null || val == 'All Cities')
+                                      ? null
+                                      : val;
+                              _currentPage = 0;
+                            });
+                            _applyFilters();
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                );
+              },
+              loading: () => const SizedBox(
+                height: 20,
+                child: LinearProgressIndicator(),
+              ),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ] else ...[
+            Builder(
+              builder: (context) {
+                final assigned = ref.watch(currentAdminAssignedCitiesProvider);
+                if (assigned.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Assigned City 🌆',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            size: 16,
+                            color: Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              assigned.join(', '),
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1E40AF),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                );
+              },
+            ),
           ],
           _buildLeftSearchTextField(
             'Category',
@@ -1097,101 +1244,19 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             _providerPhoneController,
             Icons.phone_android,
           ),
-          // const SizedBox(height: 12),
-          // _buildLeftSearchTextField(
-          //   'Assigned Sales',
-          //   _assignedPersonController,
-          //   Icons.badge_outlined,
-          // ),
-          // const SizedBox(height: 12),
-          // _buildLeftDropdownFilter(
-          //   'Call Status',
-          //   _filterCallStatus,
-          //   ['All', 'General', 'Missed', 'Incoming', 'Outgoing'],
-          //   (val) {
-          //     setState(() {
-          //       _filterCallStatus = val;
-          //       _currentPage = 0;
-          //     });
-          //     _applyFilters();
-          //   },
-          // ),
-          // const SizedBox(height: 12),
-          // _buildLeftDropdownFilter(
-          //   'Payment Status',
-          //   _filterPaymentStatus,
-          //   ['All', 'Success', 'Pending', 'Failed'],
-          //   (val) {
-          //     setState(() {
-          //       _filterPaymentStatus = val;
-          //       _currentPage = 0;
-          //     });
-          //     _applyFilters();
-          //   },
-          // ),
-          // const SizedBox(height: 12),
-          // _buildLeftDropdownFilter(
-          //   'CRM Sales Status',
-          //   _filterFollowUpStatus,
-          //   [
-          //     'All',
-          //     'New',
-          //     'Called',
-          //     'Interested',
-          //     'Not_Interested',
-          //     'Converted',
-          //     'Follow_up',
-          //   ],
-          //   (val) {
-          //     setState(() {
-          //       _filterFollowUpStatus = val;
-          //       _currentPage = 0;
-          //     });
-          //     _applyFilters();
-          //   },
-          // ),
-          // const SizedBox(height: 12),
-          // _buildLeftDropdownFilter(
-          //   'Category Boost',
-          //   _filterBoostSent,
-          //   ['All', 'Sent', 'Not Sent'],
-          //   (val) {
-          //     setState(() {
-          //       _filterBoostSent = val;
-          //       _currentPage = 0;
-          //     });
-          //     _applyFilters();
-          //   },
-          // ),
-          // const SizedBox(height: 12),
-          // _buildLeftDropdownFilter(
-          //   'Plan',
-          //   _filterPlan,
-          //   ['All', 'Free', 'Paid', '599', 'Premium'],
-          //   (val) {
-          //     setState(() {
-          //       _filterPlan = val;
-          //       _currentPage = 0;
-          //     });
-          //     _applyFilters();
-          //   },
-          // ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
               setState(() {
                 _searchController.clear();
                 _cityController.clear();
+                _selectedCity = null;
                 _categoryController.clear();
                 _businessNameController.clear();
                 _customerPhoneController.clear();
                 _providerPhoneController.clear();
                 _assignedPersonController.clear();
                 _dateFilter = 'All';
-                // _filterCallStatus = 'All';
-                // _filterPaymentStatus = 'All';
-                // _filterFollowUpStatus = 'All';
-                // _filterBoostSent = 'All';
                 _filterPlan = 'All';
                 _activeSavedView = null;
                 _currentPage = 0;
@@ -2277,60 +2342,47 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             ],
           ),
 
-          Row(
+          Wrap(
+            spacing: 14,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildStatBadge(
-                'Total Logs',
-                _statTotalLogs,
+                'Overall Calls',
+                _statOverallCalls,
                 const Color(0xFF3B82F6),
                 const Color(0xFFEFF6FF),
               ),
-              const SizedBox(width: 16),
-              if (_cityController.text.trim().isNotEmpty) ...[
-                _buildStatBadge(
-                  '${_cityController.text.trim()} Calls',
-                  _totalMatches,
-                  const Color(0xFF0284C7),
-                  const Color(0xFFE0F2FE),
-                ),
-                const SizedBox(width: 16),
-              ] else if (_hasActiveFilters()) ...[
-                _buildStatBadge(
-                  'Matching Calls',
-                  _totalMatches,
-                  const Color(0xFF0D9488),
-                  const Color(0xFFCCFBF1),
-                ),
-                const SizedBox(width: 16),
-              ],
+              _buildStatBadge(
+                'Overall Leads',
+                _statOverallLeads,
+                const Color(0xFF0284C7),
+                const Color(0xFFE0F2FE),
+              ),
+              _buildStatBadge(
+                'Converted',
+                _statConverted,
+                const Color(0xFF10B981),
+                const Color(0xFFECFDF5),
+              ),
               _buildStatBadge(
                 'Today Calls',
                 _statTodayCalls,
                 const Color(0xFFF59E0B),
                 const Color(0xFFFFFBEB),
               ),
-              const SizedBox(width: 16),
               _buildStatBadge(
                 'Interested',
                 _statInterested,
-                const Color(0xFF10B981),
-                const Color(0xFFECFDF5),
-              ),
-              const SizedBox(width: 16),
-              _buildStatBadge(
-                'Converted',
-                _statConverted,
                 const Color(0xFF8B5CF6),
                 const Color(0xFFF5F3FF),
               ),
-              const SizedBox(width: 16),
               _buildStatBadge(
                 'Follow-ups Due',
                 _statFollowUpsDue,
                 const Color(0xFFEC4899),
                 const Color(0xFFFDF2F8),
               ),
-              const SizedBox(width: 16),
               IconButton(
                 icon: const Icon(Icons.refresh, color: Color(0xFF475569)),
                 onPressed: _resetAndLoad,
@@ -2341,22 +2393,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         ],
       ),
     );
-  }
-
-  bool _hasActiveFilters() {
-    return _searchController.text.trim().isNotEmpty ||
-        _cityController.text.trim().isNotEmpty ||
-        _categoryController.text.trim().isNotEmpty ||
-        _businessNameController.text.trim().isNotEmpty ||
-        _customerPhoneController.text.trim().isNotEmpty ||
-        _providerPhoneController.text.trim().isNotEmpty ||
-        _assignedPersonController.text.trim().isNotEmpty ||
-        _filterCallStatus != 'All' ||
-        _filterPaymentStatus != 'All' ||
-        _filterFollowUpStatus != 'All' ||
-        _filterBoostSent != 'All' ||
-        _filterPlan != 'All' ||
-        _activeSavedView != null;
   }
 
   Widget _buildStatBadge(
