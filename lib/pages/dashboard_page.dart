@@ -308,7 +308,7 @@ class _SummaryDashboard extends ConsumerWidget {
               ),
               _buildStatCard(
                 ref,
-                'Call & Lead Logs',
+                'Call Logs',
                 'callLogs',
                 Icons.phone_in_talk_rounded,
                 const [Color(0xFFF59E0B), Color(0xFFB45309)],

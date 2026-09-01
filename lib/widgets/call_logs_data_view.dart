@@ -205,10 +205,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 'timestamp',
                 isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
               )
-              .where(
-                'timestamp',
-                isLessThan: Timestamp.fromDate(tomorrowStart),
-              )
+              .where('timestamp', isLessThan: Timestamp.fromDate(tomorrowStart))
               .count()
               .get();
       _statTodayCalls = todaySnap.count ?? 0;
@@ -318,57 +315,62 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
     final cityFilter = _selectedCity ?? _cityController.text.trim();
     final effectiveCityFilter =
-        (cityFilter.isNotEmpty && cityFilter != 'All Cities' && cityFilter != 'All')
+        (cityFilter.isNotEmpty &&
+                cityFilter != 'All Cities' &&
+                cityFilter != 'All')
             ? cityFilter
             : null;
 
     // 0. Filter by City Scope (Admin assigned cities OR Super Admin selected city)
-    final cityScopedDocs = _allDocs.where((log) {
-      final raw = log['rawData'] ?? {};
+    final cityScopedDocs =
+        _allDocs.where((log) {
+          final raw = log['rawData'] ?? {};
 
-      // If Admin has assigned cities, restrict to them
-      if (assignedCities.isNotEmpty) {
-        final matchesResolver = userMatchesAssignedCities(
-          raw,
-          effectiveCityFilter,
-          assignedCities,
-          _pincodesMap,
-          _pincodeCityLookup,
-        );
-        if (matchesResolver) return true;
+          // If Admin has assigned cities, restrict to them
+          if (assignedCities.isNotEmpty) {
+            final matchesResolver = userMatchesAssignedCities(
+              raw,
+              effectiveCityFilter,
+              assignedCities,
+              _pincodesMap,
+              _pincodeCityLookup,
+            );
+            if (matchesResolver) return true;
 
-        final logCity = _normalizeString(log['city']);
-        if (logCity.isNotEmpty &&
-            assignedCities.any((c) =>
-                logCity.contains(c.toLowerCase()) ||
-                c.toLowerCase().contains(logCity))) {
+            final logCity = _normalizeString(log['city']);
+            if (logCity.isNotEmpty &&
+                assignedCities.any(
+                  (c) =>
+                      logCity.contains(c.toLowerCase()) ||
+                      c.toLowerCase().contains(logCity),
+                )) {
+              return true;
+            }
+            return false;
+          }
+
+          // If Super Admin selected a specific city
+          if (effectiveCityFilter != null) {
+            final matchesCity = userMatchesCity(
+              raw,
+              effectiveCityFilter,
+              _pincodesMap,
+              _pincodeCityLookup,
+            );
+            if (matchesCity) return true;
+
+            final logCity = _normalizeString(log['city']);
+            if (logCity.isNotEmpty &&
+                (logCity.contains(effectiveCityFilter.toLowerCase()) ||
+                    effectiveCityFilter.toLowerCase().contains(logCity))) {
+              return true;
+            }
+            return false;
+          }
+
+          // Super Admin with All Cities: include all
           return true;
-        }
-        return false;
-      }
-
-      // If Super Admin selected a specific city
-      if (effectiveCityFilter != null) {
-        final matchesCity = userMatchesCity(
-          raw,
-          effectiveCityFilter,
-          _pincodesMap,
-          _pincodeCityLookup,
-        );
-        if (matchesCity) return true;
-
-        final logCity = _normalizeString(log['city']);
-        if (logCity.isNotEmpty &&
-            (logCity.contains(effectiveCityFilter.toLowerCase()) ||
-                effectiveCityFilter.toLowerCase().contains(logCity))) {
-          return true;
-        }
-        return false;
-      }
-
-      // Super Admin with All Cities: include all
-      return true;
-    }).toList();
+        }).toList();
 
     // Update Header Dashboard Stats to match selected city and active date scope
     _statOverallCalls = cityScopedDocs.length;
@@ -413,7 +415,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         interestedCount++;
       } else if (salesStatus == 'follow_up') {
         if (raw['followUpDate'] is Timestamp) {
-          final followUpDt = (raw['followUpDate'] as Timestamp).toDate().toUtc();
+          final followUpDt =
+              (raw['followUpDate'] as Timestamp).toDate().toUtc();
           if (followUpDt.isBefore(todayEndUtc)) {
             followUpsDueCount++;
           }
@@ -439,8 +442,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           }
 
           // 2. Additional text city filter if different from selected city
-          if (_cityController.text.trim().isNotEmpty &&
-              _selectedCity == null) {
+          if (_cityController.text.trim().isNotEmpty && _selectedCity == null) {
             final filterCity = _cityController.text.trim();
             final matchesCity = userMatchesCity(
               raw,
@@ -505,7 +507,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               case 'Today Calls':
                 final logDate = log['timestamp'] as DateTime;
                 final tsUtc = logDate.toUtc();
-                if (tsUtc.isBefore(todayStartUtc) || !tsUtc.isBefore(todayEndUtc)) {
+                if (tsUtc.isBefore(todayStartUtc) ||
+                    !tsUtc.isBefore(todayEndUtc)) {
                   return false;
                 }
                 break;
@@ -516,9 +519,15 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 if (raw['salesStatus'] != 'interested') return false;
                 break;
               case 'Converted':
-                final fStatus = (raw['feedbackStatus'] ?? '').toString().toLowerCase().trim();
-                final sStatus = (raw['salesStatus'] ?? '').toString().toLowerCase().trim();
-                if (fStatus != 'converted' && sStatus != 'converted') return false;
+                final fStatus =
+                    (raw['feedbackStatus'] ?? '')
+                        .toString()
+                        .toLowerCase()
+                        .trim();
+                final sStatus =
+                    (raw['salesStatus'] ?? '').toString().toLowerCase().trim();
+                if (fStatus != 'converted' && sStatus != 'converted')
+                  return false;
                 break;
               case 'Paid Providers':
                 final plan = _normalizeString(raw['plan']);
@@ -814,7 +823,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
       setState(() {
         if (_selectedDocData != null && _selectedDocData!['rawData'] != null) {
-          (_selectedDocData!['rawData'] as Map<String, dynamic>)['feedbackStatus'] = status;
+          (_selectedDocData!['rawData']
+                  as Map<String, dynamic>)['feedbackStatus'] =
+              status;
         }
       });
 
@@ -1096,76 +1107,81 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             },
           ),
           if (ref.watch(isSuperAdminProvider)) ...[
-            ref.watch(allowedCitiesProvider).when(
-              data: (cities) {
-                final dropdownCities = ['All Cities', ...cities];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'City Scope 🌆',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: const Color(0xFF475569),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.grey.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedCity ?? 'All Cities',
-                          isExpanded: true,
+            ref
+                .watch(allowedCitiesProvider)
+                .when(
+                  data: (cities) {
+                    final dropdownCities = ['All Cities', ...cities];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'City Scope 🌆',
                           style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: const Color(0xFF0F172A),
+                            fontSize: 12,
+                            color: const Color(0xFF475569),
                           ),
-                          items: dropdownCities.map((city) {
-                            return DropdownMenuItem(
-                              value: city,
-                              child: Text(
-                                city,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: (city == _selectedCity ||
-                                          (_selectedCity == null &&
-                                              city == 'All Cities'))
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            setState(() {
-                              _selectedCity =
-                                  (val == null || val == 'All Cities')
-                                      ? null
-                                      : val;
-                              _currentPage = 0;
-                            });
-                            _applyFilters();
-                          },
                         ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.grey.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedCity ?? 'All Cities',
+                              isExpanded: true,
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              items:
+                                  dropdownCities.map((city) {
+                                    return DropdownMenuItem(
+                                      value: city,
+                                      child: Text(
+                                        city,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          fontWeight:
+                                              (city == _selectedCity ||
+                                                      (_selectedCity == null &&
+                                                          city == 'All Cities'))
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedCity =
+                                      (val == null || val == 'All Cities')
+                                          ? null
+                                          : val;
+                                  _currentPage = 0;
+                                });
+                                _applyFilters();
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
+                  loading:
+                      () => const SizedBox(
+                        height: 20,
+                        child: LinearProgressIndicator(),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                );
-              },
-              loading: () => const SizedBox(
-                height: 20,
-                child: LinearProgressIndicator(),
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
           ] else ...[
             Builder(
               builder: (context) {
@@ -1682,7 +1698,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   Color _getFeedbackStatusColor(String status) {
     final norm = status.trim().toLowerCase();
     if (norm == 'converted') return const Color(0xFF10B981);
-    if (norm == 'not converted' || norm == 'not converetd') return const Color(0xFFEF4444);
+    if (norm == 'not converted' || norm == 'not converetd')
+      return const Color(0xFFEF4444);
     return const Color(0xFF64748B);
   }
 
@@ -2085,7 +2102,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               ),
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 2,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -2100,9 +2120,15 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: () {
-                      final current = rawData['feedbackStatus']?.toString().toLowerCase().trim();
+                      final current =
+                          rawData['feedbackStatus']
+                              ?.toString()
+                              .toLowerCase()
+                              .trim();
                       if (current == 'converted') return 'converted';
-                      if (current == 'not converted' || current == 'not converetd') return 'not converted';
+                      if (current == 'not converted' ||
+                          current == 'not converetd')
+                        return 'not converted';
                       if (current == 'skip') return 'skip';
                       return 'skip';
                     }(),
@@ -2353,12 +2379,12 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 const Color(0xFF3B82F6),
                 const Color(0xFFEFF6FF),
               ),
-              _buildStatBadge(
-                'Overall Leads',
-                _statOverallLeads,
-                const Color(0xFF0284C7),
-                const Color(0xFFE0F2FE),
-              ),
+              // _buildStatBadge(
+              //   'Overall Leads',
+              //   _statOverallLeads,
+              //   const Color(0xFF0284C7),
+              //   const Color(0xFFE0F2FE),
+              // ),
               _buildStatBadge(
                 'Converted',
                 _statConverted,
@@ -2557,7 +2583,11 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
             ),
             const Spacer(),
             IconButton(
-              icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+              icon: const Icon(
+                Icons.copy_rounded,
+                size: 14,
+                color: Color(0xFF64748B),
+              ),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               onPressed: () {
@@ -2721,14 +2751,19 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
           Expanded(child: valueWidget),
           const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+            icon: const Icon(
+              Icons.copy_rounded,
+              size: 14,
+              color: Color(0xFF64748B),
+            ),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () {
               final val = widget.value;
-              final strVal = val is Timestamp
-                  ? _formatDetailedTimestamp(val)
-                  : (val?.toString() ?? '');
+              final strVal =
+                  val is Timestamp
+                      ? _formatDetailedTimestamp(val)
+                      : (val?.toString() ?? '');
               Clipboard.setData(ClipboardData(text: strVal));
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(

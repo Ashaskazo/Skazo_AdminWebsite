@@ -188,10 +188,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         data['priority'] == '1' ||
         data['priority'] == 'true';
     _isOnline = data['isonline'] == true;
-    // _profileComplete =
-    //     data['profileComplete'] == true ||
-    //     data['profileComplete'] == 1 ||
-    //     data['profileComplete'] == 'true';
+    _profileComplete = data['profileComplete'] == true;
     _categoryBoostEnabled = data['categoryBoostEnabled'] == true;
     _paymentLinkSend = data['paymentLinkSend'] == true;
 
@@ -344,7 +341,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         'isDeactivated': !_isActive,
         'isonline': _isOnline,
         'isuser': _isUser,
-        'profileComplete': _profileComplete,
+        // 'profileComplete': _profileComplete,
         'categoryBoostEnabled': _categoryBoostEnabled,
         'paymentLinkSend': _paymentLinkSend,
         'StarServiceprovider': normalizedStar,
@@ -1612,7 +1609,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                             Expanded(
                               child: _buildReadOnlyField(
                                 'Location (Geopoint)',
-                                data['location']?['geopoint']?.toString() ?? 'N/A',
+                                data['location']?['geopoint']?.toString() ??
+                                    'N/A',
                                 Icons.map_rounded,
                               ),
                             ),
@@ -1651,7 +1649,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   }
 
   (String, String) _extractCoordinates(Map<String, dynamic> data) {
-    if (data['coordinates'] is List && (data['coordinates'] as List).isNotEmpty) {
+    if (data['coordinates'] is List &&
+        (data['coordinates'] as List).isNotEmpty) {
       final list = data['coordinates'] as List;
       final lat = list.isNotEmpty ? list[0]?.toString() ?? '0' : '0';
       final lng = list.length > 1 ? list[1]?.toString() ?? '0' : '0';
@@ -1662,7 +1661,8 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       return (gp.latitude.toString(), gp.longitude.toString());
     } else if (gp is Map) {
       final lat = (gp['_latitude'] ?? gp['latitude'] ?? gp['lat'])?.toString();
-      final lng = (gp['_longitude'] ?? gp['longitude'] ?? gp['lng'])?.toString();
+      final lng =
+          (gp['_longitude'] ?? gp['longitude'] ?? gp['lng'])?.toString();
       if (lat != null && lng != null) return (lat, lng);
     }
     final lat = (data['latitude'] ?? data['lat'])?.toString();
@@ -1699,11 +1699,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 color: accentColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                icon,
-                size: 18,
-                color: accentColor,
-              ),
+              child: Icon(icon, size: 18, color: accentColor),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1760,11 +1756,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   ),
                 );
               },
-              icon: Icon(
-                Icons.copy_rounded,
-                size: 18,
-                color: accentColor,
-              ),
+              icon: Icon(Icons.copy_rounded, size: 18, color: accentColor),
               tooltip: 'Copy $displayCopyLabel',
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
