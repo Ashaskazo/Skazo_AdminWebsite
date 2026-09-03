@@ -194,6 +194,15 @@ class SidebarNav extends ConsumerWidget {
                 ),
                 _buildNavItem(
                   ref,
+                  'Deactivated List',
+                  Icons.person_off_rounded,
+                  DashboardView.deactivatedList,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFFEF4444), Color(0xFFDC2626)],
+                ),
+                _buildNavItem(
+                  ref,
                   'Call & Action Logs',
                   Icons.phone_in_talk_rounded,
                   DashboardView.logs,

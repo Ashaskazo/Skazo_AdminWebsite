@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/models/page_result.dart';
 import 'package:skazo_admin/models/user_filters.dart';
@@ -127,7 +127,9 @@ class UserRepository {
       final selectedCity = cityFilter;
       final filtersWithoutCity = filters.copyWith(clearCity: true);
       final search = UserSearchParams.fromQuery(searchQuery);
-      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      final effectiveCity =
+          selectedCity ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
 
       if (effectiveCity != null) {
         final cityKeyResult = await _tryFetchUsersByCityKey(
@@ -187,7 +189,9 @@ class UserRepository {
     final cityFilter = filters.city?.trim();
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
-      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      final effectiveCity =
+          selectedCity ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
 
       if (effectiveCity != null) {
         final cityKeyCount = await _tryCountUsersByCityKey(
@@ -223,14 +227,17 @@ class UserRepository {
     });
   }
 
-  Future<UserStats> fetchUserStats({List<String> assignedCities = const []}) async {
+  Future<UserStats> fetchUserStats({
+    List<String> assignedCities = const [],
+  }) async {
     return _withRetry(() async {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayTs = Timestamp.fromDate(todayStart);
 
       if (assignedCities.isNotEmpty) {
-        final cityKeys = assignedCities.map(_normalizeQueryableCityKey).toList();
+        final cityKeys =
+            assignedCities.map(_normalizeQueryableCityKey).toList();
         Query<Map<String, dynamic>> baseQuery = _users;
         if (cityKeys.length == 1) {
           baseQuery = baseQuery.where('cityKey', isEqualTo: cityKeys.first);
@@ -283,7 +290,11 @@ class UserRepository {
     final baseFilters = (filters ?? const UserFilters()).copyWith(
       userType: 'Service Providers',
     );
-    return countUsers(filters: baseFilters, assignedCities: assignedCities, pincodesMap: pincodesMap);
+    return countUsers(
+      filters: baseFilters,
+      assignedCities: assignedCities,
+      pincodesMap: pincodesMap,
+    );
   }
 
   Future<int> countUnverifiedPending({
@@ -295,7 +306,9 @@ class UserRepository {
   }) async {
     final selectedCity = city?.trim();
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      final effectiveCity =
+          selectedCity ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
       if (effectiveCity != null) {
         final directCount = await _tryCountUnverifiedByCityKey(
           timeFilter: timeFilter,
@@ -341,7 +354,9 @@ class UserRepository {
   }) async {
     final selectedCity = city?.trim();
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
-      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      final effectiveCity =
+          selectedCity ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
       if (effectiveCity != null) {
         final cityKeyResult = await _tryFetchUnverifiedByCityKey(
           timeFilter: timeFilter,
@@ -469,19 +484,352 @@ class UserRepository {
       return _users.doc(userId).update({
         'isverified': true,
         'isactive': true,
-        'isDeactivated': false,
-        'verifiedAt': FieldValue.serverTimestamp(),
+        // 'isDeactivated': false,
+        'isProviderTemperoryDeactivatedStatus': false,
       });
     });
   }
 
-  Future<void> deactivateUser(String userId) async {
+  Future<void> deactivateUser(String userId, {String? reason}) async {
+    await _withRetry(() {
+      final updateData = <String, dynamic>{
+        'isactive': false,
+        // 'isDeactivated': true,
+        'isProviderTemperoryDeactivatedStatus': true,
+        'deactivatedAt': FieldValue.serverTimestamp(),
+        // 'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (reason != null && reason.trim().isNotEmpty) {
+        updateData['deactivationReason'] = reason.trim();
+      }
+      return _users.doc(userId).update(updateData);
+    });
+  }
+
+  Future<void> activateUser(String userId) async {
     await _withRetry(() {
       return _users.doc(userId).update({
-        'isactive': false,
-        'isDeactivated': true,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'isactive': true,
+        // 'isDeactivated': false,
+        'isProviderTemperoryDeactivatedStatus': false,
+        // 'updatedAt': FieldValue.serverTimestamp(),
       });
+    });
+  }
+
+  Future<PageResult<UserModel>> fetchDeactivatedUsers({
+    String searchQuery = '',
+    String? selectedCity,
+    String? dateFilter,
+    DateTimeRange? customDateRange,
+    String? statusFilter,
+    List<String> assignedCities = const [],
+    Map<String, List<String>> pincodesMap = const {},
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    int limit = userPageSize,
+  }) async {
+    final cityFilter = selectedCity?.trim();
+    if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
+      final effectiveCity =
+          cityFilter ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
+      if (effectiveCity != null) {
+        final directResult = await _tryFetchDeactivatedByCityKey(
+          searchQuery: searchQuery,
+          dateFilter: dateFilter,
+          customDateRange: customDateRange,
+          statusFilter: statusFilter,
+          selectedCity: effectiveCity,
+          startAfter: startAfter,
+          limit: limit,
+        );
+        if (directResult != null) {
+          return directResult;
+        }
+      }
+
+      final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
+      return _fetchCityFilteredPage(
+        selectedCity: cityFilter,
+        assignedCities: assignedCities,
+        pincodesMap: effectivePincodesMap,
+        startAfter: startAfter,
+        limit: limit,
+        queryBuilder:
+            () => _buildDeactivatedQuery(
+              searchQuery: searchQuery,
+              dateFilter: dateFilter,
+              customDateRange: customDateRange,
+              statusFilter: statusFilter,
+            ),
+      );
+    }
+
+    return _withRetry(() async {
+      var query = _buildDeactivatedQuery(
+        searchQuery: searchQuery,
+        dateFilter: dateFilter,
+        customDateRange: customDateRange,
+        statusFilter: statusFilter,
+      );
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final snapshot = await query.limit(limit).get();
+      final items = snapshot.docs.map(UserModel.fromFirestore).toList();
+      final lastDoc = snapshot.docs.isEmpty ? null : snapshot.docs.last;
+
+      return PageResult(
+        items: items,
+        lastDocument: lastDoc,
+        hasMore: snapshot.docs.length == limit,
+      );
+    });
+  }
+
+  Future<int> countDeactivatedUsers({
+    String searchQuery = '',
+    String? selectedCity,
+    String? dateFilter,
+    DateTimeRange? customDateRange,
+    String? statusFilter,
+    List<String> assignedCities = const [],
+    Map<String, List<String>> pincodesMap = const {},
+  }) async {
+    final cityFilter = selectedCity?.trim();
+    if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
+      final effectiveCity =
+          cityFilter ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
+      if (effectiveCity != null) {
+        final directCount = await _tryCountDeactivatedByCityKey(
+          searchQuery: searchQuery,
+          dateFilter: dateFilter,
+          customDateRange: customDateRange,
+          statusFilter: statusFilter,
+          selectedCity: effectiveCity,
+        );
+        if (directCount != null) {
+          return directCount;
+        }
+      }
+
+      final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
+      return _countCityFilteredUsers(
+        selectedCity: cityFilter,
+        assignedCities: assignedCities,
+        pincodesMap: effectivePincodesMap,
+        queryBuilder:
+            () => _buildDeactivatedQuery(
+              searchQuery: searchQuery,
+              dateFilter: dateFilter,
+              customDateRange: customDateRange,
+              statusFilter: statusFilter,
+            ),
+      );
+    }
+
+    return _withRetry(() async {
+      final query = _buildDeactivatedQuery(
+        searchQuery: searchQuery,
+        dateFilter: dateFilter,
+        customDateRange: customDateRange,
+        statusFilter: statusFilter,
+      );
+      final snapshot = await query.count().get();
+      return snapshot.count ?? 0;
+    });
+  }
+
+  Query<Map<String, dynamic>> _applyDeactivatedDateFilter(
+    Query<Map<String, dynamic>> query,
+    String? dateFilter,
+    DateTimeRange? customRange,
+  ) {
+    if (dateFilter == null || dateFilter == 'all' || dateFilter == 'All Time') {
+      return query;
+    }
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final yesterdayStart = todayStart.subtract(const Duration(days: 1));
+
+    if (dateFilter == 'today' || dateFilter == 'Today') {
+      return query.where(
+        'deactivatedAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart),
+      );
+    }
+
+    if (dateFilter == 'yesterday' || dateFilter == 'Yesterday') {
+      return query
+          .where(
+            'deactivatedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(yesterdayStart),
+          )
+          .where('deactivatedAt', isLessThan: Timestamp.fromDate(todayStart));
+    }
+
+    if (dateFilter == 'week' || dateFilter == 'Last 7 Days') {
+      final sevenDaysAgo = now.subtract(const Duration(days: 7));
+      return query.where(
+        'deactivatedAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(sevenDaysAgo),
+      );
+    }
+
+    if (dateFilter == 'month' || dateFilter == 'Last 30 Days') {
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      return query.where(
+        'deactivatedAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo),
+      );
+    }
+
+    if ((dateFilter == 'custom' || dateFilter == 'Custom Date Range') &&
+        customRange != null) {
+      final start = DateTime(
+        customRange.start.year,
+        customRange.start.month,
+        customRange.start.day,
+        0,
+        0,
+        0,
+      );
+      final end = DateTime(
+        customRange.end.year,
+        customRange.end.month,
+        customRange.end.day,
+        23,
+        59,
+        59,
+        999,
+      );
+      return query
+          .where(
+            'deactivatedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+          )
+          .where('deactivatedAt', isLessThanOrEqualTo: Timestamp.fromDate(end));
+    }
+
+    return query;
+  }
+
+  Query<Map<String, dynamic>> _buildDeactivatedQuery({
+    String? searchQuery,
+    String? dateFilter,
+    DateTimeRange? customDateRange,
+    String? statusFilter,
+    String? directCityKey,
+  }) {
+    Query<Map<String, dynamic>> query = _users;
+
+    // Base condition: Strictly isProviderTemperoryDeactivatedStatus == true
+    query = query.where(
+      'isProviderTemperoryDeactivatedStatus',
+      isEqualTo: true,
+    );
+
+    if (directCityKey != null && directCityKey.isNotEmpty) {
+      query = query.where(_cityKeyField, isEqualTo: directCityKey);
+    }
+
+    query = _applyDeactivatedDateFilter(query, dateFilter, customDateRange);
+
+    final search = UserSearchParams.fromQuery(searchQuery ?? '');
+    switch (search.mode) {
+      case UserSearchMode.none:
+        return query.orderBy('deactivatedAt', descending: true);
+      case UserSearchMode.phone:
+        if (search.phoneVariants != null && search.phoneVariants!.length > 1) {
+          return query
+              .where('phone', whereIn: search.phoneVariants)
+              .orderBy('deactivatedAt', descending: true);
+        }
+        return query
+            .where('phone', isEqualTo: search.phone)
+            .orderBy('deactivatedAt', descending: true);
+      case UserSearchMode.uid:
+        return query
+            .where('uid', isEqualTo: search.rawQuery)
+            .orderBy('deactivatedAt', descending: true);
+      case UserSearchMode.usernamePrefix:
+        final prefix = search.rawQuery;
+        return query
+            .where('username', isGreaterThanOrEqualTo: prefix)
+            .where('username', isLessThanOrEqualTo: '$prefix\uf8ff')
+            .orderBy('username')
+            .orderBy('deactivatedAt', descending: true);
+      case UserSearchMode.businessNamePrefix:
+        final prefix = search.rawQuery;
+        return query
+            .where('businessname', isGreaterThanOrEqualTo: prefix)
+            .where('businessname', isLessThanOrEqualTo: '$prefix\uf8ff')
+            .orderBy('businessname')
+            .orderBy('deactivatedAt', descending: true);
+    }
+  }
+
+  Future<PageResult<UserModel>?> _tryFetchDeactivatedByCityKey({
+    required String searchQuery,
+    String? dateFilter,
+    DateTimeRange? customDateRange,
+    String? statusFilter,
+    required String selectedCity,
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    required int limit,
+  }) async {
+    if (!await _supportsDirectCityKeyQueries()) {
+      return null;
+    }
+
+    return _withRetry(() async {
+      var query = _buildDeactivatedQuery(
+        searchQuery: searchQuery,
+        dateFilter: dateFilter,
+        customDateRange: customDateRange,
+        statusFilter: statusFilter,
+        directCityKey: _normalizeQueryableCityKey(selectedCity),
+      );
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final snapshot = await query.limit(limit).get();
+      final items = snapshot.docs.map(UserModel.fromFirestore).toList();
+      return PageResult(
+        items: items,
+        lastDocument: snapshot.docs.isEmpty ? startAfter : snapshot.docs.last,
+        hasMore: snapshot.docs.length == limit,
+      );
+    });
+  }
+
+  Future<int?> _tryCountDeactivatedByCityKey({
+    required String searchQuery,
+    String? dateFilter,
+    DateTimeRange? customDateRange,
+    String? statusFilter,
+    required String selectedCity,
+  }) async {
+    if (!await _supportsDirectCityKeyQueries()) {
+      return null;
+    }
+
+    return _withRetry(() async {
+      final query = _buildDeactivatedQuery(
+        searchQuery: searchQuery,
+        dateFilter: dateFilter,
+        customDateRange: customDateRange,
+        statusFilter: statusFilter,
+        directCityKey: _normalizeQueryableCityKey(selectedCity),
+      );
+      final snapshot = await query.count().get();
+      return snapshot.count ?? 0;
     });
   }
 
@@ -892,7 +1240,9 @@ class UserRepository {
     final cityFilter = filters.city?.trim();
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
-      final effectiveCity = selectedCity ?? (assignedCities.length == 1 ? assignedCities.first : null);
+      final effectiveCity =
+          selectedCity ??
+          (assignedCities.length == 1 ? assignedCities.first : null);
       if (effectiveCity != null) {
         final directResult = await _tryFetchUsersByCityKey(
           filters: filters.copyWith(clearCity: true),
@@ -937,8 +1287,12 @@ class UserRepository {
     });
   }
 
-  bool _shouldUseDerivedCityFiltering(String? selectedCity, [List<String> assignedCities = const []]) {
-    return (selectedCity != null && selectedCity.isNotEmpty) || assignedCities.isNotEmpty;
+  bool _shouldUseDerivedCityFiltering(
+    String? selectedCity, [
+    List<String> assignedCities = const [],
+  ]) {
+    return (selectedCity != null && selectedCity.isNotEmpty) ||
+        assignedCities.isNotEmpty;
   }
 
   Future<Map<String, List<String>>> _resolvePincodesMap(
@@ -1118,6 +1472,9 @@ final userRepositoryProvider = Provider<UserRepository>((ref) {
 final userStatsProvider = FutureProvider<UserStats>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
   final isSuper = ref.watch(isSuperAdminProvider);
-  final assignedCities = isSuper ? const <String>[] : ref.watch(currentAdminAssignedCitiesProvider);
+  final assignedCities =
+      isSuper
+          ? const <String>[]
+          : ref.watch(currentAdminAssignedCitiesProvider);
   return repository.fetchUserStats(assignedCities: assignedCities);
 });

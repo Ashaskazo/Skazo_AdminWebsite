@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
-import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/deactivated_pagination_provider.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
@@ -29,9 +29,14 @@ class UserVerificationNotifier extends StateNotifier<bool> {
     ref.invalidate(userStatsProvider);
     final selectedCategory = ref.read(dashboardSelectedCategoryProvider);
     ref.invalidate(unverifiedPaginationProvider(selectedCategory));
+    
     final paginationNotifier = ref.read(userPaginationProvider.notifier);
     paginationNotifier.clearOptimizationCaches();
     paginationNotifier.refresh();
+
+    final deactivatedNotifier = ref.read(deactivatedPaginationProvider.notifier);
+    deactivatedNotifier.clearOptimizationCaches();
+    deactivatedNotifier.refresh();
   }
 
   Future<bool> verifyUser(String userId) async {
@@ -48,10 +53,24 @@ class UserVerificationNotifier extends StateNotifier<bool> {
     }
   }
 
-  Future<bool> deactivateUser(String userId) async {
+  Future<bool> activateUser(String userId) async {
     state = true;
     try {
-      await ref.read(userRepositoryProvider).deactivateUser(userId);
+      await ref.read(userRepositoryProvider).activateUser(userId);
+
+      _invalidateUserData();
+      state = false;
+      return true;
+    } catch (e) {
+      state = false;
+      return false;
+    }
+  }
+
+  Future<bool> deactivateUser(String userId, {String? reason}) async {
+    state = true;
+    try {
+      await ref.read(userRepositoryProvider).deactivateUser(userId, reason: reason);
 
       _invalidateUserData();
       state = false;

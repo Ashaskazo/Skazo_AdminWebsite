@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum DashboardView {
   summary,
   users,
+  deactivatedList,
   servicePosts,
   // orders,
   rentalProperties,

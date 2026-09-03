@@ -13,6 +13,7 @@ import 'package:skazo_admin/utils/time_filter.dart';
 import 'package:skazo_admin/widgets/sidebar_nav.dart';
 import 'package:skazo_admin/widgets/collection_data_view.dart';
 import 'package:skazo_admin/widgets/users_data_view.dart';
+import 'package:skazo_admin/widgets/deactivated_list_data_view.dart';
 import 'package:skazo_admin/widgets/service_posts_data_view.dart';
 import 'package:skazo_admin/widgets/rental_properties_data_view.dart';
 import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
@@ -66,6 +67,8 @@ class DashboardPage extends ConsumerWidget {
         return const _SummaryDashboard();
       case DashboardView.users:
         return const UsersDataView();
+      case DashboardView.deactivatedList:
+        return const DeactivatedListDataView();
       case DashboardView.servicePosts:
         return const ServicePostsDataView();
       case DashboardView.rentalProperties:

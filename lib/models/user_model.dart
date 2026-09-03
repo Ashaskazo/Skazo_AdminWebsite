@@ -11,10 +11,13 @@ class UserModel {
   final String? name;
   final String? email;
   final int? phone;
+  final String? gender;
   final String? businessname;
   final String? businessbio;
   final String? businessaddress;
   final String? businesspic;
+  final List<dynamic>? businesspics;
+  final String? businessLocation;
   final String? address;
   final String? city;
   final String? cityCapital;
@@ -22,26 +25,61 @@ class UserModel {
   final String? pincode;
   final String? businessPincode;
   final dynamic category;
+  final Map<String, dynamic>? categoryPriority;
+  final bool categoryBoostEnabled;
+  final dynamic ServiceRateCard;
+  final String? StarServiceprovider;
+  final bool priority;
   final bool isverified;
   final bool isactive;
   final bool isDeactivated;
+  // final bool isProviderDeativatedStatus;
+  final bool isProviderTemperoryDeactivatedStatus;
   final bool isuser;
+  final bool isonline;
   final bool profileComplete;
-  final int? priority;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-  final DateTime? verifiedAt;
+  final bool basicplanenable;
   final int? activePlan;
-  final String? gender;
+  final String? paymentPlanDuration;
+  final int? paymentCount;
+  final int? totalAmount;
+  final num? payperLeadCharge;
+  final num? extraPlanCharge;
+  final bool paymentLinkSend;
+  final String? paymentLinkSenderId;
+  final String? paymentLinkSenderName;
+  final DateTime? paymentLinkSentAt;
+  final String? transactionId;
+  final DateTime? paymentDate;
+  final DateTime? lastPaymentAt;
   final int? ownerPropertyPaid;
   final int? userPropertyPaid;
   final String? fcmtoken;
-  final int? totalAmount;
-  final bool categoryBoostEnabled;
-  final bool paymentLinkSend;
-  final bool isonline;
-  final String? StarServiceprovider;
-  final num? payperLeadCharge;
+  final DateTime? deactivatedAt;
+  final String? deactivationReason;
+  final num? avgRating;
+  final num? ratingSum;
+  final int? totalRatings;
+  final int? totalCallLogs;
+  final int? totalCallsGenerated;
+  final int? callsAfterLastPayment;
+  final DateTime? lastCallAt;
+  final int? todayApplinkClicks;
+  final int? totalApplinkClicks;
+  final DateTime? lastClickAt;
+  final String? clickCounterDate;
+  final String? aadhaarCardUrl;
+  final String? aadhaarNumber;
+  final String? panCardUrl;
+  final String? panNumber;
+  final dynamic coordinates;
+  final String? geohash5;
+  final String? geohash7;
+  final dynamic location;
+  final bool? sheetSent;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? verifiedAt;
 
   const UserModel({
     required this.id,
@@ -53,10 +91,13 @@ class UserModel {
     this.name,
     this.email,
     this.phone,
+    this.gender,
     this.businessname,
     this.businessbio,
     this.businessaddress,
     this.businesspic,
+    this.businesspics,
+    this.businessLocation,
     this.address,
     this.city,
     this.cityCapital,
@@ -64,26 +105,61 @@ class UserModel {
     this.pincode,
     this.businessPincode,
     this.category,
+    this.categoryPriority,
+    this.categoryBoostEnabled = false,
+    this.ServiceRateCard,
+    this.StarServiceprovider,
+    this.priority = false,
     this.isverified = false,
     this.isactive = true,
     this.isDeactivated = false,
+    // this.isProviderDeativatedStatus = false,
+    this.isProviderTemperoryDeactivatedStatus = false,
     this.isuser = true,
+    this.isonline = false,
     this.profileComplete = false,
-    this.priority,
-    this.createdAt,
-    this.updatedAt,
-    this.verifiedAt,
+    this.basicplanenable = false,
     this.activePlan,
-    this.gender,
+    this.paymentPlanDuration,
+    this.paymentCount,
+    this.totalAmount,
+    this.payperLeadCharge,
+    this.extraPlanCharge,
+    this.paymentLinkSend = false,
+    this.paymentLinkSenderId,
+    this.paymentLinkSenderName,
+    this.paymentLinkSentAt,
+    this.transactionId,
+    this.paymentDate,
+    this.lastPaymentAt,
     this.ownerPropertyPaid,
     this.userPropertyPaid,
     this.fcmtoken,
-    this.totalAmount,
-    this.categoryBoostEnabled = false,
-    this.paymentLinkSend = false,
-    this.isonline = false,
-    this.StarServiceprovider,
-    this.payperLeadCharge,
+    this.deactivatedAt,
+    this.deactivationReason,
+    this.avgRating,
+    this.ratingSum,
+    this.totalRatings,
+    this.totalCallLogs,
+    this.totalCallsGenerated,
+    this.callsAfterLastPayment,
+    this.lastCallAt,
+    this.todayApplinkClicks,
+    this.totalApplinkClicks,
+    this.lastClickAt,
+    this.clickCounterDate,
+    this.aadhaarCardUrl,
+    this.aadhaarNumber,
+    this.panCardUrl,
+    this.panNumber,
+    this.coordinates,
+    this.geohash5,
+    this.geohash7,
+    this.location,
+    this.sheetSent,
+    this.createdAt,
+    this.updatedAt,
+    this.verifiedAt,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -95,18 +171,19 @@ class UserModel {
     final inferredIsUser =
         _parseBool(data['isuser']) ?? !_looksLikeServiceProvider(data);
 
-    final rawStar = data['StarServiceprovider'];
-    final starProviderStr = rawStar == null ? null : rawStar.toString();
+    final starProviderStr =
+        (data['StarServiceprovider'] ?? data['starServiceProvider'])
+            ?.toString();
 
-    final rawLeadCharge = data['payperLeadCharge'];
-    num? leadChargeNum;
-    if (rawLeadCharge != null) {
-      if (rawLeadCharge is num) {
-        leadChargeNum = rawLeadCharge;
-      } else {
-        leadChargeNum = num.tryParse(rawLeadCharge.toString().trim());
-      }
-    }
+    final rawLeadCharge = data['payperLeadcharge'] ?? data['payperLeadCharge'] ?? data['payPerLeadCharge'];
+    final leadChargeNum = _parseNum(rawLeadCharge);
+
+    final rawExtraPlan = data['extraPlanCharge'];
+    final extraPlanNum = _parseNum(rawExtraPlan);
+
+    final deactivatedFlag = _parseBool(data['isProviderDeativatedStatus']) ??
+        _parseBool(data['isDeactivated']) ??
+        false;
 
     return UserModel(
       id: id,
@@ -118,10 +195,13 @@ class UserModel {
       name: data['name']?.toString(),
       email: data['email']?.toString(),
       phone: _parsePhone(data['phone']),
+      gender: data['gender']?.toString(),
       businessname: data['businessname']?.toString(),
       businessbio: data['businessbio']?.toString(),
       businessaddress: data['businessaddress']?.toString(),
       businesspic: data['businesspic']?.toString(),
+      businesspics: data['businesspics'] is List ? (data['businesspics'] as List) : null,
+      businessLocation: data['businessLocation']?.toString(),
       address: data['address']?.toString(),
       city: data['city']?.toString(),
       cityCapital: data['City']?.toString(),
@@ -129,26 +209,61 @@ class UserModel {
       pincode: (data['pincode'] ?? data['customerPincode'] ?? data['postalCode'])?.toString(),
       businessPincode: (data['businessPincode'] ?? data['business_pincode'])?.toString(),
       category: data['category'],
+      categoryPriority: data['categoryPriority'] is Map ? Map<String, dynamic>.from(data['categoryPriority'] as Map) : null,
+      categoryBoostEnabled: _parseBool(data['categoryBoostEnabled']) ?? false,
+      ServiceRateCard: data['ServiceRateCard'] ?? data['serviceRateCard'],
+      StarServiceprovider: starProviderStr,
+      priority: _parseBool(data['priority']) ?? false,
       isverified: _parseBool(data['isverified']) ?? false,
       isactive: _parseBool(data['isactive']) ?? true,
-      isDeactivated: _parseBool(data['isDeactivated']) ?? false,
+      isDeactivated: deactivatedFlag,
+      // isProviderDeativatedStatus: deactivatedFlag,
+      isProviderTemperoryDeactivatedStatus: _parseBool(data['isProviderTemperoryDeactivatedStatus']) ?? false,
       isuser: inferredIsUser,
+      isonline: _parseBool(data['isonline']) ?? false,
       profileComplete: _parseBool(data['profileComplete']) ?? false,
-      priority: _parseInt(data['priority']),
-      createdAt: _parseDateTime(data['createdAt']),
-      updatedAt: _parseDateTime(data['updatedAt']),
-      verifiedAt: _parseDateTime(data['verifiedAt']),
-      activePlan: _parseInt(data['AtivePlan']),
-      gender: data['gender']?.toString(),
+      basicplanenable: _parseBool(data['basicplanenable']) ?? false,
+      activePlan: _parseInt(data['AtivePlan'] ?? data['ActivePlan']),
+      paymentPlanDuration: data['paymentPlanDuration']?.toString(),
+      paymentCount: _parseInt(data['paymentCount']),
+      totalAmount: _parseInt(data['totalAmount']),
+      payperLeadCharge: leadChargeNum,
+      extraPlanCharge: extraPlanNum,
+      paymentLinkSend: _parseBool(data['paymentLinkSend']) ?? false,
+      paymentLinkSenderId: data['paymentLinkSenderId']?.toString(),
+      paymentLinkSenderName: data['paymentLinkSenderName']?.toString(),
+      paymentLinkSentAt: _parseDateTime(data['paymentLinkSentAt']),
+      transactionId: data['transactionId']?.toString(),
+      paymentDate: _parseDateTime(data['paymentDate']),
+      lastPaymentAt: _parseDateTime(data['lastPaymentAt']),
       ownerPropertyPaid: _parseInt(data['ownerPropertyPaid']),
       userPropertyPaid: _parseInt(data['userPropertyPaid']),
       fcmtoken: data['fcmtoken']?.toString(),
-      totalAmount: _parseInt(data['totalAmount']),
-      categoryBoostEnabled: _parseBool(data['categoryBoostEnabled']) ?? false,
-      paymentLinkSend: _parseBool(data['paymentLinkSend']) ?? false,
-      isonline: _parseBool(data['isonline']) ?? false,
-      StarServiceprovider: starProviderStr,
-      payperLeadCharge: leadChargeNum,
+      deactivatedAt: _parseDateTime(data['deactivatedAt']),
+      deactivationReason: data['deactivationReason']?.toString(),
+      avgRating: _parseNum(data['avgRating']),
+      ratingSum: _parseNum(data['ratingSum']),
+      totalRatings: _parseInt(data['totalRatings']),
+      totalCallLogs: _parseInt(data['totalCallLogs']),
+      totalCallsGenerated: _parseInt(data['totalCallsGenerated']),
+      callsAfterLastPayment: _parseInt(data['callsAfterLastPayment']),
+      lastCallAt: _parseDateTime(data['lastCallAt']),
+      todayApplinkClicks: _parseInt(data['todayApplinkClicks']),
+      totalApplinkClicks: _parseInt(data['totalApplinkClicks']),
+      lastClickAt: _parseDateTime(data['lastClickAt']),
+      clickCounterDate: data['clickCounterDate']?.toString(),
+      aadhaarCardUrl: data['aadhaarCardUrl']?.toString(),
+      aadhaarNumber: data['aadhaarNumber']?.toString(),
+      panCardUrl: data['panCardUrl']?.toString(),
+      panNumber: data['panNumber']?.toString(),
+      coordinates: data['coordinates'],
+      geohash5: data['geohash5']?.toString(),
+      geohash7: data['geohash7']?.toString(),
+      location: data['location'],
+      sheetSent: _parseBool(data['sheetSent']),
+      createdAt: _parseDateTime(data['createdAt']),
+      updatedAt: _parseDateTime(data['updatedAt']),
+      verifiedAt: _parseDateTime(data['verifiedAt']),
     );
   }
 
@@ -164,10 +279,13 @@ class UserModel {
       if (name != null) 'name': name,
       if (email != null) 'email': email,
       if (phone != null) 'phone': phone,
+      if (gender != null) 'gender': gender,
       if (businessname != null) 'businessname': businessname,
       if (businessbio != null) 'businessbio': businessbio,
       if (businessaddress != null) 'businessaddress': businessaddress,
       if (businesspic != null) 'businesspic': businesspic,
+      if (businesspics != null) 'businesspics': businesspics,
+      if (businessLocation != null) 'businessLocation': businessLocation,
       if (address != null) 'address': address,
       if (city != null) 'city': city,
       if (cityCapital != null) 'City': cityCapital,
@@ -175,27 +293,62 @@ class UserModel {
       if (pincode != null) 'pincode': pincode,
       if (businessPincode != null) 'businessPincode': businessPincode,
       if (category != null) 'category': category,
+      if (categoryPriority != null) 'categoryPriority': categoryPriority,
+      'categoryBoostEnabled': categoryBoostEnabled,
+      if (ServiceRateCard != null) 'ServiceRateCard': ServiceRateCard,
+      if (StarServiceprovider != null)
+        'StarServiceprovider': StarServiceprovider,
+      'priority': priority,
       'isverified': isverified,
       'isactive': isactive,
-      'isDeactivated': isDeactivated,
+      // 'isDeactivated': isProviderDeativatedStatus,
+      // 'isProviderDeativatedStatus': isProviderDeativatedStatus,
+      'isProviderTemperoryDeactivatedStatus': isProviderTemperoryDeactivatedStatus,
       'isuser': isuser,
+      'isonline': isonline,
       'profileComplete': profileComplete,
-      if (priority != null) 'priority': priority,
-      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
-      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
-      if (verifiedAt != null) 'verifiedAt': Timestamp.fromDate(verifiedAt!),
+      'basicplanenable': basicplanenable,
       if (activePlan != null) 'AtivePlan': activePlan,
-      if (gender != null) 'gender': gender,
+      if (paymentPlanDuration != null) 'paymentPlanDuration': paymentPlanDuration,
+      if (paymentCount != null) 'paymentCount': paymentCount,
+      if (totalAmount != null) 'totalAmount': totalAmount,
+      if (payperLeadCharge != null) 'payperLeadcharge': payperLeadCharge,
+      if (extraPlanCharge != null) 'extraPlanCharge': extraPlanCharge,
+      'paymentLinkSend': paymentLinkSend,
+      if (paymentLinkSenderId != null) 'paymentLinkSenderId': paymentLinkSenderId,
+      if (paymentLinkSenderName != null) 'paymentLinkSenderName': paymentLinkSenderName,
+      if (paymentLinkSentAt != null) 'paymentLinkSentAt': Timestamp.fromDate(paymentLinkSentAt!),
+      if (transactionId != null) 'transactionId': transactionId,
+      if (paymentDate != null) 'paymentDate': Timestamp.fromDate(paymentDate!),
+      if (lastPaymentAt != null) 'lastPaymentAt': Timestamp.fromDate(lastPaymentAt!),
       if (ownerPropertyPaid != null) 'ownerPropertyPaid': ownerPropertyPaid,
       if (userPropertyPaid != null) 'userPropertyPaid': userPropertyPaid,
       if (fcmtoken != null) 'fcmtoken': fcmtoken,
-      if (totalAmount != null) 'totalAmount': totalAmount,
-      'categoryBoostEnabled': categoryBoostEnabled,
-      'paymentLinkSend': paymentLinkSend,
-      'isonline': isonline,
-      if (StarServiceprovider != null)
-        'StarServiceprovider': StarServiceprovider,
-      if (payperLeadCharge != null) 'payperLeadCharge': payperLeadCharge,
+      if (deactivatedAt != null) 'deactivatedAt': Timestamp.fromDate(deactivatedAt!),
+      if (deactivationReason != null) 'deactivationReason': deactivationReason,
+      if (avgRating != null) 'avgRating': avgRating,
+      if (ratingSum != null) 'ratingSum': ratingSum,
+      if (totalRatings != null) 'totalRatings': totalRatings,
+      if (totalCallLogs != null) 'totalCallLogs': totalCallLogs,
+      if (totalCallsGenerated != null) 'totalCallsGenerated': totalCallsGenerated,
+      if (callsAfterLastPayment != null) 'callsAfterLastPayment': callsAfterLastPayment,
+      if (lastCallAt != null) 'lastCallAt': Timestamp.fromDate(lastCallAt!),
+      if (todayApplinkClicks != null) 'todayApplinkClicks': todayApplinkClicks,
+      if (totalApplinkClicks != null) 'totalApplinkClicks': totalApplinkClicks,
+      if (lastClickAt != null) 'lastClickAt': Timestamp.fromDate(lastClickAt!),
+      if (clickCounterDate != null) 'clickCounterDate': clickCounterDate,
+      if (aadhaarCardUrl != null) 'aadhaarCardUrl': aadhaarCardUrl,
+      if (aadhaarNumber != null) 'aadhaarNumber': aadhaarNumber,
+      if (panCardUrl != null) 'panCardUrl': panCardUrl,
+      if (panNumber != null) 'panNumber': panNumber,
+      if (coordinates != null) 'coordinates': coordinates,
+      if (geohash5 != null) 'geohash5': geohash5,
+      if (geohash7 != null) 'geohash7': geohash7,
+      if (location != null) 'location': location,
+      if (sheetSent != null) 'sheetSent': sheetSent,
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
+      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
+      if (verifiedAt != null) 'verifiedAt': Timestamp.fromDate(verifiedAt!),
     };
   }
 
@@ -226,6 +379,12 @@ class UserModel {
     if (value is num) return value.toInt();
     if (value is bool) return value ? 1 : 0;
     return int.tryParse(value.toString().trim());
+  }
+
+  static num? _parseNum(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value;
+    return num.tryParse(value.toString().trim());
   }
 
   static bool? _parseBool(dynamic value) {
