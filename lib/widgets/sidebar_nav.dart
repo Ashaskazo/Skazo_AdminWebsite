@@ -9,13 +9,6 @@ class SidebarNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    print(
-      "************************************************************************",
-    );
-    print(
-      'Current Admin Profile: ${ref.watch(currentAdminProfileProvider).value}',
-    );
-    print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
     final currentView = ref.watch(currentDashboardViewProvider);
     final isCollapsed = ref.watch(sidebarCollapsedProvider);
 
@@ -194,6 +187,16 @@ class SidebarNav extends ConsumerWidget {
                 ),
                 _buildNavItem(
                   ref,
+                  'Star Service Providers',
+                  Icons.handyman_rounded,
+                  DashboardView.serviceProviders,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
+                  badge: '⭐',
+                ),
+                _buildNavItem(
+                  ref,
                   'Deactivated List',
                   Icons.person_off_rounded,
                   DashboardView.deactivatedList,
@@ -211,15 +214,15 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
                   badge: 'LIVE',
                 ),
-                _buildNavItem(
-                  ref,
-                  'Service Posts',
-                  Icons.auto_stories_rounded,
-                  DashboardView.servicePosts,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF10B981), Color(0xFF059669)],
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'Service Posts',
+                //   Icons.auto_stories_rounded,
+                //   DashboardView.servicePosts,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF10B981), Color(0xFF059669)],
+                // ),
                 _buildNavItem(
                   ref,
                   'Rental Properties',
@@ -248,6 +251,16 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
                   badge: '₹💰',
                 ),
+                _buildNavItem(
+                  ref,
+                  'Pay Per Lead',
+                  Icons.leaderboard_rounded,
+                  DashboardView.payPerLead,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
+                  badge: 'PPL',
+                ),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('OPERATIONS & HELPDESK 🛠️', isCollapsed),
@@ -269,15 +282,15 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFF14B8A6), Color(0xFF0D9488)],
                 ),
-                _buildNavItem(
-                  ref,
-                  'WhatsApp Logs',
-                  Icons.chat_bubble_rounded,
-                  DashboardView.whatsappMessages,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'WhatsApp Logs',
+                //   Icons.chat_bubble_rounded,
+                //   DashboardView.whatsappMessages,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
+                // ),
 
                 if (ref.watch(isSuperAdminProvider)) ...[
                   const SizedBox(height: 16),

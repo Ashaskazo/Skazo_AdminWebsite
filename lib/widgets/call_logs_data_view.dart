@@ -1943,131 +1943,131 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Doc Header
-        Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'DOCUMENT PATH',
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF64748B),
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          'callLogs / ',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            _selectedDocId!,
-                            style: GoogleFonts.sourceCodePro(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF0F172A),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(
-                  Icons.copy,
-                  size: 18,
-                  color: Color(0xFF2563EB),
-                ),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _selectedDocId!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Document ID copied to clipboard'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                tooltip: 'Copy ID',
-              ),
-            ],
-          ),
-        ),
+        // Container(
+        //   padding: const EdgeInsets.all(16.0),
+        //   decoration: BoxDecoration(
+        //     color: const Color(0xFFF8FAFC),
+        //     border: Border(
+        //       bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
+        //     ),
+        //   ),
+        //   child: Row(
+        //     children: [
+        //       Expanded(
+        //         child: Column(
+        //           crossAxisAlignment: CrossAxisAlignment.start,
+        //           children: [
+        //             Text(
+        //               'DOCUMENT PATH',
+        //               style: GoogleFonts.poppins(
+        //                 fontSize: 10,
+        //                 fontWeight: FontWeight.bold,
+        //                 color: const Color(0xFF64748B),
+        //                 letterSpacing: 1.1,
+        //               ),
+        //             ),
+        //             const SizedBox(height: 4),
+        //             Row(
+        //               children: [
+        //                 Text(
+        //                   'callLogs / ',
+        //                   style: GoogleFonts.poppins(
+        //                     fontSize: 13,
+        //                     color: const Color(0xFF64748B),
+        //                   ),
+        //                 ),
+        //                 Expanded(
+        //                   child: Text(
+        //                     _selectedDocId!,
+        //                     style: GoogleFonts.sourceCodePro(
+        //                       fontSize: 13,
+        //                       fontWeight: FontWeight.bold,
+        //                       color: const Color(0xFF0F172A),
+        //                     ),
+        //                     overflow: TextOverflow.ellipsis,
+        //                   ),
+        //                 ),
+        //               ],
+        //             ),
+        //           ],
+        //         ),
+        //       ),
+        //       IconButton(
+        //         icon: const Icon(
+        //           Icons.copy,
+        //           size: 18,
+        //           color: Color(0xFF2563EB),
+        //         ),
+        //         onPressed: () {
+        //           Clipboard.setData(ClipboardData(text: _selectedDocId!));
+        //           ScaffoldMessenger.of(context).showSnackBar(
+        //             const SnackBar(
+        //               content: Text('Document ID copied to clipboard'),
+        //               duration: Duration(seconds: 1),
+        //             ),
+        //           );
+        //         },
+        //         tooltip: 'Copy ID',
+        //       ),
+        //     ],
+        //   ),
+        // ),
 
         // Quick Actions panel
-        Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'CRM QUICK ACTIONS',
-                style: GoogleFonts.poppins(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF64748B),
-                  letterSpacing: 1.1,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildActionButton(
-                    'Mark Interested',
-                    Icons.star,
-                    Colors.teal,
-                    () => _changeCRMStatus('interested'),
-                  ),
-                  _buildActionButton(
-                    'Mark Not Interested',
-                    Icons.star_border,
-                    Colors.grey,
-                    () => _changeCRMStatus('not_interested'),
-                  ),
-                  _buildActionButton(
-                    'Set Follow-up',
-                    Icons.alarm,
-                    Colors.purple,
-                    _setCRMFollowUp,
-                  ),
-                  _buildActionButton(
-                    'Mark Converted',
-                    Icons.check_circle_outline,
-                    Colors.green,
-                    () => _changeCRMStatus('converted'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        // Container(
+        //   padding: const EdgeInsets.all(16.0),
+        //   decoration: BoxDecoration(
+        //     color: Colors.white,
+        //     border: Border(
+        //       bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
+        //     ),
+        //   ),
+        //   child: Column(
+        //     crossAxisAlignment: CrossAxisAlignment.start,
+        //     children: [
+        //       Text(
+        //         'CRM QUICK ACTIONS',
+        //         style: GoogleFonts.poppins(
+        //           fontSize: 10,
+        //           fontWeight: FontWeight.bold,
+        //           color: const Color(0xFF64748B),
+        //           letterSpacing: 1.1,
+        //         ),
+        //       ),
+        //       const SizedBox(height: 10),
+        //       Wrap(
+        //         spacing: 8,
+        //         runSpacing: 8,
+        //         children: [
+        //           _buildActionButton(
+        //             'Mark Interested',
+        //             Icons.star,
+        //             Colors.teal,
+        //             () => _changeCRMStatus('interested'),
+        //           ),
+        //           _buildActionButton(
+        //             'Mark Not Interested',
+        //             Icons.star_border,
+        //             Colors.grey,
+        //             () => _changeCRMStatus('not_interested'),
+        //           ),
+        //           _buildActionButton(
+        //             'Set Follow-up',
+        //             Icons.alarm,
+        //             Colors.purple,
+        //             _setCRMFollowUp,
+        //           ),
+        //           _buildActionButton(
+        //             'Mark Converted',
+        //             Icons.check_circle_outline,
+        //             Colors.green,
+        //             () => _changeCRMStatus('converted'),
+        //           ),
+        //         ],
+        //       ),
+        //     ],
+        //   ),
+        // ),
 
         // Sales Feedback Status Dropdown
         Container(

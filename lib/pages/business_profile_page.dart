@@ -1,10 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:skazo_admin/providers/deactivated_pagination_provider.dart';
-import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
@@ -65,6 +65,43 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   late TextEditingController _aadhaarCardUrlController;
   late TextEditingController _panNumberController;
   late TextEditingController _panCardUrlController;
+  late TextEditingController _businessPicController;
+  late TextEditingController _businessPicsController;
+  late TextEditingController _cityController;
+  late TextEditingController _cityKeyController;
+  late TextEditingController _latitudeController;
+  late TextEditingController _longitudeController;
+
+  // ---------------------------------------------------------------------------
+  // REAL-TIME DOCUMENT STATE
+  // ---------------------------------------------------------------------------
+
+  /// Exactly one realtime listener for the currently opened /users/{docId}.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _userDocumentSubscription;
+
+  /// Latest Firestore document received by the realtime listener.
+  Map<String, dynamic>? _liveData;
+
+  /// Whether the Firestore listener is currently receiving snapshots.
+  bool _isRealtimeConnected = false;
+
+  /// Whether the currently opened Firestore document was deleted.
+  bool _isDocumentDeleted = false;
+
+  /// True while controller/status values are being populated from Firestore.
+  /// Prevents those programmatic changes from being treated as admin edits.
+  bool _applyingLiveData = false;
+
+  /// True only while the explicit Save operation is running.
+  bool _isSaving = false;
+
+  /// Tracks whether the admin has changed anything locally that has not
+  /// successfully been persisted to Firestore.
+  bool _hasUnsavedChanges = false;
+
+  /// Snapshot waiting to be applied after local edits are saved.
+  Map<String, dynamic>? _pendingRealtimeData;
 
   // Editable Service Rate Card
   late List<_ServiceRateCardItemControllers> _serviceRateCardControllers;
@@ -198,6 +235,23 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       text: data['panCardUrl']?.toString() ?? '',
     );
 
+    _businessPicController = TextEditingController(
+      text: data['businesspic']?.toString() ?? '',
+    );
+    _businessPicsController = TextEditingController(
+      text: _stringListToMultiline(data['businesspics']),
+    );
+    _cityController = TextEditingController(
+      text: data['city']?.toString() ?? data['City']?.toString() ?? '',
+    );
+    _cityKeyController = TextEditingController(
+      text: data['cityKey']?.toString() ?? '',
+    );
+
+    final initialCoordinates = _extractCoordinates(data);
+    _latitudeController = TextEditingController(text: initialCoordinates.$1);
+    _longitudeController = TextEditingController(text: initialCoordinates.$2);
+
     _deactivatedAt = _parseDateTime(data['deactivatedAt']);
     _lastPaymentAt = _parseDateTime(data['lastPaymentAt']);
     _paymentDate = _parseDateTime(data['paymentDate']);
@@ -243,7 +297,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     }
     for (final cat in _categories) {
       if (!_categoryPriorityControllers.containsKey(cat)) {
-        _categoryPriorityControllers[cat] = TextEditingController(text: '0');
+        final controller = TextEditingController(text: '0');
+        _categoryPriorityControllers[cat] = controller;
+        _attachDirtyListener(controller);
       }
     }
 
@@ -305,6 +361,11 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
           (cat != null && cat.toString().isNotEmpty);
       _isUser = !looksLikeProvider;
     }
+
+    // Keep the page attached to exactly one Firestore document.
+    _liveData = Map<String, dynamic>.from(data);
+    _attachDirtyListeners();
+    _startRealtimeListener();
   }
 
   static DateTime? _parseDateTime(dynamic value) {
@@ -345,6 +406,12 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     _aadhaarCardUrlController.dispose();
     _panNumberController.dispose();
     _panCardUrlController.dispose();
+    _businessPicController.dispose();
+    _businessPicsController.dispose();
+    _cityController.dispose();
+    _cityKeyController.dispose();
+    _latitudeController.dispose();
+    _longitudeController.dispose();
     _newCategoryController.dispose();
     _starServiceProviderController.dispose();
 
@@ -354,20 +421,521 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     for (final ctrl in _categoryPriorityControllers.values) {
       ctrl.dispose();
     }
+
+    _userDocumentSubscription?.cancel();
     super.dispose();
+  }
+
+  String? _documentId() {
+    final raw =
+        widget.businessData['id'] ??
+        widget.businessData['uid'] ??
+        widget.businessData['docId'];
+    final value = raw?.toString().trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  String _stringListToMultiline(dynamic value) {
+    if (value is List) {
+      return value
+          .where((item) => item != null)
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .join('\n');
+    }
+    if (value == null) return '';
+    return value.toString();
+  }
+
+  List<String> _multilineToStringList(String value) {
+    return value
+        .split(RegExp(r'\r?\n'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  void _markDirty() {
+    if (_applyingLiveData || !mounted) return;
+
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    } else {
+      // Already dirty. No need to rebuild again just for the flag.
+      _hasUnsavedChanges = true;
+    }
+  }
+
+  void _attachDirtyListener(TextEditingController controller) {
+    controller.addListener(_markDirty);
+  }
+
+  void _attachDirtyListeners() {
+    final controllers = <TextEditingController>[
+      _nameController,
+      _bioController,
+      _addressController,
+      _businessPincodeController,
+      _businessLocationController,
+      _firstNameController,
+      _lastNameController,
+      _phoneController,
+      _emailController,
+      _planController,
+      _priorityController,
+      _genderController,
+      _usernameController,
+      _ownerPaidController,
+      _userPaidController,
+      _fcmTokenController,
+      _totalAmountController,
+      _transactionIdController,
+      _paymentPlanController,
+      _paymentCountController,
+      _payPerLeadChargeController,
+      _extraPlanChargeController,
+      _deactivationReasonController,
+      _aadhaarNumberController,
+      _aadhaarCardUrlController,
+      _panNumberController,
+      _panCardUrlController,
+      _businessPicController,
+      _businessPicsController,
+      _cityController,
+      _cityKeyController,
+      _latitudeController,
+      _longitudeController,
+      _starServiceProviderController,
+      _newCategoryController,
+    ];
+
+    for (final controller in controllers) {
+      _attachDirtyListener(controller);
+    }
+
+    for (final item in _serviceRateCardControllers) {
+      _attachDirtyListener(item.serviceController);
+      _attachDirtyListener(item.rateController);
+    }
+
+    for (final controller in _categoryPriorityControllers.values) {
+      _attachDirtyListener(controller);
+    }
+  }
+
+  void _startRealtimeListener() {
+    final docId = _documentId();
+
+    if (docId == null) {
+      debugPrint(
+        'BusinessProfilePage: Cannot start realtime listener. '
+        'Document ID is missing.',
+      );
+      return;
+    }
+
+    // Always cancel the previous listener before creating another one.
+    _userDocumentSubscription?.cancel();
+    _userDocumentSubscription = null;
+
+    final docRef = FirebaseFirestore.instance.collection('users').doc(docId);
+
+    debugPrint(
+      'BusinessProfilePage: Starting realtime listener for users/$docId',
+    );
+
+    _userDocumentSubscription = docRef.snapshots().listen(
+      (snapshot) {
+        if (!mounted) return;
+
+        // ---------------------------------------------------------------------
+        // DOCUMENT DELETED
+        // ---------------------------------------------------------------------
+        if (!snapshot.exists) {
+          debugPrint('BusinessProfilePage: users/$docId no longer exists.');
+
+          setState(() {
+            _isDocumentDeleted = true;
+            _isRealtimeConnected = true;
+            _liveData = null;
+            _pendingRealtimeData = null;
+          });
+
+          return;
+        }
+
+        // ---------------------------------------------------------------------
+        // FIRESTORE SNAPSHOT
+        // ---------------------------------------------------------------------
+        final incoming = <String, dynamic>{
+          ...?snapshot.data(),
+          'id': snapshot.id,
+        };
+
+        debugPrint(
+          'BusinessProfilePage: realtime snapshot received for users/$docId '
+          '(hasPendingWrites=${snapshot.metadata.hasPendingWrites}, '
+          'fromCache=${snapshot.metadata.isFromCache})',
+        );
+
+        // Always keep the newest Firestore document.
+        _liveData = incoming;
+
+        // ---------------------------------------------------------------------
+        // LOCAL UNSAVED EDITS
+        // ---------------------------------------------------------------------
+        //
+        // Never overwrite the administrator's unsaved form.
+        //
+        // Example:
+        // Admin changes business name locally.
+        // Firebase Console changes phone number.
+        //
+        // Result:
+        // - business name remains the admin's unsaved value
+        // - phone is updated immediately from Firestore
+        //
+        // For now the page uses a single dirty boundary for the editable form,
+        // so we preserve the complete editable form while dirty.
+        if (_hasUnsavedChanges) {
+          _pendingRealtimeData = incoming;
+
+          if (mounted) {
+            setState(() {
+              _isDocumentDeleted = false;
+              _isRealtimeConnected = true;
+            });
+          }
+
+          debugPrint(
+            'BusinessProfilePage: realtime update stored as pending because '
+            'the form contains unsaved local changes.',
+          );
+
+          return;
+        }
+
+        // ---------------------------------------------------------------------
+        // SAFE TO APPLY FIRESTORE STATE
+        // ---------------------------------------------------------------------
+        _applyingLiveData = true;
+
+        try {
+          _syncEditableStateFromFirestore(incoming);
+        } catch (error, stackTrace) {
+          debugPrint(
+            'BusinessProfilePage: failed to apply realtime snapshot: $error',
+          );
+          debugPrintStack(stackTrace: stackTrace);
+        } finally {
+          _applyingLiveData = false;
+        }
+
+        if (!mounted) return;
+
+        setState(() {
+          _liveData = incoming;
+          _isDocumentDeleted = false;
+          _isRealtimeConnected = true;
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted) return;
+
+        debugPrint('BusinessProfilePage realtime listener error: $error');
+        debugPrintStack(stackTrace: stackTrace);
+
+        setState(() {
+          _isRealtimeConnected = false;
+        });
+      },
+      cancelOnError: false,
+    );
+  }
+void _applyFirestoreSnapshotToUi(
+  Map<String, dynamic> data, {
+  bool clearDirtyState = false,
+}) {
+  if (!mounted) return;
+
+  _applyingLiveData = true;
+
+  try {
+    _syncEditableStateFromFirestore(data);
+
+    _liveData = Map<String, dynamic>.from(data);
+
+    if (clearDirtyState) {
+      _hasUnsavedChanges = false;
+      _pendingRealtimeData = null;
+    }
+  } finally {
+    _applyingLiveData = false;
+  }
+
+  if (!mounted) return;
+
+  setState(() {
+    _liveData = Map<String, dynamic>.from(data);
+    _isDocumentDeleted = false;
+    _isRealtimeConnected = true;
+
+    if (clearDirtyState) {
+      _hasUnsavedChanges = false;
+      _pendingRealtimeData = null;
+    }
+  });
+}
+  void _setControllerText(TextEditingController controller, String value) {
+    if (controller.text == value) return;
+    controller.value = controller.value.copyWith(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _syncEditableStateFromFirestore(Map<String, dynamic> data) {
+    _setControllerText(_nameController, data['businessname']?.toString() ?? '');
+    _setControllerText(_bioController, data['businessbio']?.toString() ?? '');
+    _setControllerText(
+      _addressController,
+      data['businessaddress']?.toString() ?? data['address']?.toString() ?? '',
+    );
+    _setControllerText(
+      _businessPincodeController,
+      (data['businessPincode'] ?? data['business_pincode'] ?? data['pincode'])
+              ?.toString() ??
+          '',
+    );
+    _setControllerText(
+      _businessLocationController,
+      data['businessLocation']?.toString() ?? '',
+    );
+    _setControllerText(
+      _firstNameController,
+      data['firstname']?.toString() ?? '',
+    );
+    _setControllerText(_lastNameController, data['lastname']?.toString() ?? '');
+    _setControllerText(_phoneController, data['phone']?.toString() ?? '');
+    _setControllerText(_emailController, data['email']?.toString() ?? '');
+    _setControllerText(
+      _planController,
+      (data['AtivePlan'] ?? data['ActivePlan'])?.toString() ?? '0',
+    );
+    _setControllerText(
+      _priorityController,
+      data['priority']?.toString() ?? '0',
+    );
+    _setControllerText(_genderController, data['gender']?.toString() ?? '');
+    _setControllerText(_usernameController, data['username']?.toString() ?? '');
+    _setControllerText(
+      _ownerPaidController,
+      data['ownerPropertyPaid']?.toString() ?? '0',
+    );
+    _setControllerText(
+      _userPaidController,
+      data['userPropertyPaid']?.toString() ?? '0',
+    );
+    _setControllerText(_fcmTokenController, data['fcmtoken']?.toString() ?? '');
+    _setControllerText(
+      _totalAmountController,
+      data['totalAmount']?.toString() ?? '0',
+    );
+    _setControllerText(
+      _transactionIdController,
+      data['transactionId']?.toString() ?? '',
+    );
+    _setControllerText(
+      _paymentPlanController,
+      data['paymentPlanDuration']?.toString() ?? '',
+    );
+    _setControllerText(
+      _paymentCountController,
+      data['paymentCount']?.toString() ?? '0',
+    );
+    _setControllerText(
+      _payPerLeadChargeController,
+      (data['payperLeadcharge'] ??
+                  data['payperLeadCharge'] ??
+                  data['payPerLeadCharge'])
+              ?.toString() ??
+          '',
+    );
+    _setControllerText(
+      _extraPlanChargeController,
+      data['extraPlanCharge']?.toString() ?? '0',
+    );
+    _setControllerText(
+      _deactivationReasonController,
+      data['deactivationReason']?.toString() ?? '',
+    );
+    _setControllerText(
+      _aadhaarNumberController,
+      data['aadhaarNumber']?.toString() ?? '',
+    );
+    _setControllerText(
+      _aadhaarCardUrlController,
+      data['aadhaarCardUrl']?.toString() ?? '',
+    );
+    _setControllerText(
+      _panNumberController,
+      data['panNumber']?.toString() ?? '',
+    );
+    _setControllerText(
+      _panCardUrlController,
+      data['panCardUrl']?.toString() ?? '',
+    );
+    _setControllerText(
+      _businessPicController,
+      data['businesspic']?.toString() ?? '',
+    );
+    _setControllerText(
+      _businessPicsController,
+      _stringListToMultiline(data['businesspics']),
+    );
+    _setControllerText(
+      _cityController,
+      data['city']?.toString() ?? data['City']?.toString() ?? '',
+    );
+    _setControllerText(_cityKeyController, data['cityKey']?.toString() ?? '');
+
+    final coordinates = _extractCoordinates(data);
+    _setControllerText(_latitudeController, coordinates.$1);
+    _setControllerText(_longitudeController, coordinates.$2);
+
+    final rawStar = data['StarServiceprovider'] ?? data['starServiceProvider'];
+    _setControllerText(
+      _starServiceProviderController,
+      rawStar?.toString() ?? '0',
+    );
+
+    _isVerified =
+        data['isverified'] == true ||
+        data['isverified'] == 'true' ||
+        data['isverified'] == 1;
+
+    final isDeactivatedRaw =
+        data['isProviderDeativatedStatus'] == true ||
+        data['isProviderDeativatedStatus'] == 'true' ||
+        data['isDeactivated'] == true ||
+        data['isDeactivated'] == 'true';
+
+    final isActiveRaw =
+        data['isactive'] == true ||
+        data['isactive'] == 'true' ||
+        data['isactive'] == 1;
+
+    _isActive = !isDeactivatedRaw && isActiveRaw;
+
+    _isProviderTemperoryDeactivatedStatus =
+        data['isProviderTemperoryDeactivatedStatus'] == true ||
+        data['isProviderTemperoryDeactivatedStatus'] == 'true';
+
+    _basicPlanEnable =
+        data['basicplanenable'] == true || data['basicplanenable'] == 'true';
+
+    _priority =
+        data['priority'] == true ||
+        data['priority'] == 1 ||
+        data['priority'] == '1' ||
+        data['priority'] == 'true';
+
+    _isOnline = data['isonline'] == true || data['isonline'] == 'true';
+
+    _profileComplete =
+        data['profileComplete'] == true || data['profileComplete'] == 'true';
+
+    _categoryBoostEnabled =
+        data['categoryBoostEnabled'] == true ||
+        data['categoryBoostEnabled'] == 'true';
+
+    _paymentLinkSend =
+        data['paymentLinkSend'] == true || data['paymentLinkSend'] == 'true';
+
+    _isUser =
+        data['isuser'] == true ||
+        data['isuser'] == 'true' ||
+        data['isuser'] == 1;
+
+    _deactivatedAt = _parseDateTime(data['deactivatedAt']);
+    _lastPaymentAt = _parseDateTime(data['lastPaymentAt']);
+    _paymentDate = _parseDateTime(data['paymentDate']);
+
+    // Rebuild dynamic editors only when there are no unsaved changes.
+    for (final item in _serviceRateCardControllers) {
+      item.dispose();
+    }
+    _serviceRateCardControllers = [];
+
+    final rawRateCard = data['ServiceRateCard'] ?? data['serviceRateCard'];
+    if (rawRateCard is List) {
+      for (final item in rawRateCard) {
+        if (item is Map) {
+          final controller = _ServiceRateCardItemControllers(
+            service: item['service']?.toString() ?? '',
+            rate: item['rate']?.toString() ?? '',
+          );
+          _serviceRateCardControllers.add(controller);
+          _attachDirtyListener(controller.serviceController);
+          _attachDirtyListener(controller.rateController);
+        }
+      }
+    }
+
+    _categories = [];
+    final rawCats = data['category'];
+    if (rawCats is List) {
+      for (final cat in rawCats) {
+        final value = cat?.toString().trim() ?? '';
+        if (value.isNotEmpty) _categories.add(value);
+      }
+    } else if (rawCats is String && rawCats.trim().isNotEmpty) {
+      _categories.add(rawCats.trim());
+    }
+
+    for (final controller in _categoryPriorityControllers.values) {
+      controller.dispose();
+    }
+    _categoryPriorityControllers = {};
+
+    final rawCatPriority = data['categoryPriority'];
+    if (rawCatPriority is Map) {
+      rawCatPriority.forEach((key, value) {
+        final controller = TextEditingController(
+          text: value?.toString() ?? '0',
+        );
+        _categoryPriorityControllers[key.toString()] = controller;
+        _attachDirtyListener(controller);
+      });
+    }
+
+    for (final cat in _categories) {
+      if (!_categoryPriorityControllers.containsKey(cat)) {
+        final controller = TextEditingController(text: '0');
+        _categoryPriorityControllers[cat] = controller;
+        _attachDirtyListener(controller);
+      }
+    }
   }
 
   void _addCategory(String cat) {
     final trimmed = cat.trim();
     if (trimmed.isEmpty || _categories.contains(trimmed)) return;
+    _markDirty();
     setState(() {
       _categories.add(trimmed);
-      _categoryPriorityControllers[trimmed] = TextEditingController(text: '0');
+      final controller = TextEditingController(text: '0');
+      _categoryPriorityControllers[trimmed] = controller;
+      _attachDirtyListener(controller);
     });
     _newCategoryController.clear();
   }
 
   void _removeCategory(String cat) {
+    _markDirty();
     setState(() {
       _categories.remove(cat);
       _categoryPriorityControllers[cat]?.dispose();
@@ -376,193 +944,572 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
   }
 
   void _addServiceRateCardItem() {
+    _markDirty();
     setState(() {
-      _serviceRateCardControllers.add(_ServiceRateCardItemControllers());
+      final item = _ServiceRateCardItemControllers();
+      _serviceRateCardControllers.add(item);
+      _attachDirtyListener(item.serviceController);
+      _attachDirtyListener(item.rateController);
     });
   }
 
   void _removeServiceRateCardItem(int index) {
+    _markDirty();
     setState(() {
       final item = _serviceRateCardControllers.removeAt(index);
       item.dispose();
     });
   }
 
-  Future<void> _saveChanges() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+ Future<void> _saveChanges() async {
+  if (_isSaving) return;
+
+  if (!_formKey.currentState!.validate()) {
+    return;
+  }
+
+  final docId = _documentId();
+
+  if (docId == null) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Document ID is missing. Cannot update profile in Firebase.',
+          ),
+          backgroundColor: Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return;
+  }
+
+  setState(() {
+    _isSaving = true;
+    _isLoading = true;
+  });
+
+  try {
+    // -----------------------------------------------------------------------
+    // ADMIN INFORMATION
+    // -----------------------------------------------------------------------
+
+    final adminProfile =
+        ref.read(currentAdminProfileProvider).value;
+
+    final senderId =
+        adminProfile?['admin_id'] ??
+        adminProfile?['id'] ??
+        'Unknown';
+
+    final senderName =
+        adminProfile?['name'] ?? 'Unknown';
+
+    // -----------------------------------------------------------------------
+    // PHONE
+    // -----------------------------------------------------------------------
+
+    final phoneText = _phoneController.text.trim();
+
+    final dynamic phoneValue =
+        phoneText.isEmpty
+            ? null
+            : (int.tryParse(phoneText) ?? phoneText);
+
+    // -----------------------------------------------------------------------
+    // PLAN
+    // -----------------------------------------------------------------------
+
+    final planVal =
+        int.tryParse(_planController.text.trim()) ?? 0;
+
+    // -----------------------------------------------------------------------
+    // SERVICE RATE CARD
+    // -----------------------------------------------------------------------
+
+    final List<Map<String, String>> rateCardList = [];
+
+    for (final item in _serviceRateCardControllers) {
+      final serviceName =
+          item.serviceController.text.trim();
+
+      final rate =
+          item.rateController.text.trim();
+
+      if (serviceName.isNotEmpty || rate.isNotEmpty) {
+        rateCardList.add({
+          'service': serviceName,
+          'rate': rate,
+        });
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // PAY PER LEAD
+    // -----------------------------------------------------------------------
+
+    final leadChargeText =
+        _payPerLeadChargeController.text.trim();
+
+    final num leadChargeValue =
+        leadChargeText.isEmpty
+            ? 0
+            : (num.tryParse(leadChargeText) ?? 0);
+
+    // -----------------------------------------------------------------------
+    // EXTRA PLAN
+    // -----------------------------------------------------------------------
+
+    final extraPlanText =
+        _extraPlanChargeController.text.trim();
+
+    final num extraPlanValue =
+        extraPlanText.isEmpty
+            ? 0
+            : (num.tryParse(extraPlanText) ?? 0);
+
+    // -----------------------------------------------------------------------
+    // COORDINATES
+    // -----------------------------------------------------------------------
+
+    final latitude =
+        double.tryParse(_latitudeController.text.trim());
+
+    final longitude =
+        double.tryParse(_longitudeController.text.trim());
+
+    if (latitude == null || longitude == null) {
+      throw 'Latitude and longitude must be valid numbers.';
+    }
+
+    if (latitude < -90 || latitude > 90) {
+      throw 'Latitude must be between -90 and 90.';
+    }
+
+    if (longitude < -180 || longitude > 180) {
+      throw 'Longitude must be between -180 and 180.';
+    }
+
+    // -----------------------------------------------------------------------
+    // CATEGORY PRIORITY
+    // -----------------------------------------------------------------------
+
+    final Map<String, dynamic> categoryPriorityMap = {};
+
+    for (final entry
+        in _categoryPriorityControllers.entries) {
+      categoryPriorityMap[entry.key] =
+          int.tryParse(entry.value.text.trim()) ?? 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // STAR PROVIDER
+    // -----------------------------------------------------------------------
+
+    final starValue =
+        _starServiceProviderController.text.trim();
+
+    final normalizedStar =
+        starValue == '1' ? '1' : '0';
+
+    // -----------------------------------------------------------------------
+    // DEACTIVATION
+    // -----------------------------------------------------------------------
+
+    final bool isDeactivatedValue = !_isActive;
+
+    // -----------------------------------------------------------------------
+    // PAYMENT LINK STATE
+    // -----------------------------------------------------------------------
+
+    final bool previousPaymentLinkSent =
+        (_liveData?['paymentLinkSend'] ??
+                widget.businessData['paymentLinkSend']) ==
+            true;
+
+    // -----------------------------------------------------------------------
+    // FIRESTORE UPDATE
+    // -----------------------------------------------------------------------
+
+    final Map<String, dynamic> updatedData = {
+      'businessname':
+          _nameController.text.trim(),
+
+      'businessbio':
+          _bioController.text.trim(),
+
+      'businessaddress':
+          _addressController.text.trim(),
+
+      'businessPincode':
+          _businessPincodeController.text.trim(),
+
+      'businessLocation':
+          _businessLocationController.text.trim(),
+
+      'businesspic':
+          _businessPicController.text.trim(),
+
+      'businesspics':
+          _multilineToStringList(
+            _businessPicsController.text,
+          ),
+
+      'city':
+          _cityController.text.trim(),
+
+      'cityKey':
+          _cityKeyController.text.trim(),
+
+      'firstname':
+          _firstNameController.text.trim(),
+
+      'lastname':
+          _lastNameController.text.trim(),
+
+      'email':
+          _emailController.text.trim(),
+
+      'AtivePlan':
+          planVal,
+
+      'priority':
+          _priority,
+
+      'gender':
+          _genderController.text.trim(),
+
+      'username':
+          _usernameController.text.trim(),
+
+      'ownerPropertyPaid':
+          int.tryParse(
+                _ownerPaidController.text.trim(),
+              ) ??
+              0,
+
+      'userPropertyPaid':
+          int.tryParse(
+                _userPaidController.text.trim(),
+              ) ??
+              0,
+
+      'fcmtoken':
+          _fcmTokenController.text.trim(),
+
+      'isverified':
+          _isVerified,
+
+      'isactive':
+          _isActive,
+
+      'isProviderTemperoryDeactivatedStatus':
+          _isProviderTemperoryDeactivatedStatus,
+
+      'basicplanenable':
+          _basicPlanEnable,
+
+      'isonline':
+          _isOnline,
+
+      'isuser':
+          _isUser,
+
+      'profileComplete':
+          _profileComplete,
+
+      'categoryBoostEnabled':
+          _categoryBoostEnabled,
+
+      'paymentLinkSend':
+          _paymentLinkSend,
+
+      'StarServiceprovider':
+          normalizedStar,
+
+      'starServiceProvider':
+          normalizedStar,
+
+      'payperLeadcharge':
+          leadChargeValue,
+
+      'extraPlanCharge':
+          extraPlanValue,
+
+      'ServiceRateCard':
+          rateCardList,
+
+      'category':
+          _categories,
+
+      'categoryPriority':
+          categoryPriorityMap,
+
+      'coordinates':
+          [latitude, longitude],
+
+      // Preserve the rest of location.*
+      // while updating only location.geopoint.
+      'location.geopoint':
+          GeoPoint(latitude, longitude),
+
+      'transactionId':
+          _transactionIdController.text.trim(),
+
+      'paymentPlanDuration':
+          _paymentPlanController.text.trim(),
+
+      'paymentCount':
+          int.tryParse(
+                _paymentCountController.text.trim(),
+              ) ??
+              0,
+
+      'totalAmount':
+          int.tryParse(
+                _totalAmountController.text.trim(),
+              ) ??
+              0,
+
+      'aadhaarNumber':
+          _aadhaarNumberController.text.trim(),
+
+      'aadhaarCardUrl':
+          _aadhaarCardUrlController.text.trim(),
+
+      'panNumber':
+          _panNumberController.text.trim(),
+
+      'panCardUrl':
+          _panCardUrlController.text.trim(),
+
+      'lastPaymentAt':
+          _lastPaymentAt != null
+              ? Timestamp.fromDate(_lastPaymentAt!)
+              : null,
+
+      'paymentDate':
+          _paymentDate != null
+              ? Timestamp.fromDate(_paymentDate!)
+              : null,
+
+      'updatedAt':
+          FieldValue.serverTimestamp(),
+    };
+
+    // -----------------------------------------------------------------------
+    // DEACTIVATION DATA
+    // -----------------------------------------------------------------------
+
+    if (isDeactivatedValue) {
+      updatedData['deactivatedAt'] =
+          FieldValue.serverTimestamp();
+
+      final reason =
+          _deactivationReasonController.text.trim();
+
+      if (reason.isNotEmpty) {
+        updatedData['deactivationReason'] =
+            reason;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // PHONE
+    // -----------------------------------------------------------------------
+
+    if (phoneValue != null) {
+      updatedData['phone'] = phoneValue;
+    }
+
+    // -----------------------------------------------------------------------
+    // PAYMENT LINK AUDIT DATA
+    // -----------------------------------------------------------------------
+
+    if (_paymentLinkSend &&
+        !previousPaymentLinkSent) {
+      updatedData['paymentLinkSenderId'] =
+          senderId;
+
+      updatedData['paymentLinkSenderName'] =
+          senderName;
+
+      updatedData['paymentLinkSentAt'] =
+          FieldValue.serverTimestamp();
+    }
+
+    final docRef =
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(docId);
+
+    debugPrint(
+      'BusinessProfilePage: saving users/$docId',
+    );
+
+    // -----------------------------------------------------------------------
+    // WRITE
+    // -----------------------------------------------------------------------
+
+    await docRef.update(updatedData);
+
+    debugPrint(
+      'BusinessProfilePage: Firestore update completed for users/$docId',
+    );
+
+    // -----------------------------------------------------------------------
+    // IMPORTANT:
+    //
+    // Do NOT depend on the realtime listener to finish the save.
+    //
+    // Explicitly obtain the authoritative server document.
+    // This eliminates the listener/update race.
+    // -----------------------------------------------------------------------
+
+    final authoritativeSnapshot =
+        await docRef.get(
+      const GetOptions(
+        source: Source.server,
+      ),
+    );
+
+    if (!authoritativeSnapshot.exists) {
+      throw 'The user document disappeared immediately after save.';
+    }
+
+    final authoritativeData =
+        <String, dynamic>{
+      ...?authoritativeSnapshot.data(),
+      'id': authoritativeSnapshot.id,
+    };
+
+    debugPrint(
+      'BusinessProfilePage: authoritative server snapshot received '
+      'for users/$docId',
+    );
+
+    // -----------------------------------------------------------------------
+    // APPLY SERVER STATE TO UI
+    // -----------------------------------------------------------------------
+
+    _applyingLiveData = true;
 
     try {
-      final docId =
-          (widget.businessData['id'] ??
-                  widget.businessData['uid'] ??
-                  widget.businessData['docId'])
-              ?.toString()
-              .trim();
-      if (docId == null || docId.isEmpty) {
-        throw 'Document ID is missing. Cannot update profile in Firebase.';
-      }
+      _syncEditableStateFromFirestore(
+        authoritativeData,
+      );
 
-      final adminProfile = ref.read(currentAdminProfileProvider).value;
-      final senderId =
-          adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
-      final senderName = adminProfile?['name'] ?? 'Unknown';
+      _liveData =
+          Map<String, dynamic>.from(
+            authoritativeData,
+          );
 
-      final phoneText = _phoneController.text.trim();
-      final dynamic phoneValue =
-          phoneText.isEmpty ? null : (int.tryParse(phoneText) ?? phoneText);
-
-      final planVal = int.tryParse(_planController.text.trim()) ?? 0;
-
-      // Build Rate Card List
-      final List<Map<String, String>> rateCardList = [];
-      for (var item in _serviceRateCardControllers) {
-        final sName = item.serviceController.text.trim();
-        final rVal = item.rateController.text.trim();
-        if (sName.isNotEmpty || rVal.isNotEmpty) {
-          rateCardList.add({'service': sName, 'rate': rVal});
-        }
-      }
-
-      final leadChargeText = _payPerLeadChargeController.text.trim();
-      final num leadChargeVal =
-          leadChargeText.isEmpty ? 0 : (num.tryParse(leadChargeText) ?? 0);
-
-      final extraPlanText = _extraPlanChargeController.text.trim();
-      final num extraPlanVal =
-          extraPlanText.isEmpty ? 0 : (num.tryParse(extraPlanText) ?? 0);
-
-      // Build categoryPriority map
-      final Map<String, dynamic> catPriorityMap = {};
-      for (final entry in _categoryPriorityControllers.entries) {
-        catPriorityMap[entry.key] = int.tryParse(entry.value.text.trim()) ?? 0;
-      }
-
-      // Star service provider
-      final starVal = _starServiceProviderController.text.trim();
-      final normalizedStar = (starVal == '1') ? '1' : '0';
-
-      final bool isDeactivatedValue = !_isActive;
-
-      final Map<String, dynamic> updatedData = {
-        'businessname': _nameController.text.trim(),
-        'businessbio': _bioController.text.trim(),
-        'businessaddress': _addressController.text.trim(),
-        'businessPincode': _businessPincodeController.text.trim(),
-        'businessLocation': _businessLocationController.text.trim(),
-        'firstname': _firstNameController.text.trim(),
-        'lastname': _lastNameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'AtivePlan': planVal,
-        'priority': _priority,
-        'gender': _genderController.text.trim(),
-        'username': _usernameController.text.trim(),
-        'ownerPropertyPaid':
-            int.tryParse(_ownerPaidController.text.trim()) ?? 0,
-        'userPropertyPaid': int.tryParse(_userPaidController.text.trim()) ?? 0,
-        'fcmtoken': _fcmTokenController.text.trim(),
-        'isverified': _isVerified,
-        'isactive': _isActive,
-        // 'isDeactivated': isDeactivatedValue,
-        // 'isProviderDeativatedStatus': isDeactivatedValue,
-        'isProviderTemperoryDeactivatedStatus':
-            _isProviderTemperoryDeactivatedStatus,
-        'basicplanenable': _basicPlanEnable,
-        'isonline': _isOnline,
-        'isuser': _isUser,
-        'profileComplete': _profileComplete,
-        'categoryBoostEnabled': _categoryBoostEnabled,
-        'paymentLinkSend': _paymentLinkSend,
-        'StarServiceprovider': normalizedStar,
-        'starServiceProvider': normalizedStar,
-        'payperLeadcharge': leadChargeVal,
-        'extraPlanCharge': extraPlanVal,
-        'ServiceRateCard': rateCardList,
-        'category': _categories,
-        'categoryPriority': catPriorityMap,
-        'transactionId': _transactionIdController.text.trim(),
-        'paymentPlanDuration': _paymentPlanController.text.trim(),
-        'paymentCount': int.tryParse(_paymentCountController.text.trim()) ?? 0,
-        'totalAmount': int.tryParse(_totalAmountController.text.trim()) ?? 0,
-        'aadhaarNumber': _aadhaarNumberController.text.trim(),
-        'aadhaarCardUrl': _aadhaarCardUrlController.text.trim(),
-        'panNumber': _panNumberController.text.trim(),
-        'panCardUrl': _panCardUrlController.text.trim(),
-        'lastPaymentAt':
-            _lastPaymentAt != null ? Timestamp.fromDate(_lastPaymentAt!) : null,
-        'paymentDate':
-            _paymentDate != null ? Timestamp.fromDate(_paymentDate!) : null,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (isDeactivatedValue) {
-        updatedData['deactivatedAt'] = FieldValue.serverTimestamp();
-        if (_deactivationReasonController.text.trim().isNotEmpty) {
-          updatedData['deactivationReason'] =
-              _deactivationReasonController.text.trim();
-        }
-      }
-
-      if (phoneValue != null) {
-        updatedData['phone'] = phoneValue;
-      }
-
-      final bool wasSent = widget.businessData['paymentLinkSend'] == true;
-      if (_paymentLinkSend && !wasSent) {
-        updatedData['paymentLinkSenderId'] = senderId;
-        updatedData['paymentLinkSenderName'] = senderName;
-        updatedData['paymentLinkSentAt'] = FieldValue.serverTimestamp();
-      }
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(docId)
-          .set(updatedData, SetOptions(merge: true));
-
-      ref.read(userPaginationProvider.notifier).clearOptimizationCaches();
-      await ref.read(userPaginationProvider.notifier).refresh();
-
-      ref
-          .read(deactivatedPaginationProvider.notifier)
-          .clearOptimizationCaches();
-      await ref.read(deactivatedPaginationProvider.notifier).refresh();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.stars_rounded, color: Colors.white),
-                const SizedBox(width: 10),
-                Text(
-                  'Profile updated successfully! ✨🚀',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Oops! Error updating profile: $e 😅'),
-            backgroundColor: const Color(0xFFEF4444),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      _pendingRealtimeData = null;
+      _hasUnsavedChanges = false;
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      _applyingLiveData = false;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _liveData =
+          Map<String, dynamic>.from(
+            authoritativeData,
+          );
+
+      _isDocumentDeleted = false;
+      _isRealtimeConnected = true;
+      _hasUnsavedChanges = false;
+      _pendingRealtimeData = null;
+    });
+
+    // -----------------------------------------------------------------------
+    // SUCCESS
+    // -----------------------------------------------------------------------
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.stars_rounded,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Profile updated successfully! ✨🚀',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor:
+            const Color(0xFF10B981),
+        behavior:
+            SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(12),
+        ),
+      ),
+    );
+  } on FirebaseException catch (e) {
+    debugPrint(
+      'BusinessProfilePage Firestore save error: '
+      '${e.code} - ${e.message}',
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Failed to update profile: '
+          '${e.message ?? e.code}',
+        ),
+        backgroundColor:
+            const Color(0xFFEF4444),
+        behavior:
+            SnackBarBehavior.floating,
+      ),
+    );
+  } catch (e, stackTrace) {
+    debugPrint(
+      'BusinessProfilePage save error: $e',
+    );
+    debugPrintStack(
+      stackTrace: stackTrace,
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Oops! Error updating profile: $e',
+        ),
+        backgroundColor:
+            const Color(0xFFEF4444),
+        behavior:
+            SnackBarBehavior.floating,
+      ),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isSaving = false;
+        _isLoading = false;
+      });
+    } else {
+      _isSaving = false;
+      _isLoading = false;
     }
   }
+}
 
   InputDecoration _buildInputDecoration(
     String label,
@@ -705,6 +1652,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       initialValue != null ? initialValue.second : 0,
     );
     onChanged(combined);
+    _markDirty();
   }
 
   Widget _buildEditableDateTimeField({
@@ -838,6 +1786,12 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
     );
   }
 
+  String _boolText(dynamic value) {
+    if (value == true || value == 1 || value == 'true') return 'Yes';
+    if (value == false || value == 0 || value == 'false') return 'No';
+    return 'N/A';
+  }
+
   String _formatTimestamp(dynamic ts) {
     if (ts == null) return 'N/A';
     DateTime? dt;
@@ -851,8 +1805,35 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final data = widget.businessData;
+    final data = _liveData ?? widget.businessData;
     final businessPic = data['businesspic']?.toString() ?? '';
+
+    if (_isDocumentDeleted) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          title: Text(
+            'Business Profile & Settings',
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          backgroundColor: Colors.white,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Text(
+            'This user document no longer exists in Firestore.',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF475569),
+            ),
+          ),
+        ),
+      );
+    }
     final businessName =
         _nameController.text.isNotEmpty
             ? _nameController.text
@@ -873,10 +1854,52 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color:
+                  _isRealtimeConnected
+                      ? const Color(0xFFECFDF5)
+                      : const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color:
+                    _isRealtimeConnected
+                        ? const Color(0xFFA7F3D0)
+                        : const Color(0xFFFECACA),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.circle,
+                  size: 8,
+                  color:
+                      _isRealtimeConnected
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEF4444),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _isRealtimeConnected ? 'REAL-TIME' : 'OFFLINE',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color:
+                        _isRealtimeConnected
+                            ? const Color(0xFF047857)
+                            : const Color(0xFFB91C1C),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _saveChanges,
+              onPressed: _isSaving ? null : _saveChanges,
               icon:
                   _isLoading
                       ? const SizedBox(
@@ -889,7 +1912,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                       )
                       : const Icon(Icons.save_rounded, size: 18),
               label: Text(
-                _isLoading ? 'Saving...' : 'Save Profile',
+                _isLoading
+                    ? 'Saving...'
+                    : (_hasUnsavedChanges ? 'Save Changes' : 'Save Profile'),
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -1224,13 +2249,13 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                               activeColor: const Color(0xFF8B5CF6),
                               icon: Icons.person_rounded,
                             ),
-                            _buildToggle(
-                              'Profile Complete',
-                              _profileComplete,
-                              (v) => setState(() => _profileComplete = v),
-                              activeColor: const Color(0xFF0EA5E9),
-                              icon: Icons.check_circle_rounded,
-                            ),
+                            // _buildToggle(
+                            //   'Profile Complete',
+                            //   _profileComplete,
+                            //   (v) => setState(() => _profileComplete = v),
+                            //   activeColor: const Color(0xFF0EA5E9),
+                            //   icon: Icons.check_circle_rounded,
+                            // ),
                             _buildToggle(
                               'Payment Link Sent',
                               _paymentLinkSend,
@@ -1238,6 +2263,13 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                               activeColor: const Color(0xFF6366F1),
                               icon: Icons.send_rounded,
                             ),
+                            // _buildToggle(
+                            //   'Category Boost',
+                            //   _categoryBoostEnabled,
+                            //   (v) => setState(() => _categoryBoostEnabled = v),
+                            //   activeColor: const Color(0xFFEC4899),
+                            //   icon: Icons.rocket_launch_rounded,
+                            // ),
                           ],
                         ),
                         if (!_isActive) ...[
@@ -1408,12 +2440,12 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   ),
 
                   // Service Rate Card & Pay Per Lead Charge Section
-                  _buildSectionHeader(
-                    'Service Rate Card & Lead Pricing ⚡💰',
-                    'Edit service rate list & configure pay per lead charge (₹)',
-                    Icons.payments_rounded,
-                    [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-                  ),
+                  // _buildSectionHeader(
+                  //   'Service Rate Card & Lead Pricing ⚡💰',
+                  //   'Edit service rate list & configure pay per lead charge (₹)',
+                  //   Icons.payments_rounded,
+                  //   [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                  // ),
 
                   // Pay per lead & Extra plan charge row
                   Row(
@@ -1918,6 +2950,141 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     ],
                   ),
 
+                  // Identity & Media
+                  // _buildSectionHeader(
+                  //   'Identity, Media & Documents 📄',
+                  //   'Profile image, gallery, Aadhaar and PAN information',
+                  //   Icons.badge_rounded,
+                  //   [const Color(0xFF0D9488), const Color(0xFF14B8A6)],
+                  // ),
+                  // TextFormField(
+                  //   controller: _businessPicController,
+                  //   decoration: _buildInputDecoration(
+                  //     'Business Profile Picture URL',
+                  //     Icons.image_rounded,
+                  //     accentColor: const Color(0xFF0D9488),
+                  //   ),
+                  // ),
+                  // const SizedBox(height: 16),
+                  // TextFormField(
+                  //   controller: _businessPicsController,
+                  //   maxLines: 4,
+                  //   decoration: _buildInputDecoration(
+                  //     'Business Picture URLs',
+                  //     Icons.photo_library_rounded,
+                  //     accentColor: const Color(0xFF0D9488),
+                  //     hintText: 'One Firebase Storage URL per line',
+                  //   ),
+                  // ),
+                  // const SizedBox(height: 16),
+                  // Row(
+                  //   children: [
+                  //     Expanded(
+                  //       child: TextFormField(
+                  //         controller: _aadhaarNumberController,
+                  //         decoration: _buildInputDecoration(
+                  //           'Aadhaar Number',
+                  //           Icons.credit_card_rounded,
+                  //           accentColor: const Color(0xFF0D9488),
+                  //         ),
+                  //       ),
+                  //     ),
+                  //     const SizedBox(width: 16),
+                  //     Expanded(
+                  //       child: TextFormField(
+                  //         controller: _aadhaarCardUrlController,
+                  //         decoration: _buildInputDecoration(
+                  //           'Aadhaar Card URL',
+                  //           Icons.link_rounded,
+                  //           accentColor: const Color(0xFF0D9488),
+                  //         ),
+                  //       ),
+                  //     ),
+                  //   ],
+                  // ),
+                  // const SizedBox(height: 16),
+                  // Row(
+                  //   children: [
+                  //     Expanded(
+                  //       child: TextFormField(
+                  //         controller: _panNumberController,
+                  //         decoration: _buildInputDecoration(
+                  //           'PAN Number',
+                  //           Icons.credit_card_rounded,
+                  //           accentColor: const Color(0xFF0D9488),
+                  //         ),
+                  //       ),
+                  //     ),
+                  //     const SizedBox(width: 16),
+                  //     Expanded(
+                  //       child: TextFormField(
+                  //         controller: _panCardUrlController,
+                  //         decoration: _buildInputDecoration(
+                  //           'PAN Card URL',
+                  //           Icons.link_rounded,
+                  //           accentColor: const Color(0xFF0D9488),
+                  //         ),
+                  //       ),
+                  //     ),
+                  //   ],
+                  // ),
+
+                  // Payment Metadata
+                  _buildSectionHeader(
+                    'Payment & Transaction Activity 💰',
+                    'Live payment, pay-per-lead and transaction metadata',
+                    Icons.receipt_long_rounded,
+                    [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Overall Total Amount',
+                          data['overaltotalamount']?.toString() ?? '0',
+                          Icons.account_balance_wallet_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Payment Initiated At',
+                          _formatTimestamp(data['paymentInitiatedAt']),
+                          Icons.play_circle_outline_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Transaction Updated At',
+                          _formatTimestamp(data['transactionUpdatedAt']),
+                          Icons.sync_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Last PPl Payment Date',
+                          _formatTimestamp(data['lastpaymentpayperlead']),
+                          Icons.payments_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Last PPL Transaction ID',
+                          data['lastpayperleadtransactionid']?.toString() ??
+                              'N/A',
+                          Icons.confirmation_number_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                  ),
+
                   // Usage Statistics Section
                   _buildSectionHeader(
                     'Usage Statistics & Activity 📊',
@@ -1948,6 +3115,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                           'Calls Post Payment',
                           data['callsAfterLastPayment']?.toString() ?? '0',
                           Icons.phone_callback_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildReadOnlyField(
+                          'Converted Count',
+                          data['convertedCount']?.toString() ?? '0',
+                          Icons.swap_horiz_rounded,
                         ),
                       ),
                     ],
@@ -2053,25 +3228,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildReadOnlyField(
-                          'Last Payment At',
-                          _lastPaymentAt != null
-                              ? DateFormat(
-                                'dd MMM yyyy, hh:mm:ss a',
-                              ).format(_lastPaymentAt!)
-                              : 'N/A',
-                          Icons.payment_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Payment Date',
-                          _paymentDate != null
-                              ? DateFormat(
-                                'dd MMM yyyy, hh:mm:ss a',
-                              ).format(_paymentDate!)
-                              : 'N/A',
-                          Icons.event_available_rounded,
+                          'Last Click At',
+                          _formatTimestamp(data['lastClickAt']),
+                          Icons.ads_click_rounded,
                         ),
                       ),
                     ],
@@ -2101,43 +3260,6 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     ),
                   ],
 
-                  // Technical & Location Metadata Section
-                  _buildSectionHeader(
-                    'Technical & Location Metadata 🛠️',
-                    'FCM Push Tokens, City Keys, Geolocation & Geohashes',
-                    Icons.developer_board_rounded,
-                    [const Color(0xFF64748B), const Color(0xFF334155)],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'City',
-                          data['city']?.toString() ??
-                              data['City']?.toString() ??
-                              'N/A',
-                          Icons.location_city_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Canonical City Key',
-                          data['cityKey']?.toString() ?? 'N/A',
-                          Icons.key_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                  TextFormField(
-                    controller: _fcmTokenController,
-                    decoration: _buildInputDecoration(
-                      'FCM Token',
-                      Icons.key_rounded,
-                      accentColor: const Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Builder(
                     builder: (context) {
                       final (latCoord, lngCoord) = _extractCoordinates(data);
@@ -2146,22 +3268,34 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                           Row(
                             children: [
                               Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Coordinate 1 (Latitude)',
-                                  latCoord,
-                                  Icons.north_rounded,
-                                  copyLabel: 'Latitude',
-                                  accentColor: const Color(0xFF6366F1),
+                                child: TextFormField(
+                                  controller: _latitudeController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                        signed: true,
+                                      ),
+                                  decoration: _buildInputDecoration(
+                                    'Latitude',
+                                    Icons.north_rounded,
+                                    accentColor: const Color(0xFF6366F1),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Coordinate 2 (Longitude)',
-                                  lngCoord,
-                                  Icons.east_rounded,
-                                  copyLabel: 'Longitude',
-                                  accentColor: const Color(0xFF8B5CF6),
+                                child: TextFormField(
+                                  controller: _longitudeController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                        signed: true,
+                                      ),
+                                  decoration: _buildInputDecoration(
+                                    'Longitude',
+                                    Icons.east_rounded,
+                                    accentColor: const Color(0xFF8B5CF6),
+                                  ),
                                 ),
                               ),
                             ],
@@ -2169,24 +3303,24 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              Expanded(
-                                child: _buildReadOnlyField(
-                                  'Location (Geopoint)',
-                                  data['location']?['geopoint']?.toString() ??
-                                      'N/A',
-                                  Icons.map_rounded,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Combined Coordinates',
-                                  '$latCoord, $lngCoord',
-                                  Icons.gps_fixed_rounded,
-                                  copyLabel: 'Combined Coordinates',
-                                  accentColor: const Color(0xFF10B981),
-                                ),
-                              ),
+                              // Expanded(
+                              //   child: _buildReadOnlyField(
+                              //     'Location (Geopoint)',
+                              //     data['location']?['geopoint']?.toString() ??
+                              //         'N/A',
+                              //     Icons.map_rounded,
+                              //   ),
+                              // ),
+                              // const SizedBox(width: 12),
+                              // Expanded(
+                              //   child: _buildCopyableCoordinateField(
+                              //     'Combined Coordinates',
+                              //     '$latCoord, $lngCoord',
+                              //     Icons.gps_fixed_rounded,
+                              //     copyLabel: 'Combined Coordinates',
+                              //     accentColor: const Color(0xFF10B981),
+                              //   ),
+                              // ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _buildReadOnlyField(
@@ -2773,7 +3907,10 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             scale: 0.8,
             child: Switch(
               value: value,
-              onChanged: onChanged,
+              onChanged: (newValue) {
+                _markDirty();
+                onChanged(newValue);
+              },
               activeThumbColor: activeColor,
             ),
           ),

@@ -20,6 +20,8 @@ import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
 import 'package:skazo_admin/widgets/admins_data_view.dart';
 import 'package:skazo_admin/widgets/unverified_businesses_grid.dart';
 import 'package:skazo_admin/widgets/payments_data_view.dart';
+import 'package:skazo_admin/widgets/pay_per_lead_data_view.dart';
+import 'package:skazo_admin/widgets/service_providers_data_view.dart';
 import '../widgets/call_logs_data_view.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -67,6 +69,8 @@ class DashboardPage extends ConsumerWidget {
         return const _SummaryDashboard();
       case DashboardView.users:
         return const UsersDataView();
+      case DashboardView.serviceProviders:
+        return const ServiceProvidersDataView();
       case DashboardView.deactivatedList:
         return const DeactivatedListDataView();
       case DashboardView.servicePosts:
@@ -131,6 +135,8 @@ class DashboardPage extends ConsumerWidget {
         return const CallLogsDataView();
       case DashboardView.payments:
         return const PaymentsDataView();
+      case DashboardView.payPerLead:
+        return const PayPerLeadDataView();
     }
   }
 }

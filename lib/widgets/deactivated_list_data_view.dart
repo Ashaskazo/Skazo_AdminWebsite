@@ -711,7 +711,7 @@ class _DeactivatedListDataViewState
             ),
             const SizedBox(height: 4),
             Text(
-              'No providers currently match isProviderDeativatedStatus == true with the chosen filters.',
+              'No deactivated providers found with the chosen filters.',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: const Color(0xFF64748B),

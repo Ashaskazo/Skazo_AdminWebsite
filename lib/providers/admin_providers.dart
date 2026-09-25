@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/dashboard_provider.dart';
+import 'package:skazo_admin/providers/service_providers_provider.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
@@ -202,10 +203,18 @@ class AdminAuthNotifier extends StateNotifier<bool> {
       ref.read(dashboardSelectedCityProvider.notifier).state = null;
       ref.read(dashboardSelectedDateFilterProvider.notifier).state = null;
 
+      // Reset Service Providers state
+      ref.read(serviceProvidersSelectedCityProvider.notifier).state = null;
+      ref.read(serviceProvidersHorizontalFilterProvider.notifier).state = null;
+      ref.read(serviceProvidersDrilldownCategoryProvider.notifier).state = null;
+      ref.read(serviceProvidersCategorySearchQueryProvider.notifier).state = '';
+
       // Invalidate all cached data providers to release resources and prevent stale access
       final userPaginationNotifier = ref.read(userPaginationProvider.notifier);
       userPaginationNotifier.clearOptimizationCaches();
       ref.invalidate(userPaginationProvider);
+      ref.invalidate(serviceProvidersOverviewProvider);
+      ref.invalidate(categoryProvidersPaginationProvider);
       clearPropertyPincodesCache();
       ref.invalidate(propertyPincodesProvider);
       ref.invalidate(userFilterCitiesProvider);
