@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/models/payment_record.dart';
 import 'package:skazo_admin/models/revenue_analytics_model.dart';
@@ -13,6 +14,9 @@ enum RevenueDashboardTab {
   transactions,
   reconciliation,
   linkSender,
+  refunds,
+  settlements,
+  syncAudit,
 }
 
 extension RevenueDashboardTabExtension on RevenueDashboardTab {
@@ -32,6 +36,12 @@ extension RevenueDashboardTabExtension on RevenueDashboardTab {
         return 'Razorpay Reconciliation';
       case RevenueDashboardTab.linkSender:
         return 'Payment Link Operations';
+      case RevenueDashboardTab.refunds:
+        return 'Refunds';
+      case RevenueDashboardTab.settlements:
+        return 'Settlements';
+      case RevenueDashboardTab.syncAudit:
+        return 'Sync & Audit';
     }
   }
 }
@@ -51,7 +61,34 @@ final revenueFilterProvider = StateProvider<RevenueFilter>((ref) {
   return const RevenueFilter();
 });
 
-/// Raw payment records across all 4 collections (cached in memory).
+/// Live stream provider for Razorpay synchronization metadata.
+final revenueSyncMetadataProvider = StreamProvider<DocumentSnapshot<Map<String, dynamic>>>((ref) {
+  final repo = ref.watch(revenueRepositoryProvider);
+  return repo.watchSyncMetadata();
+});
+
+/// Refunds provider.
+final revenueRefundsProvider = FutureProvider<List<RefundRecord>>((ref) async {
+  final repo = ref.watch(revenueRepositoryProvider);
+  return repo.fetchRefunds();
+});
+
+/// Settlements provider.
+final revenueSettlementsProvider = FutureProvider<List<SettlementRecord>>((ref) async {
+  final repo = ref.watch(revenueRepositoryProvider);
+  return repo.fetchSettlements();
+});
+
+/// Audit logs provider.
+final revenueAuditLogsProvider = FutureProvider<List<AuditLogRecord>>((ref) async {
+  final repo = ref.watch(revenueRepositoryProvider);
+  return repo.fetchAuditLogs();
+});
+
+/// Syncing in-progress state.
+final revenueIsSyncingProvider = StateProvider<bool>((ref) => false);
+
+/// Raw payment records across ledger / fallback collections.
 final revenueRawRecordsProvider = FutureProvider<List<PaymentRecord>>((
   ref,
 ) async {
@@ -66,10 +103,19 @@ final revenueAnalyticsDataProvider = Provider<AsyncValue<RevenueAnalyticsData>>(
     final rawAsync = ref.watch(revenueRawRecordsProvider);
     final filter = ref.watch(revenueFilterProvider);
     final repo = ref.watch(revenueRepositoryProvider);
+    final syncMetaSnap = ref.watch(revenueSyncMetadataProvider).value;
+    final refunds = ref.watch(revenueRefundsProvider).value ?? [];
+    final settlements = ref.watch(revenueSettlementsProvider).value ?? [];
 
     return rawAsync.when(
       data: (records) {
-        final analytics = repo.computeAnalytics(records, filter);
+        final analytics = repo.computeAnalytics(
+          records,
+          filter,
+          syncMetadata: syncMetaSnap?.data(),
+          refunds: refunds,
+          settlements: settlements,
+        );
         return AsyncValue.data(analytics);
       },
       loading: () => const AsyncValue.loading(),
@@ -98,13 +144,8 @@ final revenueTransactionPageSizeProvider = StateProvider<int>((ref) => 25);
 
 /// Local state for the Category Wise Revenue tab.
 class CategoryWiseLocalState {
-  /// The category the user clicked to drill into (null = show all cards).
   final String? selectedCategory;
-
-  /// Local stream filter — null means "All Streams".
   final PaymentStream? localStream;
-
-  /// Local city filter — null means "All Cities".
   final String? localCity;
 
   const CategoryWiseLocalState({

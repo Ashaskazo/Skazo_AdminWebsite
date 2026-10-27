@@ -6,6 +6,7 @@ import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/services/plan_classification_service.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
@@ -849,8 +850,11 @@ class _UserListTileState extends State<_UserListTile>
                       ),
                     ],
                   ),
+                  // [PPL DISABLED] Pay Per Lead rate badge disabled
+                  /*
                   if (user.payperLeadCharge != null &&
-                      user.payperLeadCharge! > 0)
+                      user.payperLeadCharge! > 0 &&
+                      PlanClassificationService.isPremium(user))
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -883,6 +887,7 @@ class _UserListTileState extends State<_UserListTile>
                         ],
                       ),
                     ),
+                  */
                 ],
               ),
             ],

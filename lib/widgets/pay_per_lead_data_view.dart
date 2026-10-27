@@ -53,7 +53,9 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   /// ------------------------------------------------------------
 
   void _applyFilters() {
-    ref.read(payPerLeadPaginationProvider.notifier).applyFilters(
+    ref
+        .read(payPerLeadPaginationProvider.notifier)
+        .applyFilters(
           city: _selectedCity,
           dateFrom: _dateFrom,
           dateTo: _dateTo,
@@ -144,9 +146,7 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
               _buildSummaryBanner(state),
 
               /// Expanded content area fills all available vertical space
-              Expanded(
-                child: _buildContent(state, isDesktop),
-              ),
+              Expanded(child: _buildContent(state, isDesktop)),
 
               /// Pinned pagination footer (outside scrolling area, stays visible)
               if (state.providers.isNotEmpty ||
@@ -200,27 +200,7 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Text(
-                        'READ-ONLY',
-                        style: GoogleFonts.poppins(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF64748B),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
+                   
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -342,11 +322,12 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                   ),
                 );
               },
-              loading: () => const SizedBox(
-                width: 140,
-                height: 42,
-                child: Center(child: LinearProgressIndicator()),
-              ),
+              loading:
+                  () => const SizedBox(
+                    width: 140,
+                    height: 42,
+                    child: Center(child: LinearProgressIndicator()),
+                  ),
               error: (_, __) => const SizedBox.shrink(),
             ),
 
@@ -361,9 +342,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _dateFrom != null
-                        ? const Color(0xFF0284C7)
-                        : const Color(0xFFE2E8F0),
+                    color:
+                        _dateFrom != null
+                            ? const Color(0xFF0284C7)
+                            : const Color(0xFFE2E8F0),
                   ),
                 ),
                 child: Row(
@@ -381,12 +363,14 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                           : 'Date From',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
-                        color: _dateFrom != null
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF64748B),
-                        fontWeight: _dateFrom != null
-                            ? FontWeight.w500
-                            : FontWeight.w400,
+                        color:
+                            _dateFrom != null
+                                ? const Color(0xFF0F172A)
+                                : const Color(0xFF64748B),
+                        fontWeight:
+                            _dateFrom != null
+                                ? FontWeight.w500
+                                : FontWeight.w400,
                       ),
                     ),
                   ],
@@ -405,9 +389,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _dateTo != null
-                        ? const Color(0xFF0284C7)
-                        : const Color(0xFFE2E8F0),
+                    color:
+                        _dateTo != null
+                            ? const Color(0xFF0284C7)
+                            : const Color(0xFFE2E8F0),
                   ),
                 ),
                 child: Row(
@@ -425,9 +410,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                           : 'Date To',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
-                        color: _dateTo != null
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF64748B),
+                        color:
+                            _dateTo != null
+                                ? const Color(0xFF0F172A)
+                                : const Color(0xFF64748B),
                         fontWeight:
                             _dateTo != null ? FontWeight.w500 : FontWeight.w400,
                       ),
@@ -533,12 +519,9 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   /// ------------------------------------------------------------
 
   Widget _buildSummaryBanner(PayPerLeadPaginationState state) {
-    final balanceText = state.isLoading
-        ? '...'
-        : _formatCurrency(state.totalBillBalance ?? 0);
-    final countText = state.isLoading
-        ? '...'
-        : '${state.totalCount ?? 0}';
+    final balanceText =
+        state.isLoading ? '...' : _formatCurrency(state.totalBillBalance ?? 0);
+    final countText = state.isLoading ? '...' : '${state.totalCount ?? 0}';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
@@ -719,9 +702,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
     return Stack(
       children: [
         Positioned.fill(
-          child: isDesktop
-              ? _buildDesktopTable(state)
-              : _buildMobileCardsList(state),
+          child:
+              isDesktop
+                  ? _buildDesktopTable(state)
+                  : _buildMobileCardsList(state),
         ),
 
         /// Loading badge while navigating pages (without removing table content)
@@ -1146,14 +1130,17 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                           DataCell(
                             Text(
                               user.overallpayperleadamount != null
-                                  ? _formatCurrency(user.overallpayperleadamount)
+                                  ? _formatCurrency(
+                                    user.overallpayperleadamount,
+                                  )
                                   : '--',
                               style: GoogleFonts.poppins(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: user.overallpayperleadamount != null
-                                    ? const Color(0xFF0F172A)
-                                    : const Color(0xFF94A3B8),
+                                color:
+                                    user.overallpayperleadamount != null
+                                        ? const Color(0xFF0F172A)
+                                        : const Color(0xFF94A3B8),
                               ),
                             ),
                           ),
@@ -1412,13 +1399,16 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   Widget _buildPaginationFooter(PayPerLeadPaginationState state) {
     final int total = state.totalCount ?? state.providers.length;
     final int start = total == 0 ? 0 : (state.currentPage * state.pageSize) + 1;
-    final int end = total == 0
-        ? 0
-        : min((state.currentPage + 1) * state.pageSize, total);
+    final int end =
+        total == 0 ? 0 : min((state.currentPage + 1) * state.pageSize, total);
 
-    final int totalPages = state.totalCount != null
-        ? max(1, ((state.totalCount! + state.pageSize - 1) ~/ state.pageSize))
-        : (state.currentPage + 1);
+    final int totalPages =
+        state.totalCount != null
+            ? max(
+              1,
+              ((state.totalCount! + state.pageSize - 1) ~/ state.pageSize),
+            )
+            : (state.currentPage + 1);
 
     final bool canGoPrevious = state.currentPage > 0 && !state.isLoadingPage;
     final bool canGoNext = state.hasNextPage && !state.isLoadingPage;
@@ -1428,9 +1418,7 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE2E8F0)),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1440,8 +1428,8 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
               total > 0
                   ? 'Showing $start–$end of $total providers'
                   : state.isLoading
-                      ? 'Loading providers...'
-                      : 'No providers to display',
+                  ? 'Loading providers...'
+                  : 'No providers to display',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: const Color(0xFF64748B),
@@ -1455,13 +1443,14 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
             children: [
               IconButton(
                 tooltip: 'Previous Page',
-                onPressed: canGoPrevious
-                    ? () {
-                        ref
-                            .read(payPerLeadPaginationProvider.notifier)
-                            .prevPage();
-                      }
-                    : null,
+                onPressed:
+                    canGoPrevious
+                        ? () {
+                          ref
+                              .read(payPerLeadPaginationProvider.notifier)
+                              .prevPage();
+                        }
+                        : null,
                 icon: const Icon(Icons.chevron_left_rounded),
               ),
               const SizedBox(width: 4),
@@ -1489,13 +1478,14 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
               const SizedBox(width: 4),
               IconButton(
                 tooltip: 'Next Page',
-                onPressed: canGoNext
-                    ? () {
-                        ref
-                            .read(payPerLeadPaginationProvider.notifier)
-                            .nextPage();
-                      }
-                    : null,
+                onPressed:
+                    canGoNext
+                        ? () {
+                          ref
+                              .read(payPerLeadPaginationProvider.notifier)
+                              .nextPage();
+                        }
+                        : null,
                 icon: const Icon(Icons.chevron_right_rounded),
               ),
             ],
@@ -1582,10 +1572,7 @@ class _PayPerLeadDetailsDialogState
 
     try {
       final repo = ref.read(userRepositoryProvider);
-      await repo.savePayPerLeadFeedback(
-        userId: widget.user.id,
-        feedback: text,
-      );
+      await repo.savePayPerLeadFeedback(userId: widget.user.id, feedback: text);
 
       // Update in-memory state so it's immediately reflected
       ref
@@ -1653,9 +1640,7 @@ class _PayPerLeadDetailsDialogState
     final dialogWidth = min(screenWidth * 0.9, 520.0);
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24),
       title: Row(
@@ -1717,10 +1702,7 @@ class _PayPerLeadDetailsDialogState
               ),
               _buildRow('City', user.city ?? user.cityKey ?? '--'),
               const Divider(height: 24, color: Color(0xFFF1F5F9)),
-              _buildRow(
-                'Bill Balance',
-                _formatCurrency(user.payperLeadCharge),
-              ),
+              _buildRow('Bill Balance', _formatCurrency(user.payperLeadCharge)),
               _buildRow(
                 'PPL Payment Date',
                 _formatDate(user.lastpaymentpayperlead),
@@ -1814,16 +1796,17 @@ class _PayPerLeadDetailsDialogState
                 alignment: Alignment.centerRight,
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _saveFeedback,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_rounded, size: 16),
+                  icon:
+                      _isSaving
+                          ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.save_rounded, size: 16),
                   label: Text(_isSaving ? 'Saving...' : 'Save Feedback'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0284C7),

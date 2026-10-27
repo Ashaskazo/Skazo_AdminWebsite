@@ -23,6 +23,7 @@ import 'package:skazo_admin/widgets/payments_data_view.dart';
 import 'package:skazo_admin/widgets/pay_per_lead_data_view.dart';
 import 'package:skazo_admin/widgets/service_providers_data_view.dart';
 import '../widgets/call_logs_data_view.dart';
+import 'package:skazo_admin/widgets/pending_provider_feedback_data_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -133,10 +134,19 @@ class DashboardPage extends ConsumerWidget {
         );
       case DashboardView.logs:
         return const CallLogsDataView();
+      case DashboardView.pendingProviderFeedback:
+        return const PendingProviderFeedbackDataView();
       case DashboardView.payments:
         return const PaymentsDataView();
       case DashboardView.payPerLead:
-        return const PayPerLeadDataView();
+        // [PPL DISABLED] Pay Per Lead screen temporarily disabled
+        return const Center(
+          child: Text(
+            'Pay Per Lead module is temporarily disabled.',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        );
+        // return const PayPerLeadDataView();
     }
   }
 }
@@ -186,7 +196,9 @@ class _SummaryDashboard extends ConsumerWidget {
                       Row(
                         children: [
                           Text(
-                            'Welcome Back, $adminName! 👑',
+                            'Welcome Back, Boss! 👑',
+
+                            // 'Welcome Back, $adminName! 👑',
                             style: GoogleFonts.poppins(
                               fontSize: 26,
                               fontWeight: FontWeight.w800,

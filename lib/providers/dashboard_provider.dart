@@ -17,6 +17,7 @@ enum DashboardView {
   logs,
   payments,
   payPerLead,
+  pendingProviderFeedback,
 }
 
 // Manual StateProvider for the current dashboard view

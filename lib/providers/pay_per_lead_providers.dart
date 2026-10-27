@@ -1565,6 +1565,8 @@ import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 
+import '../services/plan_classification_service.dart';
+
 /// Sort order for Pay Per Lead Payment Date.
 enum PayPerLeadSortOrder {
   newest,
@@ -1826,31 +1828,48 @@ class PayPerLeadPaginationNotifier
               );
 
     try {
-      // --------------------------------------------------------
-      // ONE FIRESTORE DATA LOAD
-      // --------------------------------------------------------
+final List<UserModel> fetchedProviders =
+    await repo.fetchAllPayPerLeadProviders(
+  selectedCity: city,
+  dateFrom: dateFrom,
+  dateTo: dateTo,
+  assignedCities: assignedCities,
+  isSuperAdmin: isSuperAdmin,
+  sortDescending:
+      resolvedSort ==
+          PayPerLeadSortOrder.newest,
+);
+
+/// ------------------------------------------------------------
+/// PREMIUM CATEGORY FILTER
+/// ------------------------------------------------------------
+///
+/// Pay Per Lead is shown ONLY for Premium categories.
+///
+/// Required conditions:
+/// 1. Provider must already satisfy the repository's
+///    Pay Per Lead condition (isuser == false + charge > 0).
+/// 2. Provider category must be one of the explicitly
+///    configured Premium categories.
+///
+/// Plan/payment/verification status must NOT make a
+/// non-Premium category Premium.
+final List<UserModel> allProviders =
+    fetchedProviders.where((provider) {
+  return PlanClassificationService.isPremium(provider);
+}).toList();
       //
-      // We intentionally do NOT call:
-      //
-      // count()
-      //
-      // because the full filtered list already gives us:
-      //
-      // 1. total provider count
-      // 2. total Bill Balance
-      // 3. all records needed for local pagination
-      //
-      final List<UserModel> allProviders =
-          await repo.fetchAllPayPerLeadProviders(
-        selectedCity: city,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuperAdmin,
-        sortDescending:
-            resolvedSort ==
-                PayPerLeadSortOrder.newest,
-      );
+      // final List<UserModel> allProviders =
+      //     await repo.fetchAllPayPerLeadProviders(
+      //   selectedCity: city,
+      //   dateFrom: dateFrom,
+      //   dateTo: dateTo,
+      //   assignedCities: assignedCities,
+      //   isSuperAdmin: isSuperAdmin,
+      //   sortDescending:
+      //       resolvedSort ==
+      //           PayPerLeadSortOrder.newest,
+      // );
 
       if (_disposed ||
           requestId != _requestId) {

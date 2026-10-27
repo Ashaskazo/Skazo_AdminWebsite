@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/services/plan_classification_service.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
@@ -509,14 +510,7 @@ class PaginatedRentalNotifier
     } else if (filterType == 'Premium') {
       temp =
           temp.where((p) {
-            final plan = p['ownerPlan']?.toString().toLowerCase() ?? '';
-            final isBoosted = p['isBoosted'] == true;
-            final isPremium = p['isPremium'] == true;
-            return plan.contains('premium') ||
-                plan == 'paid' ||
-                plan == '599' ||
-                isBoosted ||
-                isPremium;
+            return PlanClassificationService.isPremium(p);
           }).toList();
     }
 

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:skazo_admin/models/payment_record.dart';
 
@@ -190,12 +191,13 @@ class RevenueFilter {
       final q = searchQuery.toLowerCase();
       final matchTxn = record.transactionId.toLowerCase().contains(q);
       final matchRazorpay = record.razorpayPaymentId?.toLowerCase().contains(q) ?? false;
+      final matchOrder = record.razorpayOrderId?.toLowerCase().contains(q) ?? false;
       final matchUser = record.userName?.toLowerCase().contains(q) ?? false;
       final matchPhone = record.userPhone?.toString().contains(q) ?? false;
       final matchCity = record.city.toLowerCase().contains(q);
       final matchCategory = record.category.toLowerCase().contains(q);
       final matchDoc = record.sourceDocumentId.toLowerCase().contains(q);
-      if (!matchTxn && !matchRazorpay && !matchUser && !matchPhone && !matchCity && !matchCategory && !matchDoc) {
+      if (!matchTxn && !matchRazorpay && !matchOrder && !matchUser && !matchPhone && !matchCity && !matchCategory && !matchDoc) {
         return false;
       }
     }
@@ -210,6 +212,8 @@ class StreamBreakdownItem {
   final int transactionCount;
   final double collectedRevenue;
   final double outstandingAmount;
+  final double refundedAmount;
+  final double netAmount;
   final double revenuePercentage;
 
   const StreamBreakdownItem({
@@ -217,8 +221,10 @@ class StreamBreakdownItem {
     required this.transactionCount,
     required this.collectedRevenue,
     required this.outstandingAmount,
+    this.refundedAmount = 0.0,
+    double? netAmount,
     required this.revenuePercentage,
-  });
+  }) : netAmount = netAmount ?? (collectedRevenue - refundedAmount);
 }
 
 /// Breakdown per city.
@@ -227,6 +233,8 @@ class CityBreakdownItem {
   final int transactionCount;
   final double collectedRevenue;
   final double outstandingAmount;
+  final double refundedAmount;
+  final double netAmount;
   final int uniqueUsers;
   final double averagePayment;
 
@@ -235,9 +243,11 @@ class CityBreakdownItem {
     required this.transactionCount,
     required this.collectedRevenue,
     required this.outstandingAmount,
+    this.refundedAmount = 0.0,
+    double? netAmount,
     required this.uniqueUsers,
     required this.averagePayment,
-  });
+  }) : netAmount = netAmount ?? (collectedRevenue - refundedAmount);
 }
 
 /// Breakdown per category.
@@ -246,6 +256,8 @@ class CategoryBreakdownItem {
   final int transactionCount;
   final double collectedRevenue;
   final double outstandingAmount;
+  final double refundedAmount;
+  final double netAmount;
   final int uniqueUsers;
 
   const CategoryBreakdownItem({
@@ -253,8 +265,145 @@ class CategoryBreakdownItem {
     required this.transactionCount,
     required this.collectedRevenue,
     required this.outstandingAmount,
+    this.refundedAmount = 0.0,
+    double? netAmount,
     required this.uniqueUsers,
+  }) : netAmount = netAmount ?? (collectedRevenue - refundedAmount);
+}
+
+/// Record representing a refund.
+class RefundRecord {
+  final String id;
+  final String refundId;
+  final String paymentId;
+  final double amount;
+  final String status;
+  final DateTime? refundDate;
+  final String? customerName;
+  final String? reason;
+  final String source;
+
+  const RefundRecord({
+    required this.id,
+    required this.refundId,
+    required this.paymentId,
+    required this.amount,
+    required this.status,
+    this.refundDate,
+    this.customerName,
+    this.reason,
+    required this.source,
   });
+
+  factory RefundRecord.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>? ?? {};
+    DateTime? parseDate(dynamic v) {
+      if (v is Timestamp) return v.toDate();
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }
+
+    return RefundRecord(
+      id: doc.id,
+      refundId: d['refundId']?.toString() ?? doc.id,
+      paymentId: d['paymentId']?.toString() ?? '',
+      amount: (d['amount'] as num?)?.toDouble() ?? 0.0,
+      status: d['status']?.toString() ?? 'processed',
+      refundDate: parseDate(d['refundDate'] ?? d['createdAt']),
+      customerName: d['customerName']?.toString(),
+      reason: d['reason']?.toString(),
+      source: d['source']?.toString() ?? 'razorpay',
+    );
+  }
+}
+
+/// Record representing a Razorpay settlement.
+class SettlementRecord {
+  final String id;
+  final String settlementId;
+  final double amount;
+  final double fees;
+  final double tax;
+  final double netSettlement;
+  final String utr;
+  final String status;
+  final DateTime? settlementDate;
+
+  const SettlementRecord({
+    required this.id,
+    required this.settlementId,
+    required this.amount,
+    required this.fees,
+    required this.tax,
+    required this.netSettlement,
+    required this.utr,
+    required this.status,
+    this.settlementDate,
+  });
+
+  factory SettlementRecord.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>? ?? {};
+    DateTime? parseDate(dynamic v) {
+      if (v is Timestamp) return v.toDate();
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }
+
+    return SettlementRecord(
+      id: doc.id,
+      settlementId: d['settlementId']?.toString() ?? doc.id,
+      amount: (d['amount'] as num?)?.toDouble() ?? 0.0,
+      fees: (d['fees'] as num?)?.toDouble() ?? 0.0,
+      tax: (d['tax'] as num?)?.toDouble() ?? 0.0,
+      netSettlement: (d['netSettlement'] as num?)?.toDouble() ?? 0.0,
+      utr: d['utr']?.toString() ?? '',
+      status: d['status']?.toString() ?? 'processed',
+      settlementDate: parseDate(d['settlementDate'] ?? d['createdAt']),
+    );
+  }
+}
+
+/// Audit log entry.
+class AuditLogRecord {
+  final String id;
+  final String actor;
+  final String action;
+  final String? transactionId;
+  final DateTime? timestamp;
+  final Map<String, dynamic> previousState;
+  final Map<String, dynamic> newState;
+
+  const AuditLogRecord({
+    required this.id,
+    required this.actor,
+    required this.action,
+    this.transactionId,
+    this.timestamp,
+    this.previousState = const {},
+    this.newState = const {},
+  });
+
+  factory AuditLogRecord.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>? ?? {};
+    DateTime? parseDate(dynamic v) {
+      if (v is Timestamp) return v.toDate();
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }
+
+    return AuditLogRecord(
+      id: doc.id,
+      actor: d['actor']?.toString() ?? 'system',
+      action: d['action']?.toString() ?? 'ACTION',
+      transactionId: d['transactionId']?.toString(),
+      timestamp: parseDate(d['timestamp'] ?? d['createdAt']),
+      previousState: d['previousState'] is Map ? Map<String, dynamic>.from(d['previousState']) : {},
+      newState: d['newState'] is Map ? Map<String, dynamic>.from(d['newState']) : {},
+    );
+  }
 }
 
 /// Summary of reconciliation against Razorpay.
@@ -267,9 +416,11 @@ class ReconciliationSummary {
   final int missingInRazorpayCount;
   final int amountMismatchCount;
   final int dateMismatchCount;
+  final int duplicateCount;
   final int unmappedCount;
   final int needsReviewCount;
   final bool isRazorpayConnected;
+  final DateTime? lastSyncTime;
 
   const ReconciliationSummary({
     required this.firebaseTotal,
@@ -280,9 +431,11 @@ class ReconciliationSummary {
     required this.missingInRazorpayCount,
     required this.amountMismatchCount,
     required this.dateMismatchCount,
+    this.duplicateCount = 0,
     required this.unmappedCount,
     required this.needsReviewCount,
     required this.isRazorpayConnected,
+    this.lastSyncTime,
   });
 }
 
@@ -290,8 +443,17 @@ class ReconciliationSummary {
 class RevenueAnalyticsData {
   final double totalCollectedRevenue;
   final double currentPeriodRevenue;
+  final double todayRevenue;
+  final double thisWeekRevenue;
+  final double thisMonthRevenue;
+  final double thisYearRevenue;
   final int totalTransactions;
   final double outstandingPayPerLead;
+  final double totalRefunded;
+  final double netCollectedRevenue;
+  final int failedPaymentsCount;
+  final double paymentSuccessRate;
+
   final double providerRevenue;
   final double propertyRevenue;
   final double agentRevenue;
@@ -304,14 +466,24 @@ class RevenueAnalyticsData {
   final List<CategoryBreakdownItem> categoryBreakdown;
   final ReconciliationSummary reconciliationSummary;
   final List<PaymentRecord> allMatchingRecords;
+  final List<RefundRecord> refunds;
+  final List<SettlementRecord> settlements;
   final List<String> dataWarnings;
   final DateTime computedAt;
 
   const RevenueAnalyticsData({
     required this.totalCollectedRevenue,
     required this.currentPeriodRevenue,
+    this.todayRevenue = 0.0,
+    this.thisWeekRevenue = 0.0,
+    this.thisMonthRevenue = 0.0,
+    this.thisYearRevenue = 0.0,
     required this.totalTransactions,
     required this.outstandingPayPerLead,
+    this.totalRefunded = 0.0,
+    double? netCollectedRevenue,
+    this.failedPaymentsCount = 0,
+    this.paymentSuccessRate = 100.0,
     required this.providerRevenue,
     required this.propertyRevenue,
     required this.agentRevenue,
@@ -323,7 +495,9 @@ class RevenueAnalyticsData {
     required this.categoryBreakdown,
     required this.reconciliationSummary,
     required this.allMatchingRecords,
+    this.refunds = const [],
+    this.settlements = const [],
     required this.dataWarnings,
     required this.computedAt,
-  });
+  }) : netCollectedRevenue = netCollectedRevenue ?? (totalCollectedRevenue - totalRefunded);
 }

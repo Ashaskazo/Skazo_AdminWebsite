@@ -214,6 +214,16 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
                   badge: 'LIVE',
                 ),
+                _buildNavItem(
+                  ref,
+                  'Pending Provider Feedback',
+                  Icons.feedback_rounded,
+                  DashboardView.pendingProviderFeedback,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
+                  badge: 'PENDING',
+                ),
                 // _buildNavItem(
                 //   ref,
                 //   'Service Posts',
@@ -241,16 +251,18 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFFEC4899), Color(0xFFDB2777)],
                 ),
-                _buildNavItem(
-                  ref,
-                  'Payments & Revenue',
-                  Icons.account_balance_wallet_rounded,
-                  DashboardView.payments,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
-                  badge: '₹💰',
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'Payments & Revenue',
+                //   Icons.account_balance_wallet_rounded,
+                //   DashboardView.payments,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
+                //   badge: '₹💰',
+                // ),
+                // [PPL DISABLED] Pay Per Lead navigation item temporarily disabled
+                /*
                 _buildNavItem(
                   ref,
                   'Pay Per Lead',
@@ -261,6 +273,7 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
                   badge: 'PPL',
                 ),
+                */
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('OPERATIONS & HELPDESK 🛠️', isCollapsed),

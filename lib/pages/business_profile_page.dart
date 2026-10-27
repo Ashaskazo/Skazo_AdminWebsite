@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/widgets/provider_call_logs_section.dart';
 
 class _ServiceRateCardItemControllers {
   final TextEditingController serviceController;
@@ -309,34 +310,31 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       text: rawStar?.toString() ?? '0',
     );
 
-    _isVerified =
-        data['isverified'] == true ||
-        data['isverified'] == 'true' ||
-        data['isverified'] == 1;
+    _isVerified = data['isverified'] == true;
 
     // Deactivation and Active state
-    final isDeactivatedRaw =
-        data['isProviderDeativatedStatus'] == true ||
-        data['isProviderDeativatedStatus'] == 'true' ||
-        data['isDeactivated'] == true ||
-        data['isDeactivated'] == 'true';
-    final isActiveRaw =
-        data['isactive'] == true ||
-        data['isactive'] == 'true' ||
-        data['isactive'] == 1;
+    final isDeactivatedRaw = data['isProviderDeativatedStatus'] == true;
+    // data['isProviderDeativatedStatus'] == 'true' ||
+    data['isDeactivated'] == true;
+    // data['isDeactivated'] == 'true';
+    final isActiveRaw = data['isactive'] == true;
+    // data['isactive'] == 'true' ||
+    data['isactive'] == 1;
 
     _isActive = !isDeactivatedRaw && isActiveRaw;
     _isProviderTemperoryDeactivatedStatus =
-        data['isProviderTemperoryDeactivatedStatus'] == true ||
-        data['isProviderTemperoryDeactivatedStatus'] == 'true';
+        data['isProviderTemperoryDeactivatedStatus'] == true
+    // ||
+    // data['isProviderTemperoryDeactivatedStatus'] == 'true'
+    ;
 
     _basicPlanEnable =
         data['basicplanenable'] == true || data['basicplanenable'] == 'true';
-    _priority =
-        data['priority'] == true ||
-        data['priority'] == 1 ||
-        data['priority'] == '1' ||
-        data['priority'] == 'true';
+    _priority = data['priority'] == true;
+    //  ||
+    // data['priority'] == 1 ||
+    // data['priority'] == '1' ||
+    // data['priority'] == 'true';
     _isOnline = data['isonline'] == true || data['isonline'] == 'true';
     _profileComplete =
         data['profileComplete'] == true || data['profileComplete'] == 'true';
@@ -347,10 +345,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         data['paymentLinkSend'] == true || data['paymentLinkSend'] == 'true';
 
     if (data.containsKey('isuser') && data['isuser'] != null) {
-      _isUser =
-          data['isuser'] == true ||
-          data['isuser'] == 'true' ||
-          data['isuser'] == 1;
+      _isUser = data['isuser'] == true;
+      // data['isuser'] == 'true' ||
+      // data['isuser'] == 1;
     } else {
       final bName = data['businessname']?.toString().trim() ?? '';
       final bPic = data['businesspic']?.toString().trim() ?? '';
@@ -433,6 +430,19 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         widget.businessData['docId'];
     final value = raw?.toString().trim();
     return (value == null || value.isEmpty) ? null : value;
+  }
+
+  String? _getProviderUid() {
+    final data = _liveData ?? widget.businessData;
+    final raw =
+        data['id'] ??
+        data['uid'] ??
+        data['docId'] ??
+        widget.businessData['id'] ??
+        widget.businessData['uid'] ??
+        widget.businessData['docId'];
+    final value = raw?.toString().trim();
+    return (value == null || value.isEmpty) ? _documentId() : value;
   }
 
   String _stringListToMultiline(dynamic value) {
@@ -654,40 +664,42 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
       cancelOnError: false,
     );
   }
-void _applyFirestoreSnapshotToUi(
-  Map<String, dynamic> data, {
-  bool clearDirtyState = false,
-}) {
-  if (!mounted) return;
 
-  _applyingLiveData = true;
+  void _applyFirestoreSnapshotToUi(
+    Map<String, dynamic> data, {
+    bool clearDirtyState = false,
+  }) {
+    if (!mounted) return;
 
-  try {
-    _syncEditableStateFromFirestore(data);
+    _applyingLiveData = true;
 
-    _liveData = Map<String, dynamic>.from(data);
+    try {
+      _syncEditableStateFromFirestore(data);
 
-    if (clearDirtyState) {
-      _hasUnsavedChanges = false;
-      _pendingRealtimeData = null;
+      _liveData = Map<String, dynamic>.from(data);
+
+      if (clearDirtyState) {
+        _hasUnsavedChanges = false;
+        _pendingRealtimeData = null;
+      }
+    } finally {
+      _applyingLiveData = false;
     }
-  } finally {
-    _applyingLiveData = false;
+
+    if (!mounted) return;
+
+    setState(() {
+      _liveData = Map<String, dynamic>.from(data);
+      _isDocumentDeleted = false;
+      _isRealtimeConnected = true;
+
+      if (clearDirtyState) {
+        _hasUnsavedChanges = false;
+        _pendingRealtimeData = null;
+      }
+    });
   }
 
-  if (!mounted) return;
-
-  setState(() {
-    _liveData = Map<String, dynamic>.from(data);
-    _isDocumentDeleted = false;
-    _isRealtimeConnected = true;
-
-    if (clearDirtyState) {
-      _hasUnsavedChanges = false;
-      _pendingRealtimeData = null;
-    }
-  });
-}
   void _setControllerText(TextEditingController controller, String value) {
     if (controller.text == value) return;
     controller.value = controller.value.copyWith(
@@ -961,555 +973,427 @@ void _applyFirestoreSnapshotToUi(
     });
   }
 
- Future<void> _saveChanges() async {
-  if (_isSaving) return;
+  Future<void> _saveChanges() async {
+    if (_isSaving) return;
 
-  if (!_formKey.currentState!.validate()) {
-    return;
-  }
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
-  final docId = _documentId();
+    final docId = _documentId();
 
-  if (docId == null) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Document ID is missing. Cannot update profile in Firebase.',
+    if (docId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Document ID is missing. Cannot update profile in Firebase.',
+            ),
+            backgroundColor: Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
           ),
-          backgroundColor: Color(0xFFEF4444),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _isLoading = true;
+    });
+
+    try {
+      // -----------------------------------------------------------------------
+      // ADMIN INFORMATION
+      // -----------------------------------------------------------------------
+
+      final adminProfile = ref.read(currentAdminProfileProvider).value;
+
+      final senderId =
+          adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
+
+      final senderName = adminProfile?['name'] ?? 'Unknown';
+
+      // -----------------------------------------------------------------------
+      // PHONE
+      // -----------------------------------------------------------------------
+
+      final phoneText = _phoneController.text.trim();
+
+      final dynamic phoneValue =
+          phoneText.isEmpty ? null : (int.tryParse(phoneText) ?? phoneText);
+
+      // -----------------------------------------------------------------------
+      // PLAN
+      // -----------------------------------------------------------------------
+
+      final planVal = int.tryParse(_planController.text.trim()) ?? 0;
+
+      // -----------------------------------------------------------------------
+      // SERVICE RATE CARD
+      // -----------------------------------------------------------------------
+
+      final List<Map<String, String>> rateCardList = [];
+
+      for (final item in _serviceRateCardControllers) {
+        final serviceName = item.serviceController.text.trim();
+
+        final rate = item.rateController.text.trim();
+
+        if (serviceName.isNotEmpty || rate.isNotEmpty) {
+          rateCardList.add({'service': serviceName, 'rate': rate});
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // PAY PER LEAD
+      // -----------------------------------------------------------------------
+
+      final leadChargeText = _payPerLeadChargeController.text.trim();
+
+      final num leadChargeValue =
+          leadChargeText.isEmpty ? 0 : (num.tryParse(leadChargeText) ?? 0);
+
+      // -----------------------------------------------------------------------
+      // EXTRA PLAN
+      // -----------------------------------------------------------------------
+
+      final extraPlanText = _extraPlanChargeController.text.trim();
+
+      final num extraPlanValue =
+          extraPlanText.isEmpty ? 0 : (num.tryParse(extraPlanText) ?? 0);
+
+      // -----------------------------------------------------------------------
+      // COORDINATES
+      // -----------------------------------------------------------------------
+
+      final latitude = double.tryParse(_latitudeController.text.trim());
+
+      final longitude = double.tryParse(_longitudeController.text.trim());
+
+      if (latitude == null || longitude == null) {
+        throw 'Latitude and longitude must be valid numbers.';
+      }
+
+      if (latitude < -90 || latitude > 90) {
+        throw 'Latitude must be between -90 and 90.';
+      }
+
+      if (longitude < -180 || longitude > 180) {
+        throw 'Longitude must be between -180 and 180.';
+      }
+
+      // -----------------------------------------------------------------------
+      // CATEGORY PRIORITY
+      // -----------------------------------------------------------------------
+
+      final Map<String, dynamic> categoryPriorityMap = {};
+
+      for (final entry in _categoryPriorityControllers.entries) {
+        categoryPriorityMap[entry.key] =
+            int.tryParse(entry.value.text.trim()) ?? 0;
+      }
+
+      // -----------------------------------------------------------------------
+      // STAR PROVIDER
+      // -----------------------------------------------------------------------
+
+      final starValue = _starServiceProviderController.text.trim();
+
+      final normalizedStar = starValue == '1' ? '1' : '0';
+
+      // -----------------------------------------------------------------------
+      // DEACTIVATION
+      // -----------------------------------------------------------------------
+
+      final bool isDeactivatedValue = !_isActive;
+
+      // -----------------------------------------------------------------------
+      // PAYMENT LINK STATE
+      // -----------------------------------------------------------------------
+
+      final bool previousPaymentLinkSent =
+          (_liveData?['paymentLinkSend'] ??
+              widget.businessData['paymentLinkSend']) ==
+          true;
+
+      // -----------------------------------------------------------------------
+      // FIRESTORE UPDATE
+      // -----------------------------------------------------------------------
+
+      final Map<String, dynamic> updatedData = {
+        'businessname': _nameController.text.trim(),
+
+        'businessbio': _bioController.text.trim(),
+
+        'businessaddress': _addressController.text.trim(),
+
+        'businessPincode': _businessPincodeController.text.trim(),
+
+        'businessLocation': _businessLocationController.text.trim(),
+
+        'businesspic': _businessPicController.text.trim(),
+
+        'businesspics': _multilineToStringList(_businessPicsController.text),
+
+        'city': _cityController.text.trim(),
+
+        'cityKey': _cityKeyController.text.trim(),
+
+        'firstname': _firstNameController.text.trim(),
+
+        'lastname': _lastNameController.text.trim(),
+
+        'email': _emailController.text.trim(),
+
+        'AtivePlan': planVal,
+
+        'priority': _priority,
+
+        'gender': _genderController.text.trim(),
+
+        'username': _usernameController.text.trim(),
+
+        'ownerPropertyPaid':
+            int.tryParse(_ownerPaidController.text.trim()) ?? 0,
+
+        'userPropertyPaid': int.tryParse(_userPaidController.text.trim()) ?? 0,
+
+        'fcmtoken': _fcmTokenController.text.trim(),
+
+        'isverified': _isVerified,
+
+        'isactive': _isActive,
+
+        'isProviderTemperoryDeactivatedStatus':
+            _isProviderTemperoryDeactivatedStatus,
+
+        'basicplanenable': _basicPlanEnable,
+
+        'isonline': _isOnline,
+
+        'isuser': _isUser,
+
+        'profileComplete': _profileComplete,
+
+        'categoryBoostEnabled': _categoryBoostEnabled,
+
+        'paymentLinkSend': _paymentLinkSend,
+
+        'StarServiceprovider': normalizedStar,
+
+        'starServiceProvider': normalizedStar,
+
+        // [PPL DISABLED] Pay Per Lead charge updates disabled
+        // 'payperLeadcharge': leadChargeValue,
+        'extraPlanCharge': extraPlanValue,
+
+        'ServiceRateCard': rateCardList,
+
+        'category': _categories,
+
+        'categoryPriority': categoryPriorityMap,
+
+        'coordinates': [latitude, longitude],
+
+        // Preserve the rest of location.*
+        // while updating only location.geopoint.
+        'location.geopoint': GeoPoint(latitude, longitude),
+
+        'transactionId': _transactionIdController.text.trim(),
+
+        'paymentPlanDuration': _paymentPlanController.text.trim(),
+
+        'paymentCount': int.tryParse(_paymentCountController.text.trim()) ?? 0,
+
+        'totalAmount': int.tryParse(_totalAmountController.text.trim()) ?? 0,
+
+        'aadhaarNumber': _aadhaarNumberController.text.trim(),
+
+        'aadhaarCardUrl': _aadhaarCardUrlController.text.trim(),
+
+        'panNumber': _panNumberController.text.trim(),
+
+        'panCardUrl': _panCardUrlController.text.trim(),
+
+        'lastPaymentAt':
+            _lastPaymentAt != null ? Timestamp.fromDate(_lastPaymentAt!) : null,
+
+        'paymentDate':
+            _paymentDate != null ? Timestamp.fromDate(_paymentDate!) : null,
+
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // -----------------------------------------------------------------------
+      // DEACTIVATION DATA
+      // -----------------------------------------------------------------------
+
+      if (isDeactivatedValue) {
+        updatedData['deactivatedAt'] = FieldValue.serverTimestamp();
+
+        final reason = _deactivationReasonController.text.trim();
+
+        if (reason.isNotEmpty) {
+          updatedData['deactivationReason'] = reason;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // PHONE
+      // -----------------------------------------------------------------------
+
+      if (phoneValue != null) {
+        updatedData['phone'] = phoneValue;
+      }
+
+      // -----------------------------------------------------------------------
+      // PAYMENT LINK AUDIT DATA
+      // -----------------------------------------------------------------------
+
+      if (_paymentLinkSend && !previousPaymentLinkSent) {
+        updatedData['paymentLinkSenderId'] = senderId;
+
+        updatedData['paymentLinkSenderName'] = senderName;
+
+        updatedData['paymentLinkSentAt'] = FieldValue.serverTimestamp();
+      }
+
+      final docRef = FirebaseFirestore.instance.collection('users').doc(docId);
+
+      debugPrint('BusinessProfilePage: saving users/$docId');
+
+      // -----------------------------------------------------------------------
+      // WRITE
+      // -----------------------------------------------------------------------
+
+      await docRef.update(updatedData);
+
+      debugPrint(
+        'BusinessProfilePage: Firestore update completed for users/$docId',
+      );
+
+      // -----------------------------------------------------------------------
+      // IMPORTANT:
+      //
+      // Do NOT depend on the realtime listener to finish the save.
+      //
+      // Explicitly obtain the authoritative server document.
+      // This eliminates the listener/update race.
+      // -----------------------------------------------------------------------
+
+      final authoritativeSnapshot = await docRef.get(
+        const GetOptions(source: Source.server),
+      );
+
+      if (!authoritativeSnapshot.exists) {
+        throw 'The user document disappeared immediately after save.';
+      }
+
+      final authoritativeData = <String, dynamic>{
+        ...?authoritativeSnapshot.data(),
+        'id': authoritativeSnapshot.id,
+      };
+
+      debugPrint(
+        'BusinessProfilePage: authoritative server snapshot received '
+        'for users/$docId',
+      );
+
+      // -----------------------------------------------------------------------
+      // APPLY SERVER STATE TO UI
+      // -----------------------------------------------------------------------
+
+      _applyingLiveData = true;
+
+      try {
+        _syncEditableStateFromFirestore(authoritativeData);
+
+        _liveData = Map<String, dynamic>.from(authoritativeData);
+
+        _pendingRealtimeData = null;
+        _hasUnsavedChanges = false;
+      } finally {
+        _applyingLiveData = false;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _liveData = Map<String, dynamic>.from(authoritativeData);
+
+        _isDocumentDeleted = false;
+        _isRealtimeConnected = true;
+        _hasUnsavedChanges = false;
+        _pendingRealtimeData = null;
+      });
+
+      // -----------------------------------------------------------------------
+      // SUCCESS
+      // -----------------------------------------------------------------------
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.stars_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Text(
+                'Profile updated successfully! ✨🚀',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } on FirebaseException catch (e) {
+      debugPrint(
+        'BusinessProfilePage Firestore save error: '
+        '${e.code} - ${e.message}',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to update profile: '
+            '${e.message ?? e.code}',
+          ),
+          backgroundColor: const Color(0xFFEF4444),
           behavior: SnackBarBehavior.floating,
         ),
       );
-    }
-    return;
-  }
-
-  setState(() {
-    _isSaving = true;
-    _isLoading = true;
-  });
-
-  try {
-    // -----------------------------------------------------------------------
-    // ADMIN INFORMATION
-    // -----------------------------------------------------------------------
-
-    final adminProfile =
-        ref.read(currentAdminProfileProvider).value;
-
-    final senderId =
-        adminProfile?['admin_id'] ??
-        adminProfile?['id'] ??
-        'Unknown';
-
-    final senderName =
-        adminProfile?['name'] ?? 'Unknown';
-
-    // -----------------------------------------------------------------------
-    // PHONE
-    // -----------------------------------------------------------------------
-
-    final phoneText = _phoneController.text.trim();
-
-    final dynamic phoneValue =
-        phoneText.isEmpty
-            ? null
-            : (int.tryParse(phoneText) ?? phoneText);
-
-    // -----------------------------------------------------------------------
-    // PLAN
-    // -----------------------------------------------------------------------
-
-    final planVal =
-        int.tryParse(_planController.text.trim()) ?? 0;
-
-    // -----------------------------------------------------------------------
-    // SERVICE RATE CARD
-    // -----------------------------------------------------------------------
-
-    final List<Map<String, String>> rateCardList = [];
-
-    for (final item in _serviceRateCardControllers) {
-      final serviceName =
-          item.serviceController.text.trim();
-
-      final rate =
-          item.rateController.text.trim();
-
-      if (serviceName.isNotEmpty || rate.isNotEmpty) {
-        rateCardList.add({
-          'service': serviceName,
-          'rate': rate,
-        });
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // PAY PER LEAD
-    // -----------------------------------------------------------------------
-
-    final leadChargeText =
-        _payPerLeadChargeController.text.trim();
-
-    final num leadChargeValue =
-        leadChargeText.isEmpty
-            ? 0
-            : (num.tryParse(leadChargeText) ?? 0);
-
-    // -----------------------------------------------------------------------
-    // EXTRA PLAN
-    // -----------------------------------------------------------------------
-
-    final extraPlanText =
-        _extraPlanChargeController.text.trim();
-
-    final num extraPlanValue =
-        extraPlanText.isEmpty
-            ? 0
-            : (num.tryParse(extraPlanText) ?? 0);
-
-    // -----------------------------------------------------------------------
-    // COORDINATES
-    // -----------------------------------------------------------------------
-
-    final latitude =
-        double.tryParse(_latitudeController.text.trim());
-
-    final longitude =
-        double.tryParse(_longitudeController.text.trim());
-
-    if (latitude == null || longitude == null) {
-      throw 'Latitude and longitude must be valid numbers.';
-    }
-
-    if (latitude < -90 || latitude > 90) {
-      throw 'Latitude must be between -90 and 90.';
-    }
-
-    if (longitude < -180 || longitude > 180) {
-      throw 'Longitude must be between -180 and 180.';
-    }
-
-    // -----------------------------------------------------------------------
-    // CATEGORY PRIORITY
-    // -----------------------------------------------------------------------
-
-    final Map<String, dynamic> categoryPriorityMap = {};
-
-    for (final entry
-        in _categoryPriorityControllers.entries) {
-      categoryPriorityMap[entry.key] =
-          int.tryParse(entry.value.text.trim()) ?? 0;
-    }
-
-    // -----------------------------------------------------------------------
-    // STAR PROVIDER
-    // -----------------------------------------------------------------------
-
-    final starValue =
-        _starServiceProviderController.text.trim();
-
-    final normalizedStar =
-        starValue == '1' ? '1' : '0';
-
-    // -----------------------------------------------------------------------
-    // DEACTIVATION
-    // -----------------------------------------------------------------------
-
-    final bool isDeactivatedValue = !_isActive;
-
-    // -----------------------------------------------------------------------
-    // PAYMENT LINK STATE
-    // -----------------------------------------------------------------------
-
-    final bool previousPaymentLinkSent =
-        (_liveData?['paymentLinkSend'] ??
-                widget.businessData['paymentLinkSend']) ==
-            true;
-
-    // -----------------------------------------------------------------------
-    // FIRESTORE UPDATE
-    // -----------------------------------------------------------------------
-
-    final Map<String, dynamic> updatedData = {
-      'businessname':
-          _nameController.text.trim(),
-
-      'businessbio':
-          _bioController.text.trim(),
-
-      'businessaddress':
-          _addressController.text.trim(),
-
-      'businessPincode':
-          _businessPincodeController.text.trim(),
-
-      'businessLocation':
-          _businessLocationController.text.trim(),
-
-      'businesspic':
-          _businessPicController.text.trim(),
-
-      'businesspics':
-          _multilineToStringList(
-            _businessPicsController.text,
-          ),
-
-      'city':
-          _cityController.text.trim(),
-
-      'cityKey':
-          _cityKeyController.text.trim(),
-
-      'firstname':
-          _firstNameController.text.trim(),
-
-      'lastname':
-          _lastNameController.text.trim(),
-
-      'email':
-          _emailController.text.trim(),
-
-      'AtivePlan':
-          planVal,
-
-      'priority':
-          _priority,
-
-      'gender':
-          _genderController.text.trim(),
-
-      'username':
-          _usernameController.text.trim(),
-
-      'ownerPropertyPaid':
-          int.tryParse(
-                _ownerPaidController.text.trim(),
-              ) ??
-              0,
-
-      'userPropertyPaid':
-          int.tryParse(
-                _userPaidController.text.trim(),
-              ) ??
-              0,
-
-      'fcmtoken':
-          _fcmTokenController.text.trim(),
-
-      'isverified':
-          _isVerified,
-
-      'isactive':
-          _isActive,
-
-      'isProviderTemperoryDeactivatedStatus':
-          _isProviderTemperoryDeactivatedStatus,
-
-      'basicplanenable':
-          _basicPlanEnable,
-
-      'isonline':
-          _isOnline,
-
-      'isuser':
-          _isUser,
-
-      'profileComplete':
-          _profileComplete,
-
-      'categoryBoostEnabled':
-          _categoryBoostEnabled,
-
-      'paymentLinkSend':
-          _paymentLinkSend,
-
-      'StarServiceprovider':
-          normalizedStar,
-
-      'starServiceProvider':
-          normalizedStar,
-
-      'payperLeadcharge':
-          leadChargeValue,
-
-      'extraPlanCharge':
-          extraPlanValue,
-
-      'ServiceRateCard':
-          rateCardList,
-
-      'category':
-          _categories,
-
-      'categoryPriority':
-          categoryPriorityMap,
-
-      'coordinates':
-          [latitude, longitude],
-
-      // Preserve the rest of location.*
-      // while updating only location.geopoint.
-      'location.geopoint':
-          GeoPoint(latitude, longitude),
-
-      'transactionId':
-          _transactionIdController.text.trim(),
-
-      'paymentPlanDuration':
-          _paymentPlanController.text.trim(),
-
-      'paymentCount':
-          int.tryParse(
-                _paymentCountController.text.trim(),
-              ) ??
-              0,
-
-      'totalAmount':
-          int.tryParse(
-                _totalAmountController.text.trim(),
-              ) ??
-              0,
-
-      'aadhaarNumber':
-          _aadhaarNumberController.text.trim(),
-
-      'aadhaarCardUrl':
-          _aadhaarCardUrlController.text.trim(),
-
-      'panNumber':
-          _panNumberController.text.trim(),
-
-      'panCardUrl':
-          _panCardUrlController.text.trim(),
-
-      'lastPaymentAt':
-          _lastPaymentAt != null
-              ? Timestamp.fromDate(_lastPaymentAt!)
-              : null,
-
-      'paymentDate':
-          _paymentDate != null
-              ? Timestamp.fromDate(_paymentDate!)
-              : null,
-
-      'updatedAt':
-          FieldValue.serverTimestamp(),
-    };
-
-    // -----------------------------------------------------------------------
-    // DEACTIVATION DATA
-    // -----------------------------------------------------------------------
-
-    if (isDeactivatedValue) {
-      updatedData['deactivatedAt'] =
-          FieldValue.serverTimestamp();
-
-      final reason =
-          _deactivationReasonController.text.trim();
-
-      if (reason.isNotEmpty) {
-        updatedData['deactivationReason'] =
-            reason;
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // PHONE
-    // -----------------------------------------------------------------------
-
-    if (phoneValue != null) {
-      updatedData['phone'] = phoneValue;
-    }
-
-    // -----------------------------------------------------------------------
-    // PAYMENT LINK AUDIT DATA
-    // -----------------------------------------------------------------------
-
-    if (_paymentLinkSend &&
-        !previousPaymentLinkSent) {
-      updatedData['paymentLinkSenderId'] =
-          senderId;
-
-      updatedData['paymentLinkSenderName'] =
-          senderName;
-
-      updatedData['paymentLinkSentAt'] =
-          FieldValue.serverTimestamp();
-    }
-
-    final docRef =
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(docId);
-
-    debugPrint(
-      'BusinessProfilePage: saving users/$docId',
-    );
-
-    // -----------------------------------------------------------------------
-    // WRITE
-    // -----------------------------------------------------------------------
-
-    await docRef.update(updatedData);
-
-    debugPrint(
-      'BusinessProfilePage: Firestore update completed for users/$docId',
-    );
-
-    // -----------------------------------------------------------------------
-    // IMPORTANT:
-    //
-    // Do NOT depend on the realtime listener to finish the save.
-    //
-    // Explicitly obtain the authoritative server document.
-    // This eliminates the listener/update race.
-    // -----------------------------------------------------------------------
-
-    final authoritativeSnapshot =
-        await docRef.get(
-      const GetOptions(
-        source: Source.server,
-      ),
-    );
-
-    if (!authoritativeSnapshot.exists) {
-      throw 'The user document disappeared immediately after save.';
-    }
-
-    final authoritativeData =
-        <String, dynamic>{
-      ...?authoritativeSnapshot.data(),
-      'id': authoritativeSnapshot.id,
-    };
-
-    debugPrint(
-      'BusinessProfilePage: authoritative server snapshot received '
-      'for users/$docId',
-    );
-
-    // -----------------------------------------------------------------------
-    // APPLY SERVER STATE TO UI
-    // -----------------------------------------------------------------------
-
-    _applyingLiveData = true;
-
-    try {
-      _syncEditableStateFromFirestore(
-        authoritativeData,
+    } catch (e, stackTrace) {
+      debugPrint('BusinessProfilePage save error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Oops! Error updating profile: $e'),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-
-      _liveData =
-          Map<String, dynamic>.from(
-            authoritativeData,
-          );
-
-      _pendingRealtimeData = null;
-      _hasUnsavedChanges = false;
     } finally {
-      _applyingLiveData = false;
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _liveData =
-          Map<String, dynamic>.from(
-            authoritativeData,
-          );
-
-      _isDocumentDeleted = false;
-      _isRealtimeConnected = true;
-      _hasUnsavedChanges = false;
-      _pendingRealtimeData = null;
-    });
-
-    // -----------------------------------------------------------------------
-    // SUCCESS
-    // -----------------------------------------------------------------------
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.stars_rounded,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Profile updated successfully! ✨🚀',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        backgroundColor:
-            const Color(0xFF10B981),
-        behavior:
-            SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.circular(12),
-        ),
-      ),
-    );
-  } on FirebaseException catch (e) {
-    debugPrint(
-      'BusinessProfilePage Firestore save error: '
-      '${e.code} - ${e.message}',
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Failed to update profile: '
-          '${e.message ?? e.code}',
-        ),
-        backgroundColor:
-            const Color(0xFFEF4444),
-        behavior:
-            SnackBarBehavior.floating,
-      ),
-    );
-  } catch (e, stackTrace) {
-    debugPrint(
-      'BusinessProfilePage save error: $e',
-    );
-    debugPrintStack(
-      stackTrace: stackTrace,
-    );
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Oops! Error updating profile: $e',
-        ),
-        backgroundColor:
-            const Color(0xFFEF4444),
-        behavior:
-            SnackBarBehavior.floating,
-      ),
-    );
-  } finally {
-    if (mounted) {
-      setState(() {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _isLoading = false;
+        });
+      } else {
         _isSaving = false;
         _isLoading = false;
-      });
-    } else {
-      _isSaving = false;
-      _isLoading = false;
+      }
     }
   }
-}
 
   InputDecoration _buildInputDecoration(
     String label,
@@ -2488,6 +2372,8 @@ void _applyFirestoreSnapshotToUi(
                                     const SizedBox(height: 6),
                                     TextFormField(
                                       controller: _payPerLeadChargeController,
+                                      enabled:
+                                          false, // [PPL DISABLED] Pay Per Lead editing disabled
                                       keyboardType: TextInputType.number,
                                       decoration: _buildInputDecoration(
                                         'Charge (₹)',
@@ -3336,6 +3222,8 @@ void _applyFirestoreSnapshotToUi(
                     },
                   ),
 
+                  const SizedBox(height: 32),
+                  ProviderCallLogsSection(providerUid: _getProviderUid()),
                   const SizedBox(height: 40),
                 ],
               ),

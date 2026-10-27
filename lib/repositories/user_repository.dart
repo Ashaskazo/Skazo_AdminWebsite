@@ -7,6 +7,7 @@ import 'package:skazo_admin/models/service_provider_overview_model.dart';
 import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/services/plan_classification_service.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -1409,28 +1410,6 @@ class UserRepository {
     return desiredBatchSize;
   }
 
-  /// Allowed categories for the Pay Per Lead feature.
-  /// Only providers whose `category` array contains at least one of these
-  /// values qualify for Pay Per Lead listing.
-  ///
-  /// Uses exact stored values from Firestore / business_categories.dart.
-  /// NOTE: 'Electricians' (plural), 'House cleaning' (lowercase c).
-  static const List<String> _kPplAllowedCategories = [
-    'Electricians',
-    'Plumbers',
-    'AC Repair',
-    'Fridge Repair',
-    'Washing Machine Repair',
-    'Painters',
-    'Car Travels',
-    'Car Drivers',
-    'House cleaning',
-    'Wood Works',
-    'Packers and Movers',
-    'Bike Mechanic',
-    'Car Mechanic',
-  ];
-
   Query<Map<String, dynamic>> _buildPayPerLeadBaseQuery({
     String? selectedCity,
     DateTime? dateFrom,
@@ -1442,8 +1421,7 @@ class UserRepository {
   }) {
     Query<Map<String, dynamic>> query = _users
         .where('isuser', isEqualTo: false)
-        .where('payperLeadcharge', isGreaterThan: 0)
-        .where('category', arrayContainsAny: _kPplAllowedCategories);
+        .where('payperLeadcharge', isGreaterThan: 0);
 
     // ------------------------------------------------------------
     // CITY / ADMIN AUTHORIZATION
@@ -1578,36 +1556,36 @@ class UserRepository {
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = 20,
   }) async {
-    return _withRetry(() async {
-      Query<Map<String, dynamic>> query = _buildPayPerLeadBaseQuery(
-        selectedCity: selectedCity,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuperAdmin,
-        sortDescending: sortDescending,
-        applyOrdering: true,
-      );
+    final all = await fetchAllPayPerLeadProviders(
+      selectedCity: selectedCity,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      assignedCities: assignedCities,
+      isSuperAdmin: isSuperAdmin,
+      sortDescending: sortDescending,
+    );
 
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
+    int startIndex = 0;
+    if (startAfter != null) {
+      final idx = all.indexWhere((u) => u.id == startAfter.id);
+      if (idx != -1) {
+        startIndex = idx + 1;
       }
+    }
 
-      final snapshot = await query.limit(limit).get();
-      final items = snapshot.docs.map(UserModel.fromFirestore).toList();
-      final lastDoc = snapshot.docs.isEmpty ? null : snapshot.docs.last;
+    final items = all.skip(startIndex).take(limit).toList();
+    final hasMore = (startIndex + limit) < all.length;
 
-      return PageResult<UserModel>(
-        items: items,
-        lastDocument: lastDoc,
-        hasMore: snapshot.docs.length == limit,
-      );
-    });
+    return PageResult<UserModel>(
+      items: items,
+      lastDocument: startAfter,
+      hasMore: hasMore,
+    );
   }
 
   /// Fetches ALL matching Pay Per Lead providers in one query for in-memory
   /// aggregation and local pagination.
-  /// Uses the EXACT same UserModel.fromFirestore conversion.
+  /// Strictly filters for isuser == false AND payperLeadcharge > 0 AND PlanClassificationService.isPremium == true.
   Future<List<UserModel>> fetchAllPayPerLeadProviders({
     String? selectedCity,
     DateTime? dateFrom,
@@ -1628,7 +1606,10 @@ class UserRepository {
       );
 
       final snapshot = await query.get();
-      return snapshot.docs.map(UserModel.fromFirestore).toList();
+      return snapshot.docs
+          .map(UserModel.fromFirestore)
+          .where((u) => !u.isuser && (u.payperLeadCharge ?? 0) > 0 && PlanClassificationService.isPremium(u))
+          .toList();
     });
   }
 
@@ -1645,8 +1626,7 @@ class UserRepository {
     });
   }
 
-  /// Count does not require ordering. Uses the same filter predicates as fetch
-  /// but skips orderBy to avoid unnecessary composite index requirements.
+  /// Counts matching Pay-Per-Lead providers, ensuring exact same eligibility criteria.
   Future<int> countPayPerLeadProviders({
     String? selectedCity,
     DateTime? dateFrom,
@@ -1654,20 +1634,14 @@ class UserRepository {
     List<String> assignedCities = const [],
     bool isSuperAdmin = false,
   }) async {
-    return _withRetry(() async {
-      final query = _buildPayPerLeadBaseQuery(
-        selectedCity: selectedCity,
-        dateFrom: dateFrom,
-        dateTo: dateTo,
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuperAdmin,
-        applyOrdering: false,
-      );
-
-      final snapshot = await query.count().get();
-
-      return snapshot.count ?? 0;
-    });
+    final all = await fetchAllPayPerLeadProviders(
+      selectedCity: selectedCity,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      assignedCities: assignedCities,
+      isSuperAdmin: isSuperAdmin,
+    );
+    return all.length;
   }
 
   /// Builds the base query for Star Service Providers.

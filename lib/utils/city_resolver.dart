@@ -4,25 +4,20 @@ String _normalizeCityKey(String city) =>
     city.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
 String _addressSource(Map<String, dynamic> user) {
-  final addr = user['businessAddress'] ??
+  final addr =
       user['businessaddress'] ??
-      user['customerAddress'] ??
-      user['address'] ??
-      user['business_address'] ??
-      user['customer_address'] ??
+     
       '';
   return addr.toString().trim();
 }
 
 String? _explicitCityField(Map<String, dynamic> user) {
-  final raw = (user['City'] ??
-          user['city'] ??
-          user['businessCity'] ??
-          user['customerCity'] ??
-          user['business_city'] ??
-          user['customer_city'])
-      ?.toString()
-      .trim();
+  final raw =
+      
+              user['city'] 
+           
+          .toString()
+          .trim();
   if (raw == null || raw.isEmpty) {
     return null;
   }
@@ -197,18 +192,9 @@ Map<String, String> buildPincodeCityLookup(
 }
 
 String? extractUserPincode(Map<String, dynamic> user) {
-  final explicitPin = (user['pincode'] ??
-          user['businessPincode'] ??
-          user['customerPincode'] ??
-          user['pinCode'] ??
-          user['business_pincode'] ??
-          user['customer_pincode'] ??
-          user['pin'])
-      ?.toString()
-      .trim();
+  final explicitPin = user['businessPincode']?.toString().trim();
   final normExplicit = _normalizePincode(explicitPin);
   if (normExplicit != null) return normExplicit;
-
   final address = _addressSource(user);
   final pinMatch = RegExp(r'\b\d{6}\b').firstMatch(address);
   return _normalizePincode(pinMatch?.group(0));
@@ -266,11 +252,17 @@ bool userMatchesCity(
   final targetCity = normalizedTargetCity ?? _normalizeCityKey(selectedCity);
   if (targetCity.isEmpty) return true;
 
-  final directCityKey = (user['cityKey'] ?? user['city'] ?? user['businessCity'] ?? user['customerCity'])?.toString().trim();
+  final directCityKey =
+      (user['cityKey'] ??
+              user['city'])
+          ?.toString()
+          .trim();
 
   if (directCityKey != null && directCityKey.isNotEmpty) {
     final normDirect = _normalizeCityKey(directCityKey);
-    if (normDirect == targetCity || normDirect.contains(targetCity) || targetCity.contains(normDirect)) {
+    if (normDirect == targetCity ||
+        normDirect.contains(targetCity) ||
+        targetCity.contains(normDirect)) {
       return true;
     }
   }
@@ -280,7 +272,9 @@ bool userMatchesCity(
       pincodesMap.entries
           .where((entry) {
             final k = _normalizeCityKey(entry.key);
-            return k == targetCity || k.contains(targetCity) || targetCity.contains(k);
+            return k == targetCity ||
+                k.contains(targetCity) ||
+                targetCity.contains(k);
           })
           .expand((entry) => entry.value)
           .map(_normalizePincode)
@@ -295,7 +289,9 @@ bool userMatchesCity(
   final resolved = resolveUserCityName(user, pincodesMap, pincodeCityLookup);
   if (resolved != null) {
     final normResolved = _normalizeCityKey(resolved);
-    if (normResolved == targetCity || normResolved.contains(targetCity) || targetCity.contains(normResolved)) {
+    if (normResolved == targetCity ||
+        normResolved.contains(targetCity) ||
+        targetCity.contains(normResolved)) {
       return true;
     }
   }
@@ -303,7 +299,9 @@ bool userMatchesCity(
   final addressCity = extractUserCityFromAddress(user);
   if (addressCity != null) {
     final normAddrCity = _normalizeCityKey(addressCity);
-    if (normAddrCity == targetCity || normAddrCity.contains(targetCity) || targetCity.contains(normAddrCity)) {
+    if (normAddrCity == targetCity ||
+        normAddrCity.contains(targetCity) ||
+        targetCity.contains(normAddrCity)) {
       return true;
     }
   }
@@ -311,7 +309,9 @@ bool userMatchesCity(
   final explicitCity = _explicitCityField(user);
   if (explicitCity != null) {
     final normExpCity = _normalizeCityKey(explicitCity);
-    if (normExpCity == targetCity || normExpCity.contains(targetCity) || targetCity.contains(normExpCity)) {
+    if (normExpCity == targetCity ||
+        normExpCity.contains(targetCity) ||
+        targetCity.contains(normExpCity)) {
       return true;
     }
   }
@@ -326,7 +326,9 @@ bool userMatchesCity(
       final candidate = _cleanCitySegment(segment);
       if (candidate != null) {
         final normCand = _normalizeCityKey(candidate);
-        if (normCand == targetCity || normCand.contains(targetCity) || targetCity.contains(normCand)) {
+        if (normCand == targetCity ||
+            normCand.contains(targetCity) ||
+            targetCity.contains(normCand)) {
           return true;
         }
       }
@@ -360,7 +362,9 @@ bool userMatchesAssignedCities(
     // If admin is restricted to specific cities, ensure selectedCity is within assignedCities
     if (assignedCities.isNotEmpty) {
       final normSelected = _normalizeCityKey(selectedCity);
-      final isAllowed = assignedCities.any((c) => _normalizeCityKey(c) == normSelected);
+      final isAllowed = assignedCities.any(
+        (c) => _normalizeCityKey(c) == normSelected,
+      );
       if (!isAllowed) return false;
     }
     return userMatchesCity(user, selectedCity, pincodesMap, pincodeCityLookup);
