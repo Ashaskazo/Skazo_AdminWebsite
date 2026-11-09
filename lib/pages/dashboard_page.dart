@@ -7,6 +7,7 @@ import 'package:skazo_admin/providers/dashboard_provider.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/widgets/pay_per_lead_data_view.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -20,7 +21,9 @@ import 'package:skazo_admin/widgets/local_promotions_data_view.dart';
 import 'package:skazo_admin/widgets/admins_data_view.dart';
 import 'package:skazo_admin/widgets/unverified_businesses_grid.dart';
 import 'package:skazo_admin/widgets/payments_data_view.dart';
+import 'package:skazo_admin/widgets/service_providers_data_view.dart';
 import '../widgets/call_logs_data_view.dart';
+import 'package:skazo_admin/widgets/call_log_sheet_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -65,6 +68,8 @@ class DashboardPage extends ConsumerWidget {
     switch (view) {
       case DashboardView.summary:
         return const _SummaryDashboard();
+             case DashboardView.serviceProviders:
+        return const ServiceProvidersDataView();
       case DashboardView.users:
         return const UsersDataView();
       case DashboardView.deactivatedList:
@@ -127,10 +132,14 @@ class DashboardPage extends ConsumerWidget {
           collectionName: 'app_config',
           title: 'Application Configurations ⚙️',
         );
+      case DashboardView.callLogSheet:
+        return const CallLogSheetView();
       case DashboardView.logs:
         return const CallLogsDataView();
       case DashboardView.payments:
         return const PaymentsDataView();
+        case DashboardView.payPerLead:
+        return const PayPerLeadDataView();
     }
   }
 }

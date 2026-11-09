@@ -11,6 +11,7 @@ import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 
+
 class CallLogsDataView extends ConsumerStatefulWidget {
   const CallLogsDataView({super.key});
 

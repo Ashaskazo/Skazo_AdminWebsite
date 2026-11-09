@@ -192,6 +192,18 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFF3B82F6), Color(0xFF2563EB)],
                   badge: 'VIP',
                 ),
+
+                     _buildNavItem(
+                  ref,
+                  'Star Service Providers',
+                  Icons.handyman_rounded,
+                  DashboardView.serviceProviders,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
+                  badge: '⭐',
+
+                ),
                 _buildNavItem(
                   ref,
                   'Deactivated List',
@@ -201,6 +213,18 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFFEF4444), Color(0xFFDC2626)],
                 ),
+
+                 _buildNavItem(
+                  ref,
+                  'Pay Per Lead',
+                  Icons.leaderboard_rounded,
+                  DashboardView.payPerLead,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
+                  badge: 'PPL',
+                ),
+
                 _buildNavItem(
                   ref,
                   'Call & Action Logs',
@@ -210,6 +234,16 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
                   badge: 'LIVE',
+                ),
+                _buildNavItem(
+                  ref,
+                  'Call Log Sheet',
+                  Icons.table_chart_rounded,
+                  DashboardView.callLogSheet,
+                  currentView,
+                  isCollapsed,
+                  activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
+                  badge: 'REPORT',
                 ),
                 _buildNavItem(
                   ref,

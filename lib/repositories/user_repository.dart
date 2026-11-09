@@ -5,6 +5,7 @@ import 'package:skazo_admin/models/page_result.dart';
 import 'package:skazo_admin/models/user_filters.dart';
 import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/models/service_provider_overview_model.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
@@ -80,6 +81,18 @@ class UserSearchParams {
       rawQuery: trimmed,
     );
   }
+}
+
+class PayPerLeadPageResult {
+  final List<UserModel> items;
+  final DocumentSnapshot<Map<String, dynamic>>? lastDocument;
+  final bool hasMore;
+
+  const PayPerLeadPageResult({
+    required this.items,
+    required this.lastDocument,
+    required this.hasMore,
+  });
 }
 
 /// Firestore data access for the users collection.
@@ -1427,6 +1440,676 @@ class UserRepository {
     });
   }
 
+static const List<String> _kPplAllowedCategories = [
+    'Electricians',
+    'Plumbers',
+    'AC Repair',
+    'Fridge Repair',
+    'Washing Machine Repair',
+    'Painters',
+    'Car Travels',
+    'Car Drivers',
+    'House cleaning',
+    'Wood Works',
+    'Packers and Movers',
+    'Bike Mechanic',
+    'Car Mechanic',
+  ];
+
+  Query<Map<String, dynamic>> _buildPayPerLeadBaseQuery({
+    String? selectedCity,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    bool sortDescending = true,
+    bool applyOrdering = true,
+  }) {
+    Query<Map<String, dynamic>> query = _users
+        .where('isuser', isEqualTo: false)
+        .where('payperLeadcharge', isGreaterThan: 0)
+        .where('category', arrayContainsAny: _kPplAllowedCategories);
+
+    // ------------------------------------------------------------
+    // CITY / ADMIN AUTHORIZATION
+    // ------------------------------------------------------------
+
+    final city = selectedCity?.trim();
+
+    final hasSpecificCity =
+        city != null &&
+        city.isNotEmpty &&
+        city != 'All' &&
+        city != 'All Cities';
+
+    if (isSuperAdmin) {
+      if (hasSpecificCity) {
+        query = query.where(
+          'cityKey',
+          isEqualTo: _normalizeQueryableCityKey(city),
+        );
+      }
+    } else {
+      // Normal admin must NEVER see data outside assigned cities.
+      if (assignedCities.isEmpty) {
+        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+      }
+
+      final normalizedAssigned =
+          assignedCities
+              .map(_normalizeQueryableCityKey)
+              .where((value) => value.isNotEmpty)
+              .toSet()
+              .toList();
+
+      if (normalizedAssigned.isEmpty) {
+        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+      }
+
+      if (hasSpecificCity) {
+        final normalizedSelected = _normalizeQueryableCityKey(city);
+
+        // If selected city is not assigned to this admin,
+        // deliberately return zero results.
+        if (!normalizedAssigned.contains(normalizedSelected)) {
+          return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+        }
+
+        query = query.where('cityKey', isEqualTo: normalizedSelected);
+      } else {
+        if (normalizedAssigned.length == 1) {
+          query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
+        } else if (normalizedAssigned.length <= 30) {
+          query = query.where('cityKey', whereIn: normalizedAssigned);
+        } else {
+          // Fail closed.
+          return query.where(
+            'cityKey',
+            isEqualTo: '__TOO_MANY_ASSIGNED_CITIES__',
+          );
+        }
+      }
+    }
+
+    // ------------------------------------------------------------
+    // OPTIONAL DATE FILTER
+    // ------------------------------------------------------------
+
+    final hasDateFrom = dateFrom != null;
+    final hasDateTo = dateTo != null;
+
+    if (hasDateFrom) {
+      final fromIstMidnight = DateTime.utc(
+        dateFrom.year,
+        dateFrom.month,
+        dateFrom.day,
+      );
+
+      final fromUtc = fromIstMidnight.subtract(
+        const Duration(hours: 5, minutes: 30),
+      );
+
+      query = query.where(
+        'lastpaymentpayperlead',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(fromUtc),
+      );
+    }
+
+    if (hasDateTo) {
+      final toIstNextMidnight = DateTime.utc(
+        dateTo.year,
+        dateTo.month,
+        dateTo.day,
+      ).add(const Duration(days: 1));
+
+      final toExclusiveUtc = toIstNextMidnight.subtract(
+        const Duration(hours: 5, minutes: 30),
+      );
+
+      query = query.where(
+        'lastpaymentpayperlead',
+        isLessThan: Timestamp.fromDate(toExclusiveUtc),
+      );
+    }
+
+    // ------------------------------------------------------------
+    // ORDERING
+    // ------------------------------------------------------------
+
+    if (applyOrdering) {
+      if (hasDateFrom || hasDateTo) {
+        query = query.orderBy(
+          'lastpaymentpayperlead',
+          descending: sortDescending,
+        );
+      } else {
+        query = query.orderBy(
+          'payperLeadcharge',
+          descending: sortDescending,
+        );
+      }
+    }
+
+    return query;
+  }
+
+  Future<PageResult<UserModel>> fetchPayPerLeadProviders({
+    String? selectedCity,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    bool sortDescending = true,
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    int limit = 20,
+  }) async {
+    return _withRetry(() async {
+      Query<Map<String, dynamic>> query = _buildPayPerLeadBaseQuery(
+        selectedCity: selectedCity,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
+        sortDescending: sortDescending,
+        applyOrdering: true,
+      );
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final snapshot = await query.limit(limit).get();
+      final items = snapshot.docs.map(UserModel.fromFirestore).toList();
+      final lastDoc = snapshot.docs.isEmpty ? null : snapshot.docs.last;
+
+      return PageResult<UserModel>(
+        items: items,
+        lastDocument: lastDoc,
+        hasMore: snapshot.docs.length == limit,
+      );
+    });
+  }
+
+  /// Fetches ALL matching Pay Per Lead providers in one query for in-memory
+  /// aggregation and local pagination.
+  /// Uses the EXACT same UserModel.fromFirestore conversion.
+  Future<List<UserModel>> fetchAllPayPerLeadProviders({
+    String? selectedCity,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    bool sortDescending = true,
+  }) async {
+    return _withRetry(() async {
+      try {
+        final Query<Map<String, dynamic>> query = _buildPayPerLeadBaseQuery(
+          selectedCity: selectedCity,
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          assignedCities: assignedCities,
+          isSuperAdmin: isSuperAdmin,
+          sortDescending: sortDescending,
+          applyOrdering: true,
+        );
+
+        final snapshot = await query.get();
+        return snapshot.docs.map(UserModel.fromFirestore).toList();
+      } catch (e) {
+        // Fallback to query without ordering if composite index is missing or inequality conflicts.
+        // In-memory sorting ensures records remain properly sorted.
+        debugPrint('PayPerLead ordered query fallback: $e');
+        final Query<Map<String, dynamic>> fallbackQuery =
+            _buildPayPerLeadBaseQuery(
+          selectedCity: selectedCity,
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          assignedCities: assignedCities,
+          isSuperAdmin: isSuperAdmin,
+          sortDescending: sortDescending,
+          applyOrdering: false,
+        );
+
+        final snapshot = await fallbackQuery.get();
+        return snapshot.docs.map(UserModel.fromFirestore).toList();
+      }
+    });
+  }
+
+  /// Saves or updates the feedback for a provider on their users document.
+  Future<void> savePayPerLeadFeedback({
+    required String userId,
+    required String feedback,
+  }) async {
+    await _withRetry(() {
+      return _users.doc(userId).update({
+        'payPerLeadFeedback': feedback.trim(),
+        'payPerLeadFeedbackUpdatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// Count does not require ordering. Uses the same filter predicates as fetch
+  /// but skips orderBy to avoid unnecessary composite index requirements.
+  Future<int> countPayPerLeadProviders({
+    String? selectedCity,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+  }) async {
+    return _withRetry(() async {
+      final query = _buildPayPerLeadBaseQuery(
+        selectedCity: selectedCity,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
+        applyOrdering: false,
+      );
+
+      final snapshot = await query.count().get();
+
+      return snapshot.count ?? 0;
+    });
+  }
+
+  /// Builds the base query for Star Service Providers.
+  /// Strictly enforces: isuser == false and StarServiceprovider == '1'.
+  Query<Map<String, dynamic>> _buildStarServiceProvidersQuery({
+    String? selectedCity,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    String? category,
+  }) {
+    Query<Map<String, dynamic>> query = _users
+        .where('isuser', isEqualTo: false)
+        .where('StarServiceprovider', isEqualTo: '1');
+
+    if (category != null && category.trim().isNotEmpty) {
+      query = query.where('category', arrayContains: category.trim());
+    }
+
+    // City filter & Admin permission boundary
+    final city = selectedCity?.trim();
+    final hasSpecificCity =
+        city != null &&
+        city.isNotEmpty &&
+        city != 'All' &&
+        city != 'All Cities';
+
+    if (isSuperAdmin) {
+      if (hasSpecificCity) {
+        query = query.where(
+          'cityKey',
+          isEqualTo: _normalizeQueryableCityKey(city),
+        );
+      }
+    } else {
+      if (assignedCities.isEmpty) {
+        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+      }
+
+      final normalizedAssigned =
+          assignedCities.map(_normalizeQueryableCityKey).toList();
+
+      if (hasSpecificCity) {
+        final normalizedSelected = _normalizeQueryableCityKey(city);
+        if (normalizedAssigned.contains(normalizedSelected)) {
+          query = query.where('cityKey', isEqualTo: normalizedSelected);
+        } else {
+          query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
+        }
+      } else {
+        if (normalizedAssigned.length == 1) {
+          query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
+        } else if (normalizedAssigned.length <= 30) {
+          query = query.where('cityKey', whereIn: normalizedAssigned);
+        }
+      }
+    }
+
+    return query;
+  }
+
+  /// Fetches lightweight aggregated category statistics for Star Service Providers in the selected city.
+  /// Does NOT return raw provider documents, minimizing memory usage and UI rebuild weight.
+  Future<ServiceProvidersOverviewData> fetchServiceProvidersOverviewStats({
+    String? selectedCity,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    Map<String, List<String>> pincodesMap = const {},
+    List<String>? zonePincodes,
+  }) async {
+    return _withRetry(() async {
+      final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
+      final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
+
+      // Normalize zone pincodes for O(1) lookup.
+      final normalizedZonePins =
+          (zonePincodes != null && zonePincodes.isNotEmpty)
+              ? zonePincodes.map((p) => p.trim()).toSet()
+              : null;
+
+      final query = _buildStarServiceProvidersQuery(
+        selectedCity: selectedCity,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
+      );
+
+      final snapshot = await query.get();
+
+      final categoryCountMap = <String, int>{};
+      int totalUniqueProviders = 0;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+
+        // City authorization check (derived pincode filtering).
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+          if (!userMatchesAssignedCities(
+            data,
+            selectedCity,
+            assignedCities,
+            effectivePincodesMap,
+            pincodeCityLookup,
+          )) {
+            continue;
+          }
+        }
+
+        // Zone pincode filter — applied when a specific zone is selected.
+        // When null (All Zones), all city-matching providers are included.
+        if (normalizedZonePins != null) {
+          final userPin = extractUserPincode(data);
+          if (userPin == null || !normalizedZonePins.contains(userPin)) {
+            continue;
+          }
+        }
+
+        totalUniqueProviders++;
+
+        // Always group by category regardless of city.
+        final rawCategories = data['category'];
+        final providerCategories = <String>{};
+
+        if (rawCategories is List) {
+          for (final item in rawCategories) {
+            final catStr = item?.toString().trim();
+            if (catStr != null && catStr.isNotEmpty) {
+              providerCategories.add(catStr);
+            }
+          }
+        } else if (rawCategories is String &&
+            rawCategories.trim().isNotEmpty) {
+          providerCategories.add(rawCategories.trim());
+        }
+
+        if (providerCategories.isEmpty) {
+          providerCategories.add('Uncategorized');
+        }
+
+        for (final cat in providerCategories) {
+          categoryCountMap[cat] = (categoryCountMap[cat] ?? 0) + 1;
+        }
+      }
+
+      final categoryList =
+          categoryCountMap.entries.map((entry) {
+            return ServiceProviderCategoryStats(
+              categoryName: entry.key,
+              totalCount: entry.value,
+            );
+          }).toList();
+
+      categoryList.sort((a, b) {
+        final cmp = b.totalCount.compareTo(a.totalCount);
+        if (cmp != 0) return cmp;
+        return a.categoryName.compareTo(b.categoryName);
+      });
+
+      return ServiceProvidersOverviewData(
+        selectedCity: selectedCity,
+        selectedDate: DateTime.now(),
+        totalProviders: totalUniqueProviders,
+        totalCategories: categoryList.length,
+        categories: categoryList,
+        areaGroups: null, // Zone is a pre-filter; result grouping is always category-wise.
+      );
+    });
+  }
+
+  /// Fetches a server-side paginated list of Star Service Providers for a specific category.
+  Future<PageResult<UserModel>> fetchCategoryServiceProvidersPage({
+    required String category,
+    List<String>? areaPincodes,
+    String? selectedCity,
+    String searchQuery = '',
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    Map<String, List<String>> pincodesMap = const {},
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    int limit = 20,
+  }) async {
+    return _withRetry(() async {
+      final effectivePincodesMap = await _resolvePincodesMap(pincodesMap);
+      final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
+      final normalizedAreaPins =
+          (areaPincodes != null && areaPincodes.isNotEmpty)
+              ? areaPincodes.map((p) => p.trim()).toSet()
+              : null;
+
+      final isCategoryFilter =
+          category.trim().isNotEmpty &&
+          category != 'All' &&
+          category != 'Uncategorized';
+
+      Query<Map<String, dynamic>> query = _buildStarServiceProvidersQuery(
+        selectedCity: selectedCity,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
+        category: isCategoryFilter ? category : null,
+      );
+
+      final search = UserSearchParams.fromQuery(searchQuery);
+      switch (search.mode) {
+        case UserSearchMode.none:
+          query = query.orderBy('createdAt', descending: true);
+          break;
+        case UserSearchMode.phone:
+          if (search.phoneVariants != null &&
+              search.phoneVariants!.length > 1) {
+            query = query
+                .where('phone', whereIn: search.phoneVariants)
+                .orderBy('createdAt', descending: true);
+          } else {
+            query = query
+                .where('phone', isEqualTo: search.phone)
+                .orderBy('createdAt', descending: true);
+          }
+          break;
+        case UserSearchMode.uid:
+          query = query
+              .where('uid', isEqualTo: search.rawQuery)
+              .orderBy('createdAt', descending: true);
+          break;
+        case UserSearchMode.usernamePrefix:
+          final prefix = search.rawQuery;
+          query = query
+              .where('username', isGreaterThanOrEqualTo: prefix)
+              .where('username', isLessThanOrEqualTo: '$prefix\uf8ff')
+              .orderBy('username')
+              .orderBy('createdAt', descending: true);
+          break;
+        case UserSearchMode.businessNamePrefix:
+          final prefix = search.rawQuery;
+          query = query
+              .where('businessname', isGreaterThanOrEqualTo: prefix)
+              .where('businessname', isLessThanOrEqualTo: '$prefix\uf8ff')
+              .orderBy('businessname')
+              .orderBy('createdAt', descending: true);
+          break;
+      }
+
+      // If filtering by area pincodes, scan in batches until 'limit' matched items are found
+      if (normalizedAreaPins != null && normalizedAreaPins.isNotEmpty) {
+        final matched = <UserModel>[];
+        DocumentSnapshot<Map<String, dynamic>>? cursor = startAfter;
+        var hasMore = true;
+        const batchSize = 100;
+
+        while (matched.length < limit && hasMore) {
+          var pQuery = query;
+          if (cursor != null) {
+            pQuery = pQuery.startAfterDocument(cursor);
+          }
+
+          final snapshot = await pQuery.limit(batchSize).get();
+          if (snapshot.docs.isEmpty) {
+            hasMore = false;
+            break;
+          }
+
+          var reachedLimit = false;
+          for (final doc in snapshot.docs) {
+            cursor = doc;
+            final data = doc.data();
+
+            if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+              if (!userMatchesAssignedCities(
+                data,
+                selectedCity,
+                assignedCities,
+                effectivePincodesMap,
+                pincodeCityLookup,
+              )) {
+                continue;
+              }
+            }
+
+            final userPin = extractUserPincode(data);
+            if (userPin == null || !normalizedAreaPins.contains(userPin)) {
+              continue;
+            }
+
+            matched.add(UserModel.fromFirestore(doc));
+            if (matched.length == limit) {
+              reachedLimit = true;
+              break;
+            }
+          }
+
+          hasMore = reachedLimit || snapshot.docs.length == batchSize;
+        }
+
+        return PageResult(
+          items: matched,
+          lastDocument: cursor,
+          hasMore: hasMore,
+        );
+      }
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final snapshot = await query.limit(limit).get();
+      final matched = <UserModel>[];
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+          if (!userMatchesAssignedCities(
+            data,
+            selectedCity,
+            assignedCities,
+            effectivePincodesMap,
+            pincodeCityLookup,
+          )) {
+            continue;
+          }
+        }
+        matched.add(UserModel.fromFirestore(doc));
+      }
+
+      final lastDoc = snapshot.docs.isEmpty ? null : snapshot.docs.last;
+
+      return PageResult(
+        items: matched,
+        lastDocument: lastDoc,
+        hasMore: snapshot.docs.length == limit,
+      );
+    });
+  }
+
+  /// Counts the total number of Star Service Providers for a specific category or area group.
+  Future<int> countCategoryServiceProviders({
+    required String category,
+    List<String>? areaPincodes,
+    String? selectedCity,
+    String searchQuery = '',
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+  }) async {
+    return _withRetry(() async {
+      final isCategoryFilter =
+          category.trim().isNotEmpty &&
+          category != 'All' &&
+          category != 'Uncategorized';
+
+      var query = _buildStarServiceProvidersQuery(
+        selectedCity: selectedCity,
+        assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
+        category: isCategoryFilter ? category : null,
+      );
+
+      final search = UserSearchParams.fromQuery(searchQuery);
+      switch (search.mode) {
+        case UserSearchMode.none:
+          break;
+        case UserSearchMode.phone:
+          if (search.phoneVariants != null &&
+              search.phoneVariants!.length > 1) {
+            query = query.where('phone', whereIn: search.phoneVariants);
+          } else {
+            query = query.where('phone', isEqualTo: search.phone);
+          }
+          break;
+        case UserSearchMode.uid:
+          query = query.where('uid', isEqualTo: search.rawQuery);
+          break;
+        case UserSearchMode.usernamePrefix:
+          final prefix = search.rawQuery;
+          query = query
+              .where('username', isGreaterThanOrEqualTo: prefix)
+              .where('username', isLessThanOrEqualTo: '$prefix\uf8ff');
+          break;
+        case UserSearchMode.businessNamePrefix:
+          final prefix = search.rawQuery;
+          query = query
+              .where('businessname', isGreaterThanOrEqualTo: prefix)
+              .where('businessname', isLessThanOrEqualTo: '$prefix\uf8ff');
+          break;
+      }
+
+      if (areaPincodes != null && areaPincodes.isNotEmpty) {
+        final snapshot = await query.get();
+        final normalizedAreaPins = areaPincodes.map((p) => p.trim()).toSet();
+        int count = 0;
+        for (final doc in snapshot.docs) {
+          final pin = extractUserPincode(doc.data());
+          if (pin != null && normalizedAreaPins.contains(pin)) {
+            count++;
+          }
+        }
+        return count;
+      }
+
+      final snapshot = await query.count().get();
+      return snapshot.count ?? 0;
+    });
+  }
   Future<int?> _tryCountUnverifiedByCityKey({
     required TimeFilterOption timeFilter,
     required String selectedCity,

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum DashboardView {
   summary,
   users,
+  payPerLead,
   deactivatedList,
+  callLogSheet,
   servicePosts,
   // orders,
   rentalProperties,
@@ -15,6 +17,7 @@ enum DashboardView {
   appConfig,
   logs,
   payments,
+    serviceProviders,
 }
 
 // Manual StateProvider for the current dashboard view
