@@ -66,6 +66,9 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
     ref.listen(currentAdminAssignedCitiesProvider, (_, __) {
       if (arg != null) refresh();
     });
+    ref.listen(cityAccessScopeProvider, (_, __) {
+      if (arg != null) refresh();
+    });
     if (category != null) {
       Future.microtask(refresh);
     }
@@ -100,7 +103,19 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
   Future<void> _fetchPage({required bool isRefresh}) async {
     final repository = ref.read(userRepositoryProvider);
     final category = arg;
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      state = state.copyWith(
+        users: const [],
+        loading: false,
+        loadingMore: false,
+        hasMore: false,
+        clearLastDocument: true,
+        clearError: true,
+      );
+      return;
+    }
+    final assignedCities = scope.assignedCities;
 
     try {
       final pincodesMap = await ref.read(propertyPincodesProvider.future);
@@ -109,6 +124,7 @@ class UnverifiedPaginationNotifier extends FamilyNotifier<
         city: _city,
         category: category,
         assignedCities: assignedCities,
+        isSuperAdmin: scope.isUnrestricted,
         pincodesMap: pincodesMap,
         startAfter: isRefresh ? null : state.lastDocument,
       );
@@ -148,7 +164,10 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return {for (final category in kBusinessCategories) category: 0};
+  }
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
   final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
@@ -156,7 +175,8 @@ final categoryCountsProvider = FutureProvider<Map<String, int>>((ref) async {
     categories: kBusinessCategories,
     timeFilter: timeFilter,
     city: city,
-    assignedCities: assignedCities,
+    assignedCities: scope.assignedCities,
+    isSuperAdmin: scope.isUnrestricted,
     pincodesMap: pincodesMap,
   );
 });
@@ -165,14 +185,18 @@ final unverifiedPendingCountProvider = FutureProvider<int>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
   final dateFilter = ref.watch(dashboardSelectedDateFilterProvider);
   final city = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return 0;
+  }
   final timeFilter = timeFilterFromLegacyUserValue(dateFilter);
   final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
   return repository.countUnverifiedPending(
     timeFilter: timeFilter,
     city: city,
-    assignedCities: assignedCities,
+    assignedCities: scope.assignedCities,
+    isSuperAdmin: scope.isUnrestricted,
     pincodesMap: pincodesMap,
   );
 });

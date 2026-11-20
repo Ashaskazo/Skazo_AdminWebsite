@@ -1,17 +1,23 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
-class ServicePostDetailsPage extends StatefulWidget {
+class ServicePostDetailsPage extends ConsumerStatefulWidget {
   final Map<String, dynamic> postData;
 
   const ServicePostDetailsPage({super.key, required this.postData});
 
   @override
-  State<ServicePostDetailsPage> createState() => _ServicePostDetailsPageState();
+  ConsumerState<ServicePostDetailsPage> createState() =>
+      _ServicePostDetailsPageState();
 }
 
-class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
+class _ServicePostDetailsPageState extends ConsumerState<ServicePostDetailsPage> {
   late Map<String, dynamic> _editedData;
   bool _isSaving = false;
 
@@ -26,6 +32,37 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
     try {
       final docId = _editedData['id'];
       if (docId == null) throw 'Document ID not found';
+
+      final scope = ref.read(cityAccessScopeProvider);
+      if (!scope.isAuthorized) {
+        throw 'Access denied: account not authorized.';
+      }
+      if (!scope.isUnrestricted) {
+        final pincodesMap =
+            ref.read(propertyPincodesProvider).valueOrNull ?? const {};
+        final relatedLookup = <String, Map<String, dynamic>>{};
+        for (final relId in extractAssociatedEntityIds(_editedData)) {
+          final snap = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(relId)
+              .get();
+          if (snap.exists && snap.data() != null) {
+            relatedLookup[relId] = {'id': snap.id, ...snap.data()!};
+          }
+        }
+        if (!scope.allowsRecord(
+              widget.postData,
+              pincodesMap: pincodesMap,
+              relatedEntityLookup: relatedLookup,
+            ) ||
+            !scope.allowsRecord(
+              _editedData,
+              pincodesMap: pincodesMap,
+              relatedEntityLookup: relatedLookup,
+            )) {
+          throw 'Access denied: service post belongs to an unassigned city.';
+        }
+      }
 
       final dataToSave = Map<String, dynamic>.from(_editedData);
       dataToSave.remove('id');
@@ -90,7 +127,7 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: ResponsiveBreakpoints.pagePadding(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -166,33 +203,10 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: const Color(0xFFF1F5F9),
-            child: Text(
-              _editedData['userName']?.toString().characters.first.toUpperCase() ?? '?',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: const Color(0xFF2563EB)),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _editedData['userName'] ?? 'Anonymous User',
-                  style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  _editedData['userPhone'] ?? 'No phone provided',
-                  style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
-          Container(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 420;
+          final badge = Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.1),
@@ -207,8 +221,48 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
                 color: statusColor,
               ),
             ),
-          ),
-        ],
+          );
+
+          final info = Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: const Color(0xFFF1F5F9),
+                child: Text(
+                  _editedData['userName']?.toString().characters.first.toUpperCase() ?? '?',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: const Color(0xFF2563EB)),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _editedData['userName'] ?? 'Anonymous User',
+                      style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      _editedData['userPhone'] ?? 'No phone provided',
+                      style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [info, const SizedBox(height: 12), badge],
+            );
+          }
+
+          return Row(
+            children: [Expanded(child: info), const SizedBox(width: 12), badge],
+          );
+        },
       ),
     );
   }
@@ -228,13 +282,14 @@ class _ServicePostDetailsPageState extends State<ServicePostDetailsPage> {
   }
 
   Widget _buildGridFields(List<Widget> children) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 2.5,
+    return ResponsiveWrapGrid(
+      mobileColumns: 1,
+      tabletColumns: 2,
+      desktopColumns: 3,
+      mobileBreakpoint: ResponsiveBreakpoints.mobile,
+      desktopBreakpoint: 900,
+      spacing: 16,
+      runSpacing: 16,
       children: children,
     );
   }

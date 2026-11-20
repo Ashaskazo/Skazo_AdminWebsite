@@ -256,28 +256,34 @@ class PayPerLeadPaginationNotifier
     final UserRepository repo =
         ref.read(userRepositoryProvider);
 
-    final bool isSuperAdmin =
-        ref.read(isSuperAdminProvider);
-
-    final List<String> assignedCities =
-        isSuperAdmin
-            ? const <String>[]
-            : ref.read(
-                currentAdminAssignedCitiesProvider,
-              );
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _allProviders.clear();
+      state = state.copyWith(
+        isLoading: false,
+        isLoadingPage: false,
+        providers: const [],
+        totalCount: 0,
+        totalBillBalance: 0,
+        currentPage: 0,
+        hasNextPage: false,
+        clearError: true,
+      );
+      return;
+    }
 
     try {
-final List<UserModel> fetchedProviders =
-    await repo.fetchAllPayPerLeadProviders(
-  selectedCity: city,
-  dateFrom: dateFrom,
-  dateTo: dateTo,
-  assignedCities: assignedCities,
-  isSuperAdmin: isSuperAdmin,
-  sortDescending:
-      resolvedSort ==
-          PayPerLeadSortOrder.newest,
-);
+      final List<UserModel> fetchedProviders =
+          await repo.fetchAllPayPerLeadProviders(
+        selectedCity: city,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        assignedCities: scope.assignedCities,
+        isSuperAdmin: scope.isUnrestricted,
+        sortDescending:
+            resolvedSort ==
+                PayPerLeadSortOrder.newest,
+      );
 
 /// ------------------------------------------------------------
 /// PREMIUM CATEGORY FILTER
@@ -575,6 +581,18 @@ final List<UserModel> allProviders =
   // REFRESH
   // ------------------------------------------------------------
 
+  Future<void> reloadForScopeChange() async {
+    if (_disposed) {
+      return;
+    }
+    await applyFilters(
+      city: state.selectedCity,
+      dateFrom: state.dateFrom,
+      dateTo: state.dateTo,
+      sortOrder: state.sortOrder,
+    );
+  }
+
   Future<void> refresh() async {
     if (_disposed) {
       return;
@@ -667,6 +685,10 @@ final payPerLeadPaginationProvider =
         PayPerLeadPaginationNotifier,
         PayPerLeadPaginationState>(
   (ref) {
-    return PayPerLeadPaginationNotifier(ref);
+    final notifier = PayPerLeadPaginationNotifier(ref);
+    ref.listen(cityAccessScopeProvider, (_, __) {
+      notifier.reloadForScopeChange();
+    });
+    return notifier;
   },
 );

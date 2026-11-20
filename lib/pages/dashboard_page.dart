@@ -10,6 +10,7 @@ import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/widgets/pay_per_lead_data_view.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 import 'package:skazo_admin/utils/time_filter.dart';
 import 'package:skazo_admin/widgets/sidebar_nav.dart';
 import 'package:skazo_admin/widgets/collection_data_view.dart';
@@ -24,6 +25,7 @@ import 'package:skazo_admin/widgets/payments_data_view.dart';
 import 'package:skazo_admin/widgets/service_providers_data_view.dart';
 import '../widgets/call_logs_data_view.dart';
 import 'package:skazo_admin/widgets/call_log_sheet_view.dart';
+import 'package:skazo_admin/widgets/call_logs_detail_data_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -32,29 +34,164 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
     final currentView = ref.watch(currentDashboardViewProvider);
+    final accessScope = ref.watch(cityAccessScopeProvider);
+
+    // Clear stale tenant caches if the authenticated user changes across logins.
+    ref.listen<String?>(
+      authStateProvider.select((a) => a.value?.email?.toLowerCase().trim()),
+      (prevEmail, nextEmail) {
+        if (prevEmail != null && nextEmail != null && prevEmail != nextEmail) {
+          ref
+              .read(sessionCacheCoordinatorProvider)
+              .resetAll(includeAuthProfile: false);
+        }
+      },
+    );
 
     return authState.when(
       data: (user) {
         if (user == null) {
           return const AuthPage();
         }
-        return Scaffold(
-          body: Row(
-            children: [
-              const SidebarNav(),
-              Expanded(
-                child: Container(
-                  color: const Color(0xFFF8FAFC),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
-                    switchInCurve: Curves.easeInOut,
-                    switchOutCurve: Curves.easeInOut,
-                    child: _buildMainContent(currentView, ref),
-                  ),
+
+        // Strict fail-closed access gate before exposing any dashboard UI or data.
+        switch (accessScope.status) {
+          case AdminAccessStatus.loading:
+          case AdminAccessStatus.unauthenticated:
+            return Scaffold(
+              backgroundColor: const Color(0xFFF8FAFC),
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Verifying workspace & city permissions...',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            );
+          case AdminAccessStatus.deniedInactive:
+            return _AccessBlockedScreen(
+              icon: Icons.block_rounded,
+              iconColor: const Color(0xFFEF4444),
+              title: 'Account Deactivated',
+              message:
+                  'Your employee access has been deactivated. Please contact your administrator.',
+              email: accessScope.email,
+              onSignOut: () => ref.read(adminAuthProvider.notifier).signOut(),
+            );
+          case AdminAccessStatus.deniedUnauthorized:
+            return _AccessBlockedScreen(
+              icon: Icons.gpp_bad_rounded,
+              iconColor: const Color(0xFFEF4444),
+              title: 'Access Denied',
+              message:
+                  accessScope.errorMessage != null
+                      ? 'Unable to verify permissions. Access is denied by default.'
+                      : 'Your account is not authorized to access this admin portal.',
+              email: accessScope.email,
+              onSignOut: () => ref.read(adminAuthProvider.notifier).signOut(),
+            );
+          case AdminAccessStatus.noCitiesAssigned:
+            return _AccessBlockedScreen(
+              icon: Icons.location_off_rounded,
+              iconColor: const Color(0xFFF59E0B),
+              title: 'No Cities Assigned',
+              message:
+                  'No cities have been assigned to your account. Please contact your administrator.',
+              email: accessScope.email,
+              onSignOut: () => ref.read(adminAuthProvider.notifier).signOut(),
+            );
+          case AdminAccessStatus.authorized:
+            break;
+        }
+
+        final isMobile = ResponsiveBreakpoints.isMobile(context);
+
+        final mainContent = Container(
+          color: const Color(0xFFF8FAFC),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            switchInCurve: Curves.easeInOut,
+            switchOutCurve: Curves.easeInOut,
+            child: _buildMainContent(currentView, ref),
           ),
+        );
+
+        return Scaffold(
+          appBar:
+              isMobile
+                  ? AppBar(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF0F172A),
+                    elevation: 0,
+                    scrolledUnderElevation: 1,
+                    surfaceTintColor: Colors.white,
+                    bottom: PreferredSize(
+                      preferredSize: const Size.fromHeight(1),
+                      child: Container(
+                        height: 1,
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF312E81), Color(0xFF4F46E5)],
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _getViewTitle(currentView),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                  : null,
+          drawer:
+              isMobile
+                  ? const Drawer(
+                    width: 285,
+                    backgroundColor: Colors.white,
+                    child: SafeArea(child: SidebarNav(isDrawer: true)),
+                  )
+                  : null,
+          body:
+              isMobile
+                  ? SafeArea(top: false, child: mainContent)
+                  : Row(
+                    children: [
+                      const SidebarNav(),
+                      Expanded(child: mainContent),
+                    ],
+                  ),
         );
       },
       loading:
@@ -62,6 +199,45 @@ class DashboardPage extends ConsumerWidget {
               const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('Auth Error: $e'))),
     );
+  }
+
+  String _getViewTitle(DashboardView view) {
+    switch (view) {
+      case DashboardView.summary:
+        return 'Dashboard Overview';
+      case DashboardView.serviceProviders:
+        return 'Service Providers';
+      case DashboardView.users:
+        return 'Users & Providers';
+      case DashboardView.payPerLead:
+        return 'Pay Per Lead';
+      case DashboardView.deactivatedList:
+        return 'Deactivated Providers';
+      case DashboardView.callLogSheet:
+        return 'Call Log Sheet';
+      case DashboardView.callLogsDetails:
+        return 'Call Logs Details';
+      case DashboardView.servicePosts:
+        return 'Service Posts';
+      case DashboardView.rentalProperties:
+        return 'Rental Properties';
+      case DashboardView.localPromotions:
+        return 'Local Promotions';
+      case DashboardView.tickets:
+        return 'Helpdesk Tickets';
+      case DashboardView.verification:
+        return 'Verification Queue';
+      case DashboardView.whatsappMessages:
+        return 'WhatsApp Messages';
+      case DashboardView.admin:
+        return 'Admin Management';
+      case DashboardView.appConfig:
+        return 'App Configuration';
+      case DashboardView.logs:
+        return 'Call Logs & Feedback';
+      case DashboardView.payments:
+        return 'Payments';
+    }
   }
 
   Widget _buildMainContent(DashboardView view, WidgetRef ref) {
@@ -134,6 +310,8 @@ class DashboardPage extends ConsumerWidget {
         );
       case DashboardView.callLogSheet:
         return const CallLogSheetView();
+      case DashboardView.callLogsDetails:
+        return const CallLogsDetailDataView();
       case DashboardView.logs:
         return const CallLogsDataView();
       case DashboardView.payments:
@@ -151,15 +329,22 @@ class _SummaryDashboard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final adminProfile = ref.watch(currentAdminProfileProvider).value;
     final adminName = adminProfile?['name'] ?? 'Super Boss';
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+    final isTablet = ResponsiveBreakpoints.isTablet(context);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 28, 32, 48),
+      padding:
+          isMobile
+              ? const EdgeInsets.fromLTRB(16, 16, 16, 32)
+              : isTablet
+              ? const EdgeInsets.fromLTRB(24, 24, 24, 40)
+              : const EdgeInsets.fromLTRB(32, 28, 32, 48),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Banner Welcome Header - Serene Midnight Sapphire Theme
           Container(
-            padding: const EdgeInsets.all(28),
+            padding: EdgeInsets.all(isMobile ? 18 : 28),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [
@@ -170,7 +355,7 @@ class _SummaryDashboard extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(isMobile ? 18 : 24),
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFF312E81).withValues(alpha: 0.25),
@@ -181,59 +366,81 @@ class _SummaryDashboard extends ConsumerWidget {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Welcome Back, $adminName! 👑',
-                            style: GoogleFonts.poppins(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.25),
-                              ),
-                            ),
-                            // child: Text(
-                            //   'COMMAND CENTER 🚀',
-                            //   style: GoogleFonts.poppins(
-                            //     color: Colors.white,
-                            //     fontSize: 10,
-                            //     fontWeight: FontWeight.w800,
-                            //     letterSpacing: 0.5,
-                            //   ),
-                            // ),
-                          ),
-                        ],
+                      Text(
+                        'Welcome Back, $adminName! 👑',
+                        style: GoogleFonts.poppins(
+                          fontSize: isMobile ? 20 : 26,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -0.3,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'Close the Deal, Own the Win.✨',
                         style: GoogleFonts.poppins(
-                          fontSize: 13.5,
+                          fontSize: isMobile ? 12.5 : 13.5,
                           color: Colors.white.withValues(alpha: 0.85),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Builder(
+                        builder: (context) {
+                          final scope = ref.watch(cityAccessScopeProvider);
+                          final label =
+                              scope.isSuperAdmin
+                                  ? 'Scope: All Cities (Super Admin)'
+                                  : 'Assigned Cities: ${scope.assignedCities.join(', ')}';
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  scope.isSuperAdmin
+                                      ? Icons.public_rounded
+                                      : Icons.location_on_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    label,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.15),
@@ -289,12 +496,14 @@ class _SummaryDashboard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Overall Platform Summary ✨',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  'Overall Platform Summary ✨',
+                  style: GoogleFonts.poppins(
+                    fontSize: isMobile ? 16 : 20,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
             ],
@@ -302,13 +511,14 @@ class _SummaryDashboard extends ConsumerWidget {
           const SizedBox(height: 18),
 
           // Overall Stats Grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            childAspectRatio: 1.35,
+          ResponsiveWrapGrid(
+            mobileColumns: 1,
+            tabletColumns: 2,
+            desktopColumns: 4,
+            mobileBreakpoint: 520,
+            desktopBreakpoint: 960,
+            spacing: isMobile ? 12 : 20,
+            runSpacing: isMobile ? 12 : 20,
             children: [
               _buildStatCard(
                 ref,
@@ -345,7 +555,7 @@ class _SummaryDashboard extends ConsumerWidget {
             ],
           ),
 
-          const SizedBox(height: 36),
+          SizedBox(height: isMobile ? 28 : 36),
 
           // Today Summary Header
           Row(
@@ -363,12 +573,14 @@ class _SummaryDashboard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                "Today's Live Action Highlights 🚀",
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  "Today's Live Action Highlights 🚀",
+                  style: GoogleFonts.poppins(
+                    fontSize: isMobile ? 16 : 20,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
             ],
@@ -376,13 +588,14 @@ class _SummaryDashboard extends ConsumerWidget {
           const SizedBox(height: 18),
 
           // Today Stats Grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            childAspectRatio: 1.45,
+          ResponsiveWrapGrid(
+            mobileColumns: 1,
+            tabletColumns: 2,
+            desktopColumns: 4,
+            mobileBreakpoint: 520,
+            desktopBreakpoint: 960,
+            spacing: isMobile ? 12 : 20,
+            runSpacing: isMobile ? 12 : 20,
             children: [
               _buildStatCard(
                 ref,
@@ -423,42 +636,59 @@ class _SummaryDashboard extends ConsumerWidget {
             ],
           ),
 
-          const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.verified_user_rounded,
-                        color: Color(0xFFF59E0B),
-                        size: 22,
-                      ),
+          SizedBox(height: isMobile ? 28 : 40),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stackFilters = constraints.maxWidth < 720;
+              final titleRow = Row(
+                mainAxisSize: stackFilters ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
+                    child: const Icon(
+                      Icons.verified_user_rounded,
+                      color: Color(0xFFF59E0B),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
                       'Unverified Businesses Queue 🛡️',
                       style: GoogleFonts.poppins(
-                        fontSize: 20,
+                        fontSize: isMobile ? 16 : 20,
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF0F172A),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              const _DashboardCityFilterDropdown(),
-              const SizedBox(width: 12),
-              const _DashboardDateFilterDropdown(),
-            ],
+                  ),
+                ],
+              );
+
+              final filters = Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: const [
+                  _DashboardCityFilterDropdown(),
+                  _DashboardDateFilterDropdown(),
+                ],
+              );
+
+              if (stackFilters) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [titleRow, const SizedBox(height: 12), filters],
+                );
+              }
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [Expanded(child: titleRow), const SizedBox(width: 12), filters],
+              );
+            },
           ),
           const SizedBox(height: 18),
           _buildPendingVerifications(context, ref),
@@ -558,30 +788,37 @@ class _SummaryDashboard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  if (badgeLabel != null) ...[
-                    const SizedBox(height: 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      badgeLabel,
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(
-                        fontSize: 10,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: gradientColors.first,
+                        color: const Color(0xFF0F172A),
                       ),
                     ),
+                    if (badgeLabel != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        badgeLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: gradientColors.first,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -599,6 +836,7 @@ class _SummaryDashboard extends ConsumerWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1050,6 +1288,113 @@ class _DashboardDateFilterDropdown extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AccessBlockedScreen extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String message;
+  final String? email;
+  final VoidCallback onSignOut;
+
+  const _AccessBlockedScreen({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.message,
+    this.email,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Center(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                color: Colors.white,
+                child: Padding(
+                  padding: const EdgeInsets.all(28.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: iconColor.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(icon, size: 36, color: iconColor),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          color: const Color(0xFF64748B),
+                          height: 1.5,
+                        ),
+                      ),
+                      if (email != null && email!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          email!,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: onSignOut,
+                          icon: const Icon(Icons.logout_rounded, size: 18),
+                          label: const Text('Sign Out'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F172A),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

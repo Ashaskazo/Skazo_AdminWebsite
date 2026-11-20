@@ -31,6 +31,12 @@ class UserStats {
     required this.unverified,
     required this.today,
   });
+
+  const UserStats.empty()
+    : total = 0,
+      verified = 0,
+      unverified = 0,
+      today = 0;
 }
 
 enum UserSearchMode { none, phone, uid, usernamePrefix, businessNamePrefix }
@@ -127,15 +133,74 @@ class UserRepository {
     Error.throwWithStackTrace(lastError!, lastStack ?? StackTrace.current);
   }
 
+  bool _isCityAllowedForScope(
+    String? selectedCity,
+    List<String> assignedCities,
+    bool isSuperAdmin,
+  ) {
+    if (!isSuperAdmin && assignedCities.isEmpty) {
+      return false;
+    }
+    final trimmed = selectedCity?.trim();
+    if (trimmed == null ||
+        trimmed.isEmpty ||
+        trimmed == 'All' ||
+        trimmed == 'All Cities' ||
+        trimmed == 'All Assigned Cities') {
+      return true;
+    }
+    if (trimmed == kMissingCityFilterValue) {
+      return isSuperAdmin;
+    }
+    if (isSuperAdmin) return true;
+    final normSelected = canonicalizeCityKey(trimmed);
+    return assignedCities.any((c) {
+      final normAssigned = canonicalizeCityKey(c);
+      return normAssigned == normSelected ||
+          normAssigned.contains(normSelected) ||
+          normSelected.contains(normAssigned);
+    });
+  }
+
+  Future<void> ensureRecordEditableByScope(
+    String userId,
+    CityAccessScope? scope,
+  ) async {
+    if (scope == null || scope.isUnrestricted) return;
+    if (!scope.isAuthorized) {
+      throw StateError('Access denied: administrator permissions not verified.');
+    }
+    final doc = await _users.doc(userId).get();
+    if (!doc.exists || doc.data() == null) {
+      throw StateError('Target record does not exist.');
+    }
+    final effectivePincodesMap = await _resolvePincodesMap(const {});
+    final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
+    if (!scope.allowsRecord(
+      doc.data()!,
+      pincodesMap: effectivePincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+    )) {
+      throw StateError(
+        'Access denied: you do not have permission for this city.',
+      );
+    }
+  }
+
   Future<PageResult<UserModel>> fetchUsers({
     required UserFilters filters,
     String searchQuery = '',
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
     final cityFilter = filters.city?.trim();
+    if (!_isCityAllowedForScope(cityFilter, assignedCities, isSuperAdmin)) {
+      return const PageResult(items: [], lastDocument: null, hasMore: false);
+    }
+
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
       final filtersWithoutCity = filters.copyWith(clearCity: true);
@@ -144,7 +209,7 @@ class UserRepository {
           selectedCity ??
           (assignedCities.length == 1 ? assignedCities.first : null);
 
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final cityKeyResult = await _tryFetchUsersByCityKey(
           filters: filtersWithoutCity,
           search: search,
@@ -162,6 +227,7 @@ class UserRepository {
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -197,16 +263,21 @@ class UserRepository {
     required UserFilters filters,
     String searchQuery = '',
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final cityFilter = filters.city?.trim();
+    if (!_isCityAllowedForScope(cityFilter, assignedCities, isSuperAdmin)) {
+      return 0;
+    }
+
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
       final effectiveCity =
           selectedCity ??
           (assignedCities.length == 1 ? assignedCities.first : null);
 
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final cityKeyCount = await _tryCountUsersByCityKey(
           filters: filters.copyWith(clearCity: true),
           search: UserSearchParams.fromQuery(searchQuery),
@@ -222,6 +293,7 @@ class UserRepository {
       return _countCityFilteredUsers(
         selectedCity: cityFilter,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         queryBuilder:
             () => _buildUsersQuery(
@@ -242,37 +314,133 @@ class UserRepository {
 
   Future<UserStats> fetchUserStats({
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    String? selectedCity,
   }) async {
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return UserStats.empty();
+    }
+
     return _withRetry(() async {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayTs = Timestamp.fromDate(todayStart);
 
-      if (assignedCities.isNotEmpty) {
-        final cityKeys =
-            assignedCities.map(_normalizeQueryableCityKey).toList();
-        Query<Map<String, dynamic>> baseQuery = _users;
-        if (cityKeys.length == 1) {
-          baseQuery = baseQuery.where('cityKey', isEqualTo: cityKeys.first);
-        } else if (cityKeys.length <= 30) {
-          baseQuery = baseQuery.where('cityKey', whereIn: cityKeys);
+      final trimmedCity = selectedCity?.trim();
+      final hasSpecificCity =
+          trimmedCity != null &&
+          trimmedCity.isNotEmpty &&
+          trimmedCity != 'All' &&
+          trimmedCity != 'All Cities' &&
+          trimmedCity != 'All Assigned Cities';
+
+      final effectiveCities =
+          hasSpecificCity
+              ? [trimmedCity]
+              : (isSuperAdmin ? const <String>[] : assignedCities);
+
+      if (!isSuperAdmin || effectiveCities.isNotEmpty) {
+        if (hasSpecificCity && trimmedCity == kMissingCityFilterValue) {
+          final effectivePincodesMap = await _resolvePincodesMap(const {});
+          final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
+          final snap = await _users.get();
+          int total = 0, verified = 0, unverified = 0, today = 0;
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            if (hasResolvableCity(
+              data,
+              pincodesMap: effectivePincodesMap,
+              pincodeCityLookup: pincodeCityLookup,
+            )) {
+              continue;
+            }
+            total++;
+            if (data['isverified'] == true) {
+              verified++;
+            } else {
+              unverified++;
+            }
+            final created = data['createdAt'];
+            if (created is Timestamp && !created.toDate().isBefore(todayStart)) {
+              today++;
+            }
+          }
+          return UserStats(
+            total: total,
+            verified: verified,
+            unverified: unverified,
+            today: today,
+          );
         }
 
-        final results = await Future.wait([
-          baseQuery.count().get(),
-          baseQuery.where('isverified', isEqualTo: true).count().get(),
-          baseQuery.where('isverified', isEqualTo: false).count().get(),
-          baseQuery
-              .where('createdAt', isGreaterThanOrEqualTo: todayTs)
-              .count()
-              .get(),
-        ]);
+        if (await _supportsDirectCityKeyQueries()) {
+          final cityKeys = expandQueryableCityKeys(effectiveCities);
+          final chunks = chunkList(cityKeys, 30);
+          int total = 0, verified = 0, unverified = 0, today = 0;
 
+          for (final chunk in chunks) {
+            Query<Map<String, dynamic>> baseQuery = _users;
+            if (chunk.length == 1) {
+              baseQuery = baseQuery.where('cityKey', isEqualTo: chunk.first);
+            } else {
+              baseQuery = baseQuery.where('cityKey', whereIn: chunk);
+            }
+            final results = await Future.wait([
+              baseQuery.count().get(),
+              baseQuery.where('isverified', isEqualTo: true).count().get(),
+              baseQuery.where('isverified', isEqualTo: false).count().get(),
+              baseQuery
+                  .where('createdAt', isGreaterThanOrEqualTo: todayTs)
+                  .count()
+                  .get(),
+            ]);
+            total += results[0].count ?? 0;
+            verified += results[1].count ?? 0;
+            unverified += results[2].count ?? 0;
+            today += results[3].count ?? 0;
+          }
+
+          return UserStats(
+            total: total,
+            verified: verified,
+            unverified: unverified,
+            today: today,
+          );
+        }
+
+        // Derived pincode/address fallback when cityKey field is absent
+        final effectivePincodesMap = await _resolvePincodesMap(const {});
+        final pincodeCityLookup = buildPincodeCityLookup(effectivePincodesMap);
+        final snap = await _users.get();
+        int total = 0, verified = 0, unverified = 0, today = 0;
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          if (!userMatchesAssignedCities(
+            data,
+            hasSpecificCity ? trimmedCity : null,
+            assignedCities,
+            effectivePincodesMap,
+            pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
+          )) {
+            continue;
+          }
+          total++;
+          if (data['isverified'] == true) {
+            verified++;
+          } else {
+            unverified++;
+          }
+          final created = data['createdAt'];
+          if (created is Timestamp && !created.toDate().isBefore(todayStart)) {
+            today++;
+          }
+        }
         return UserStats(
-          total: results[0].count ?? 0,
-          verified: results[1].count ?? 0,
-          unverified: results[2].count ?? 0,
-          today: results[3].count ?? 0,
+          total: total,
+          verified: verified,
+          unverified: unverified,
+          today: today,
         );
       }
 
@@ -298,6 +466,7 @@ class UserRepository {
   Future<int> countServiceProviders({
     UserFilters? filters,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final baseFilters = (filters ?? const UserFilters()).copyWith(
@@ -306,6 +475,7 @@ class UserRepository {
     return countUsers(
       filters: baseFilters,
       assignedCities: assignedCities,
+      isSuperAdmin: isSuperAdmin,
       pincodesMap: pincodesMap,
     );
   }
@@ -315,14 +485,19 @@ class UserRepository {
     String? city,
     String? category,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final selectedCity = city?.trim();
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return 0;
+    }
+
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
       final effectiveCity =
           selectedCity ??
           (assignedCities.length == 1 ? assignedCities.first : null);
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final directCount = await _tryCountUnverifiedByCityKey(
           timeFilter: timeFilter,
           selectedCity: effectiveCity,
@@ -337,6 +512,7 @@ class UserRepository {
       return _countCityFilteredUsers(
         selectedCity: selectedCity,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         queryBuilder:
             () => _buildUnverifiedBaseQuery(
@@ -361,16 +537,21 @@ class UserRepository {
     String? city,
     String? category,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
     final selectedCity = city?.trim();
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return const PageResult(items: [], lastDocument: null, hasMore: false);
+    }
+
     if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
       final effectiveCity =
           selectedCity ??
           (assignedCities.length == 1 ? assignedCities.first : null);
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final cityKeyResult = await _tryFetchUnverifiedByCityKey(
           timeFilter: timeFilter,
           category: category,
@@ -388,6 +569,7 @@ class UserRepository {
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -426,9 +608,14 @@ class UserRepository {
     TimeFilterOption timeFilter = TimeFilterOption.all,
     String? city,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final selectedCity = city?.trim();
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return {for (final category in categories) category: 0};
+    }
+
     final effectiveCity =
         selectedCity ??
         (assignedCities.length == 1 ? assignedCities.first : null);
@@ -441,7 +628,9 @@ class UserRepository {
       };
 
       String? directCityKey;
-      if (effectiveCity != null && await _supportsDirectCityKeyQueries()) {
+      if (effectiveCity != null &&
+          effectiveCity != kMissingCityFilterValue &&
+          await _supportsDirectCityKeyQueries()) {
         directCityKey = _normalizeQueryableCityKey(effectiveCity);
       }
 
@@ -462,13 +651,15 @@ class UserRepository {
 
       for (final doc in snapshot.docs) {
         final userData = doc.data();
-        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities) ||
+            !isSuperAdmin) {
           if (!userMatchesAssignedCities(
             userData,
             selectedCity,
             assignedCities,
             effectivePincodesMap,
             pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
           )) {
             continue;
           }
@@ -492,7 +683,8 @@ class UserRepository {
     });
   }
 
-  Future<void> verifyUser(String userId) async {
+  Future<void> verifyUser(String userId, {CityAccessScope? scope}) async {
+    await ensureRecordEditableByScope(userId, scope);
     await _withRetry(() {
       return _users.doc(userId).update({
         'isverified': true,
@@ -503,7 +695,12 @@ class UserRepository {
     });
   }
 
-  Future<void> deactivateUser(String userId, {String? reason}) async {
+  Future<void> deactivateUser(
+    String userId, {
+    String? reason,
+    CityAccessScope? scope,
+  }) async {
+    await ensureRecordEditableByScope(userId, scope);
     await _withRetry(() {
       final updateData = <String, dynamic>{
         'isactive': false,
@@ -519,7 +716,8 @@ class UserRepository {
     });
   }
 
-  Future<void> activateUser(String userId) async {
+  Future<void> activateUser(String userId, {CityAccessScope? scope}) async {
+    await ensureRecordEditableByScope(userId, scope);
     await _withRetry(() {
       return _users.doc(userId).update({
         'isactive': true,
@@ -537,16 +735,21 @@ class UserRepository {
     DateTimeRange? customDateRange,
     String? statusFilter,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
     final cityFilter = selectedCity?.trim();
+    if (!_isCityAllowedForScope(cityFilter, assignedCities, isSuperAdmin)) {
+      return const PageResult(items: [], lastDocument: null, hasMore: false);
+    }
+
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final effectiveCity =
           cityFilter ??
           (assignedCities.length == 1 ? assignedCities.first : null);
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final directResult = await _tryFetchDeactivatedByCityKey(
           searchQuery: searchQuery,
           dateFilter: dateFilter,
@@ -565,6 +768,7 @@ class UserRepository {
       return _fetchCityFilteredPage(
         selectedCity: cityFilter,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -609,14 +813,19 @@ class UserRepository {
     DateTimeRange? customDateRange,
     String? statusFilter,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
   }) async {
     final cityFilter = selectedCity?.trim();
+    if (!_isCityAllowedForScope(cityFilter, assignedCities, isSuperAdmin)) {
+      return 0;
+    }
+
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final effectiveCity =
           cityFilter ??
           (assignedCities.length == 1 ? assignedCities.first : null);
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final directCount = await _tryCountDeactivatedByCityKey(
           searchQuery: searchQuery,
           dateFilter: dateFilter,
@@ -633,6 +842,7 @@ class UserRepository {
       return _countCityFilteredUsers(
         selectedCity: cityFilter,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         queryBuilder:
             () => _buildDeactivatedQuery(
@@ -731,6 +941,28 @@ class UserRepository {
     return query;
   }
 
+  Query<Map<String, dynamic>> _applyDirectCityKeyFilter(
+    Query<Map<String, dynamic>> query,
+    String? directCityKey,
+  ) {
+    final normalized = directCityKey?.trim() ?? '';
+    if (normalized.isEmpty) {
+      return query;
+    }
+    if (normalized == '__UNAUTHORIZED__' ||
+        normalized == '__TOO_MANY_ASSIGNED_CITIES__') {
+      return query.where(_cityKeyField, isEqualTo: normalized);
+    }
+    final variants = expandQueryableCityKeys([normalized]);
+    if (variants.isEmpty) {
+      return query.where(_cityKeyField, isEqualTo: normalized);
+    }
+    if (variants.length == 1) {
+      return query.where(_cityKeyField, isEqualTo: variants.first);
+    }
+    return query.where(_cityKeyField, whereIn: variants.take(30).toList());
+  }
+
   Query<Map<String, dynamic>> _buildDeactivatedQuery({
     String? searchQuery,
     String? dateFilter,
@@ -746,9 +978,7 @@ class UserRepository {
       isEqualTo: true,
     );
 
-    if (directCityKey != null && directCityKey.isNotEmpty) {
-      query = query.where(_cityKeyField, isEqualTo: directCityKey);
-    }
+    query = _applyDirectCityKeyFilter(query, directCityKey);
 
     query = _applyDeactivatedDateFilter(query, dateFilter, customDateRange);
 
@@ -862,9 +1092,7 @@ class UserRepository {
           search.phoneVariants == null ||
           search.phoneVariants!.length <= 1,
     );
-    if (directCityKey != null && directCityKey.isNotEmpty) {
-      query = query.where(_cityKeyField, isEqualTo: directCityKey);
-    }
+    query = _applyDirectCityKeyFilter(query, directCityKey);
 
     switch (search.mode) {
       case UserSearchMode.none:
@@ -1007,11 +1235,16 @@ class UserRepository {
   Future<PageResult<UserModel>> _fetchCityFilteredPage({
     required String? selectedCity,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     required Map<String, List<String>> pincodesMap,
     required Query<Map<String, dynamic>> Function() queryBuilder,
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
   }) async {
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return const PageResult(items: [], lastDocument: null, hasMore: false);
+    }
+
     return _withRetry(() async {
       final startTime = DateTime.now();
       final matched = <UserModel>[];
@@ -1048,6 +1281,7 @@ class UserRepository {
             assignedCities,
             pincodesMap,
             pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
           )) {
             continue;
           }
@@ -1073,9 +1307,14 @@ class UserRepository {
   Future<int> _countCityFilteredUsers({
     required String? selectedCity,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     required Map<String, List<String>> pincodesMap,
     required Query<Map<String, dynamic>> Function() queryBuilder,
   }) async {
+    if (!_isCityAllowedForScope(selectedCity, assignedCities, isSuperAdmin)) {
+      return 0;
+    }
+
     return _withRetry(() async {
       final startTime = DateTime.now();
       var total = 0;
@@ -1108,6 +1347,7 @@ class UserRepository {
             assignedCities,
             pincodesMap,
             pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
           )) {
             total++;
           }
@@ -1118,77 +1358,6 @@ class UserRepository {
       }
 
       return total;
-    });
-  }
-
-  Future<Map<String, int>> _countCityFilteredUnverifiedCategories({
-    required List<String> categories,
-    required TimeFilterOption timeFilter,
-    required String? selectedCity,
-    List<String> assignedCities = const [],
-    required Map<String, List<String>> pincodesMap,
-  }) async {
-    return _withRetry(() async {
-      final startTime = DateTime.now();
-      final counts = <String, int>{
-        for (final category in categories) category: 0,
-      };
-      final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
-      final queryBatchSize = _maxCityFilterScanBatchSize;
-      DocumentSnapshot<Map<String, dynamic>>? cursor;
-      var hasMore = true;
-
-      while (hasMore) {
-        // Safety check to avoid overall timeout
-        if (DateTime.now().difference(startTime) >
-            _firestoreTimeout - const Duration(seconds: 10)) {
-          break;
-        }
-
-        var query = _buildUnverifiedBaseQuery(
-          timeFilter: timeFilter,
-          category: null,
-        );
-        if (cursor != null) {
-          query = query.startAfterDocument(cursor);
-        }
-
-        final snapshot = await query.limit(queryBatchSize).get();
-        if (snapshot.docs.isEmpty) {
-          break;
-        }
-
-        for (final doc in snapshot.docs) {
-          final userData = doc.data();
-          if (!userMatchesAssignedCities(
-            userData,
-            selectedCity,
-            assignedCities,
-            pincodesMap,
-            pincodeCityLookup,
-          )) {
-            continue;
-          }
-
-          final userCategories = userData['category'];
-          if (userCategories is List) {
-            for (final value in userCategories) {
-              final category = value?.toString();
-              if (category != null && counts.containsKey(category)) {
-                counts[category] = (counts[category] ?? 0) + 1;
-              }
-            }
-          } else if (userCategories is String &&
-              counts.containsKey(userCategories)) {
-            counts[userCategories] = (counts[userCategories] ?? 0) + 1;
-          }
-        }
-
-        cursor = snapshot.docs.last;
-        hasMore = snapshot.docs.length == queryBatchSize;
-      }
-
-      return counts;
     });
   }
 
@@ -1212,9 +1381,7 @@ class UserRepository {
     }
 
     query = _applyDateFilter(query, timeFilter);
-    if (directCityKey != null && directCityKey.isNotEmpty) {
-      query = query.where(_cityKeyField, isEqualTo: directCityKey);
-    }
+    query = _applyDirectCityKeyFilter(query, directCityKey);
     return _shouldSortByCreatedAt(timeFilter)
         ? query.orderBy('createdAt', descending: true)
         : query;
@@ -1225,6 +1392,7 @@ class UserRepository {
     required UserFilters filters,
     required String searchQuery,
     List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
     Map<String, List<String>> pincodesMap = const {},
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = userPageSize,
@@ -1233,6 +1401,7 @@ class UserRepository {
       filters: filters,
       searchQuery: searchQuery,
       assignedCities: assignedCities,
+      isSuperAdmin: isSuperAdmin,
       pincodesMap: pincodesMap,
       startAfter: startAfter,
       limit: limit,
@@ -1251,12 +1420,16 @@ class UserRepository {
     );
 
     final cityFilter = filters.city?.trim();
+    if (!_isCityAllowedForScope(cityFilter, assignedCities, isSuperAdmin)) {
+      return const PageResult(items: [], lastDocument: null, hasMore: false);
+    }
+
     if (_shouldUseDerivedCityFiltering(cityFilter, assignedCities)) {
       final selectedCity = cityFilter;
       final effectiveCity =
           selectedCity ??
           (assignedCities.length == 1 ? assignedCities.first : null);
-      if (effectiveCity != null) {
+      if (effectiveCity != null && effectiveCity != kMissingCityFilterValue) {
         final directResult = await _tryFetchUsersByCityKey(
           filters: filters.copyWith(clearCity: true),
           search: usernameSearch,
@@ -1274,6 +1447,7 @@ class UserRepository {
       return _fetchCityFilteredPage(
         selectedCity: selectedCity,
         assignedCities: assignedCities,
+        isSuperAdmin: isSuperAdmin,
         pincodesMap: effectivePincodesMap,
         startAfter: startAfter,
         limit: limit,
@@ -1318,7 +1492,7 @@ class UserRepository {
   }
 
   String _normalizeQueryableCityKey(String city) {
-    return city.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    return canonicalizeCityKey(city);
   }
 
   Future<bool> _supportsDirectCityKeyQueries() async {
@@ -1456,6 +1630,131 @@ static const List<String> _kPplAllowedCategories = [
     'Car Mechanic',
   ];
 
+  List<Query<Map<String, dynamic>>> _buildPayPerLeadBaseQueries({
+    String? selectedCity,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    List<String> assignedCities = const [],
+    bool isSuperAdmin = false,
+    bool sortDescending = true,
+    bool applyOrdering = true,
+  }) {
+    Query<Map<String, dynamic>> makeBase() => _users
+        .where('isuser', isEqualTo: false)
+        .where('payperLeadcharge', isGreaterThan: 0)
+        .where('category', arrayContainsAny: _kPplAllowedCategories);
+
+    final city = selectedCity?.trim();
+    final hasSpecificCity =
+        city != null &&
+        city.isNotEmpty &&
+        city != 'All' &&
+        city != 'All Cities';
+
+    final List<List<String>> cityKeyChunks;
+    if (isSuperAdmin) {
+      if (hasSpecificCity) {
+        final variants = expandQueryableCityKeys([city]);
+        cityKeyChunks =
+            variants.isEmpty ? const [] : chunkList<String>(variants, 2);
+      } else {
+        cityKeyChunks = const [<String>[]];
+      }
+    } else {
+      if (assignedCities.isEmpty) {
+        return [makeBase().where('cityKey', isEqualTo: '__UNAUTHORIZED__')];
+      }
+
+      final normalizedCanonical =
+          assignedCities
+              .map(_normalizeQueryableCityKey)
+              .where((value) => value.isNotEmpty)
+              .toSet();
+      if (normalizedCanonical.isEmpty) {
+        return [makeBase().where('cityKey', isEqualTo: '__UNAUTHORIZED__')];
+      }
+
+      final List<String> allowedVariants;
+      if (hasSpecificCity) {
+        final normalizedSelected = _normalizeQueryableCityKey(city);
+        if (!normalizedCanonical.contains(normalizedSelected)) {
+          return [makeBase().where('cityKey', isEqualTo: '__UNAUTHORIZED__')];
+        }
+        allowedVariants = expandQueryableCityKeys([city]);
+      } else {
+        allowedVariants = expandQueryableCityKeys(assignedCities);
+      }
+
+      if (allowedVariants.isEmpty) {
+        return [makeBase().where('cityKey', isEqualTo: '__UNAUTHORIZED__')];
+      }
+      // 13 categories * 2 cityKeys = 26 <= Firestore 30-disjunction limit.
+      cityKeyChunks = chunkList<String>(allowedVariants, 2);
+    }
+
+    if (cityKeyChunks.isEmpty) {
+      return [makeBase().where('cityKey', isEqualTo: '__UNAUTHORIZED__')];
+    }
+
+    final hasDateFrom = dateFrom != null;
+    final hasDateTo = dateTo != null;
+
+    return cityKeyChunks.map((chunk) {
+      var query = makeBase();
+      if (chunk.length == 1) {
+        query = query.where('cityKey', isEqualTo: chunk.first);
+      } else if (chunk.length > 1) {
+        query = query.where('cityKey', whereIn: chunk);
+      }
+
+      if (hasDateFrom) {
+        final fromIstMidnight = DateTime.utc(
+          dateFrom.year,
+          dateFrom.month,
+          dateFrom.day,
+        );
+        final fromUtc = fromIstMidnight.subtract(
+          const Duration(hours: 5, minutes: 30),
+        );
+        query = query.where(
+          'lastpaymentpayperlead',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(fromUtc),
+        );
+      }
+
+      if (hasDateTo) {
+        final toIstNextMidnight = DateTime.utc(
+          dateTo.year,
+          dateTo.month,
+          dateTo.day,
+        ).add(const Duration(days: 1));
+        final toExclusiveUtc = toIstNextMidnight.subtract(
+          const Duration(hours: 5, minutes: 30),
+        );
+        query = query.where(
+          'lastpaymentpayperlead',
+          isLessThan: Timestamp.fromDate(toExclusiveUtc),
+        );
+      }
+
+      if (applyOrdering) {
+        if (hasDateFrom || hasDateTo) {
+          query = query.orderBy(
+            'lastpaymentpayperlead',
+            descending: sortDescending,
+          );
+        } else {
+          query = query.orderBy(
+            'payperLeadcharge',
+            descending: sortDescending,
+          );
+        }
+      }
+
+      return query;
+    }).toList();
+  }
+
   Query<Map<String, dynamic>> _buildPayPerLeadBaseQuery({
     String? selectedCity,
     DateTime? dateFrom,
@@ -1465,132 +1764,16 @@ static const List<String> _kPplAllowedCategories = [
     bool sortDescending = true,
     bool applyOrdering = true,
   }) {
-    Query<Map<String, dynamic>> query = _users
-        .where('isuser', isEqualTo: false)
-        .where('payperLeadcharge', isGreaterThan: 0)
-        .where('category', arrayContainsAny: _kPplAllowedCategories);
-
-    // ------------------------------------------------------------
-    // CITY / ADMIN AUTHORIZATION
-    // ------------------------------------------------------------
-
-    final city = selectedCity?.trim();
-
-    final hasSpecificCity =
-        city != null &&
-        city.isNotEmpty &&
-        city != 'All' &&
-        city != 'All Cities';
-
-    if (isSuperAdmin) {
-      if (hasSpecificCity) {
-        query = query.where(
-          'cityKey',
-          isEqualTo: _normalizeQueryableCityKey(city),
-        );
-      }
-    } else {
-      // Normal admin must NEVER see data outside assigned cities.
-      if (assignedCities.isEmpty) {
-        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
-      }
-
-      final normalizedAssigned =
-          assignedCities
-              .map(_normalizeQueryableCityKey)
-              .where((value) => value.isNotEmpty)
-              .toSet()
-              .toList();
-
-      if (normalizedAssigned.isEmpty) {
-        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
-      }
-
-      if (hasSpecificCity) {
-        final normalizedSelected = _normalizeQueryableCityKey(city);
-
-        // If selected city is not assigned to this admin,
-        // deliberately return zero results.
-        if (!normalizedAssigned.contains(normalizedSelected)) {
-          return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
-        }
-
-        query = query.where('cityKey', isEqualTo: normalizedSelected);
-      } else {
-        if (normalizedAssigned.length == 1) {
-          query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
-        } else if (normalizedAssigned.length <= 30) {
-          query = query.where('cityKey', whereIn: normalizedAssigned);
-        } else {
-          // Fail closed.
-          return query.where(
-            'cityKey',
-            isEqualTo: '__TOO_MANY_ASSIGNED_CITIES__',
-          );
-        }
-      }
-    }
-
-    // ------------------------------------------------------------
-    // OPTIONAL DATE FILTER
-    // ------------------------------------------------------------
-
-    final hasDateFrom = dateFrom != null;
-    final hasDateTo = dateTo != null;
-
-    if (hasDateFrom) {
-      final fromIstMidnight = DateTime.utc(
-        dateFrom.year,
-        dateFrom.month,
-        dateFrom.day,
-      );
-
-      final fromUtc = fromIstMidnight.subtract(
-        const Duration(hours: 5, minutes: 30),
-      );
-
-      query = query.where(
-        'lastpaymentpayperlead',
-        isGreaterThanOrEqualTo: Timestamp.fromDate(fromUtc),
-      );
-    }
-
-    if (hasDateTo) {
-      final toIstNextMidnight = DateTime.utc(
-        dateTo.year,
-        dateTo.month,
-        dateTo.day,
-      ).add(const Duration(days: 1));
-
-      final toExclusiveUtc = toIstNextMidnight.subtract(
-        const Duration(hours: 5, minutes: 30),
-      );
-
-      query = query.where(
-        'lastpaymentpayperlead',
-        isLessThan: Timestamp.fromDate(toExclusiveUtc),
-      );
-    }
-
-    // ------------------------------------------------------------
-    // ORDERING
-    // ------------------------------------------------------------
-
-    if (applyOrdering) {
-      if (hasDateFrom || hasDateTo) {
-        query = query.orderBy(
-          'lastpaymentpayperlead',
-          descending: sortDescending,
-        );
-      } else {
-        query = query.orderBy(
-          'payperLeadcharge',
-          descending: sortDescending,
-        );
-      }
-    }
-
-    return query;
+    final queries = _buildPayPerLeadBaseQueries(
+      selectedCity: selectedCity,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      assignedCities: assignedCities,
+      isSuperAdmin: isSuperAdmin,
+      sortDescending: sortDescending,
+      applyOrdering: applyOrdering,
+    );
+    return queries.first;
   }
 
   Future<PageResult<UserModel>> fetchPayPerLeadProviders({
@@ -1642,36 +1825,33 @@ static const List<String> _kPplAllowedCategories = [
     bool sortDescending = true,
   }) async {
     return _withRetry(() async {
-      try {
-        final Query<Map<String, dynamic>> query = _buildPayPerLeadBaseQuery(
+      Future<List<UserModel>> runChunked(bool applyOrdering) async {
+        final queries = _buildPayPerLeadBaseQueries(
           selectedCity: selectedCity,
           dateFrom: dateFrom,
           dateTo: dateTo,
           assignedCities: assignedCities,
           isSuperAdmin: isSuperAdmin,
           sortDescending: sortDescending,
-          applyOrdering: true,
+          applyOrdering: applyOrdering,
         );
+        final snapshots = await Future.wait(queries.map((q) => q.get()));
+        final byId = <String, UserModel>{};
+        for (final snap in snapshots) {
+          for (final doc in snap.docs) {
+            byId[doc.id] = UserModel.fromFirestore(doc);
+          }
+        }
+        return byId.values.toList();
+      }
 
-        final snapshot = await query.get();
-        return snapshot.docs.map(UserModel.fromFirestore).toList();
+      try {
+        return await runChunked(true);
       } catch (e) {
         // Fallback to query without ordering if composite index is missing or inequality conflicts.
         // In-memory sorting ensures records remain properly sorted.
         debugPrint('PayPerLead ordered query fallback: $e');
-        final Query<Map<String, dynamic>> fallbackQuery =
-            _buildPayPerLeadBaseQuery(
-          selectedCity: selectedCity,
-          dateFrom: dateFrom,
-          dateTo: dateTo,
-          assignedCities: assignedCities,
-          isSuperAdmin: isSuperAdmin,
-          sortDescending: sortDescending,
-          applyOrdering: false,
-        );
-
-        final snapshot = await fallbackQuery.get();
-        return snapshot.docs.map(UserModel.fromFirestore).toList();
+        return await runChunked(false);
       }
     });
   }
@@ -1680,7 +1860,9 @@ static const List<String> _kPplAllowedCategories = [
   Future<void> savePayPerLeadFeedback({
     required String userId,
     required String feedback,
+    CityAccessScope? scope,
   }) async {
+    await ensureRecordEditableByScope(userId, scope);
     await _withRetry(() {
       return _users.doc(userId).update({
         'payPerLeadFeedback': feedback.trim(),
@@ -1699,7 +1881,7 @@ static const List<String> _kPplAllowedCategories = [
     bool isSuperAdmin = false,
   }) async {
     return _withRetry(() async {
-      final query = _buildPayPerLeadBaseQuery(
+      final queries = _buildPayPerLeadBaseQueries(
         selectedCity: selectedCity,
         dateFrom: dateFrom,
         dateTo: dateTo,
@@ -1708,9 +1890,8 @@ static const List<String> _kPplAllowedCategories = [
         applyOrdering: false,
       );
 
-      final snapshot = await query.count().get();
-
-      return snapshot.count ?? 0;
+      final snapshots = await Future.wait(queries.map((q) => q.count().get()));
+      return snapshots.fold<int>(0, (sum, snap) => sum + (snap.count ?? 0));
     });
   }
 
@@ -1740,31 +1921,36 @@ static const List<String> _kPplAllowedCategories = [
 
     if (isSuperAdmin) {
       if (hasSpecificCity) {
-        query = query.where(
-          'cityKey',
-          isEqualTo: _normalizeQueryableCityKey(city),
-        );
+        query = _applyDirectCityKeyFilter(query, city);
       }
     } else {
       if (assignedCities.isEmpty) {
         return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
       }
 
-      final normalizedAssigned =
-          assignedCities.map(_normalizeQueryableCityKey).toList();
+      final normalizedAssigned = expandQueryableCityKeys(assignedCities);
+      if (normalizedAssigned.isEmpty) {
+        return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+      }
 
       if (hasSpecificCity) {
         final normalizedSelected = _normalizeQueryableCityKey(city);
-        if (normalizedAssigned.contains(normalizedSelected)) {
-          query = query.where('cityKey', isEqualTo: normalizedSelected);
+        if (!normalizedAssigned.contains(normalizedSelected)) {
+          return query.where('cityKey', isEqualTo: '__UNAUTHORIZED__');
+        }
+        final selectedVariants = expandQueryableCityKeys([city]);
+        if (selectedVariants.length == 1) {
+          query = query.where('cityKey', isEqualTo: selectedVariants.first);
         } else {
-          query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
+          query = query.where('cityKey', whereIn: selectedVariants.take(30).toList());
         }
       } else {
         if (normalizedAssigned.length == 1) {
           query = query.where('cityKey', isEqualTo: normalizedAssigned.first);
         } else if (normalizedAssigned.length <= 30) {
           query = query.where('cityKey', whereIn: normalizedAssigned);
+        } else {
+          return query.where('cityKey', isEqualTo: '__TOO_MANY_ASSIGNED_CITIES__');
         }
       }
     }
@@ -1806,13 +1992,15 @@ static const List<String> _kPplAllowedCategories = [
         final data = doc.data();
 
         // City authorization check (derived pincode filtering).
-        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities) ||
+            !isSuperAdmin) {
           if (!userMatchesAssignedCities(
             data,
             selectedCity,
             assignedCities,
             effectivePincodesMap,
             pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
           )) {
             continue;
           }
@@ -1975,13 +2163,15 @@ static const List<String> _kPplAllowedCategories = [
             cursor = doc;
             final data = doc.data();
 
-            if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+            if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities) ||
+                !isSuperAdmin) {
               if (!userMatchesAssignedCities(
                 data,
                 selectedCity,
                 assignedCities,
                 effectivePincodesMap,
                 pincodeCityLookup,
+                isSuperAdmin: isSuperAdmin,
               )) {
                 continue;
               }
@@ -2018,13 +2208,15 @@ static const List<String> _kPplAllowedCategories = [
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities)) {
+        if (_shouldUseDerivedCityFiltering(selectedCity, assignedCities) ||
+            !isSuperAdmin) {
           if (!userMatchesAssignedCities(
             data,
             selectedCity,
             assignedCities,
             effectivePincodesMap,
             pincodeCityLookup,
+            isSuperAdmin: isSuperAdmin,
           )) {
             continue;
           }
@@ -2154,10 +2346,12 @@ final userRepositoryProvider = Provider<UserRepository>((ref) {
 
 final userStatsProvider = FutureProvider<UserStats>((ref) async {
   final repository = ref.watch(userRepositoryProvider);
-  final isSuper = ref.watch(isSuperAdminProvider);
-  final assignedCities =
-      isSuper
-          ? const <String>[]
-          : ref.watch(currentAdminAssignedCitiesProvider);
-  return repository.fetchUserStats(assignedCities: assignedCities);
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return const UserStats.empty();
+  }
+  return repository.fetchUserStats(
+    assignedCities: scope.assignedCities,
+    isSuperAdmin: scope.isSuperAdmin,
+  );
 });

@@ -7,6 +7,7 @@ import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
 import 'package:skazo_admin/providers/unverified_pagination_provider.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class UnverifiedBusinessesGrid extends ConsumerWidget {
   const UnverifiedBusinessesGrid({super.key});
@@ -36,20 +37,27 @@ class _CategoryGridView extends ConsumerWidget {
       data: (categoryCounts) {
         const categories = kBusinessCategories;
 
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount:
-                MediaQuery.of(context).size.width > 1200
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final maxWidth = constraints.maxWidth;
+            final crossAxisCount =
+                maxWidth >= 980
                     ? 8
-                    : (MediaQuery.of(context).size.width > 800 ? 4 : 2),
-            childAspectRatio: 1.0,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: categories.length,
+                    : (maxWidth >= 720 ? 5 : (maxWidth >= 500 ? 3 : 2));
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                childAspectRatio:
+                    maxWidth < 360
+                        ? 0.80
+                        : (maxWidth < 600 ? 0.85 : 0.88),
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: categories.length,
           itemBuilder: (context, index) {
             final category = categories[index];
             final count = categoryCounts[category] ?? 0;
@@ -94,7 +102,7 @@ class _CategoryGridView extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
                         color:
                             count > 0
@@ -104,20 +112,20 @@ class _CategoryGridView extends ConsumerWidget {
                       ),
                       child: Icon(
                         _getCategoryIcon(category),
-                        size: 28,
+                        size: 24,
                         color:
                             count > 0
                                 ? const Color(0xFF2563EB)
                                 : const Color(0xFF94A3B8),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                       child: Text(
                         category,
                         style: GoogleFonts.poppins(
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight:
                               count > 0 ? FontWeight.w700 : FontWeight.w600,
                           color:
@@ -130,11 +138,11 @@ class _CategoryGridView extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 3,
+                        horizontal: 8,
+                        vertical: 2,
                       ),
                       decoration: BoxDecoration(
                         color:
@@ -169,6 +177,8 @@ class _CategoryGridView extends ConsumerWidget {
                   ],
                 ),
               ),
+            );
+          },
             );
           },
         );
@@ -287,12 +297,17 @@ class _UserListViewState extends ConsumerState<_UserListView> {
     final listHeight = MediaQuery.of(context).size.height * 0.6;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Header with Back button and City Filter
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -302,11 +317,13 @@ class _UserListViewState extends ConsumerState<_UserListView> {
                               .read(dashboardSelectedCategoryProvider.notifier)
                               .state = null,
                 ),
-                Text(
-                  widget.category,
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Flexible(
+                  child: Text(
+                    widget.category,
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -447,101 +464,155 @@ class _UnverifiedUserTile extends ConsumerWidget {
       ),
       elevation: 0,
       borderOnForeground: true,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: const Color(0xFFF1F5F9),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: imageUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 200,
-                    memCacheHeight: 200,
-                    maxWidthDiskCache: 400,
-                    placeholder: (context, url) => const Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    errorWidget: (context, url, error) => const Icon(
-                      Icons.business,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  )
-                : const Icon(Icons.business, color: Color(0xFF94A3B8)),
-          ),
-        ),
-        title: Text(
-          user.displayName,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              user.email ?? user.phone?.toString() ?? 'No Email',
-              style: GoogleFonts.poppins(fontSize: 12),
+      child: Builder(
+        builder: (context) {
+          final isMobile = ResponsiveBreakpoints.isMobile(context);
+          final leadingAvatar = Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF1F5F9),
             ),
-            Text(
-              address,
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: Colors.grey,
-              ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child:
+                  imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 200,
+                        memCacheHeight: 200,
+                        maxWidthDiskCache: 400,
+                        placeholder:
+                            (context, url) => const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        errorWidget:
+                            (context, url, error) => const Icon(
+                              Icons.business,
+                              color: Color(0xFF94A3B8),
+                            ),
+                      )
+                      : const Icon(Icons.business, color: Color(0xFF94A3B8)),
             ),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(
-                Icons.visibility,
-                color: Color(0xFF2563EB),
+          );
+
+          final actionButtons = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.visibility, color: Color(0xFF2563EB)),
+                tooltip: 'View Profile',
+                onPressed:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) =>
+                                BusinessProfilePage(businessData: user.toMap()),
+                      ),
+                    ),
               ),
-              tooltip: 'View Profile',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BusinessProfilePage(
-                    businessData: user.toMap(),
+              IconButton(
+                icon: const Icon(Icons.check_circle, color: Colors.green),
+                tooltip: 'Verify & Activate',
+                onPressed:
+                    () => _confirmVerify(
+                      context,
+                      ref,
+                      user.id,
+                      user.businessname,
+                    ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.block_flipped, color: Colors.red),
+                tooltip: 'Deactivate',
+                onPressed:
+                    () => _confirmDeactivate(
+                      context,
+                      ref,
+                      user.id,
+                      user.businessname,
+                    ),
+              ),
+            ],
+          );
+
+          if (!isMobile) {
+            return ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: leadingAvatar,
+              title: Text(
+                user.displayName,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.email ?? user.phone?.toString() ?? 'No Email',
+                    style: GoogleFonts.poppins(fontSize: 12),
                   ),
+                  Text(
+                    address,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+              trailing: actionButtons,
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    leadingAvatar,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user.displayName,
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            user.email ?? user.phone?.toString() ?? 'No Email',
+                            style: GoogleFonts.poppins(fontSize: 12),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            address,
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                Align(alignment: Alignment.centerRight, child: actionButtons),
+              ],
             ),
-            IconButton(
-              icon: const Icon(
-                Icons.check_circle,
-                color: Colors.green,
-              ),
-              tooltip: 'Verify & Activate',
-              onPressed: () => _confirmVerify(
-                context,
-                ref,
-                user.id,
-                user.businessname,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(
-                Icons.block_flipped,
-                color: Colors.red,
-              ),
-              tooltip: 'Deactivate',
-              onPressed: () => _confirmDeactivate(
-                context,
-                ref,
-                user.id,
-                user.businessname,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class CollectionDataView extends ConsumerWidget {
   final String collectionName;
@@ -16,15 +17,19 @@ class CollectionDataView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dataAsync = ref.watch(collectionDataProvider(collectionName));
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header Area
         Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,7 +37,7 @@ class CollectionDataView extends ConsumerWidget {
                   Text(
                     title,
                     style: GoogleFonts.poppins(
-                      fontSize: 24,
+                      fontSize: isMobile ? 20 : 24,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF0F172A),
                     ),
@@ -41,7 +46,7 @@ class CollectionDataView extends ConsumerWidget {
                   Text(
                     'Managing collection: $collectionName',
                     style: GoogleFonts.poppins(
-                      fontSize: 14,
+                      fontSize: isMobile ? 12.5 : 14,
                       color: const Color(0xFF64748B),
                     ),
                   ),
@@ -68,7 +73,7 @@ class CollectionDataView extends ConsumerWidget {
         // Data Table / List
         Expanded(
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
+            margin: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),

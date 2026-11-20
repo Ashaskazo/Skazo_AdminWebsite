@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/pages/property_details_page.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RentalPropertiesDataView extends ConsumerStatefulWidget {
@@ -30,37 +32,41 @@ class _RentalPropertiesDataViewState
     final selectedType = ref.watch(rentalTypeFilterProvider);
     final selectedTime = ref.watch(rentalTimeFilterProvider);
     final notifier = ref.watch(paginatedRentalProvider.notifier);
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 18 : 32, isMobile ? 16 : 24, isMobile ? 16 : 24),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Rental Properties',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rental Properties',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 22 : 28,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manage real estate and rental listings.',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: const Color(0xFF64748B),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage real estate and rental listings.',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 12.5 : 14,
+                        color: const Color(0xFF64748B),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF2563EB).withValues(alpha: 0.1),
@@ -115,7 +121,7 @@ class _RentalPropertiesDataViewState
 
         // Filter Bar
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -264,10 +270,13 @@ class _RentalPropertiesDataViewState
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(child: _buildTypeChips(ref, selectedType)),
-                  const SizedBox(width: 12),
+                  _buildTypeChips(ref, selectedType),
                   Text(
                     'Showing ${notifier.filteredCount} results',
                     style: GoogleFonts.poppins(
@@ -339,10 +348,31 @@ class _RentalPropertiesDataViewState
         prop['docId']?.toString();
   }
 
+  bool _canModifyProperty(Map<String, dynamic> prop) {
+    final scope = ref.read(cityAccessScopeProvider);
+    final pincodesMap =
+        ref.read(propertyPincodesProvider).valueOrNull ?? const {};
+    final allowed =
+        scope.isAuthorized &&
+        scope.allowsRecord(prop, pincodesMap: pincodesMap);
+    if (!allowed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Access denied: property belongs to an unassigned city.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    return allowed;
+  }
+
   Future<void> _updatePropertyStatus({
     required Map<String, dynamic> prop,
     required bool isVerified,
   }) async {
+    if (!_canModifyProperty(prop)) return;
     final propertyId = _getPropertyId(prop);
 
     if (propertyId == null || propertyId.isEmpty) {
@@ -379,6 +409,7 @@ class _RentalPropertiesDataViewState
     required Map<String, dynamic> prop,
     required bool isVisible,
   }) async {
+    if (!_canModifyProperty(prop)) return;
     final propertyId = _getPropertyId(prop);
 
     if (propertyId == null || propertyId.isEmpty) {

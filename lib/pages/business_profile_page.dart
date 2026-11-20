@@ -8,6 +8,9 @@ import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/responsive.dart';
+import 'package:skazo_admin/widgets/provider_call_logs_section.dart';
 
 class _ServiceRateCardItemControllers {
   final TextEditingController serviceController;
@@ -25,8 +28,15 @@ class _ServiceRateCardItemControllers {
 
 class BusinessProfilePage extends ConsumerStatefulWidget {
   final Map<String, dynamic> businessData;
+  final Stream<List<ProviderCallLogItem>>? callLogsStream;
+  final FirebaseFirestore? callLogsFirestore;
 
-  const BusinessProfilePage({super.key, required this.businessData});
+  const BusinessProfilePage({
+    super.key,
+    required this.businessData,
+    this.callLogsStream,
+    this.callLogsFirestore,
+  });
 
   @override
   ConsumerState<BusinessProfilePage> createState() =>
@@ -403,6 +413,27 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         throw 'Document ID is missing. Cannot update profile in Firebase.';
       }
 
+      final scope = ref.read(cityAccessScopeProvider);
+      final pincodesMap =
+          ref.read(propertyPincodesProvider).valueOrNull ?? const {};
+      if (!scope.isAuthorized) {
+        throw 'Access denied: your account is not authorized for city-scoped updates.';
+      }
+      if (!scope.isUnrestricted) {
+        if (!scope.allowsRecord(widget.businessData, pincodesMap: pincodesMap)) {
+          throw 'Access denied: this business belongs to an unassigned city.';
+        }
+        final updatedCandidate = <String, dynamic>{
+          ...widget.businessData,
+          'businessaddress': _addressController.text.trim(),
+          'businessPincode': _businessPincodeController.text.trim(),
+          'businessLocation': _businessLocationController.text.trim(),
+        };
+        if (!scope.allowsRecord(updatedCandidate, pincodesMap: pincodesMap)) {
+          throw 'Access denied: cannot reassign this business outside your assigned cities.';
+        }
+      }
+
       final adminProfile = ref.read(currentAdminProfileProvider).value;
       final senderId =
           adminProfile?['admin_id'] ?? adminProfile?['id'] ?? 'Unknown';
@@ -534,9 +565,11 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
               children: [
                 const Icon(Icons.stars_rounded, color: Colors.white),
                 const SizedBox(width: 10),
-                Text(
-                  'Profile updated successfully! ✨🚀',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                Expanded(
+                  child: Text(
+                    'Profile updated successfully! ✨🚀',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
             ),
@@ -622,12 +655,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 child: Icon(icon, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 12),
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
             ],
@@ -858,13 +893,17 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             ? _nameController.text
             : (data['displayName'] ?? 'Service Provider');
 
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
           'Business Profile & Settings',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.poppins(
-            fontSize: 18,
+            fontSize: isMobile ? 15 : 18,
             fontWeight: FontWeight.w700,
             color: const Color(0xFF0F172A),
           ),
@@ -874,7 +913,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: EdgeInsets.only(right: isMobile ? 10 : 16),
             child: ElevatedButton.icon(
               onPressed: _isLoading ? null : _saveChanges,
               icon:
@@ -889,10 +928,10 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                       )
                       : const Icon(Icons.save_rounded, size: 18),
               label: Text(
-                _isLoading ? 'Saving...' : 'Save Profile',
+                _isLoading ? 'Saving...' : (isMobile ? 'Save' : 'Save Profile'),
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: isMobile ? 13 : 14,
                 ),
               ),
               style: ElevatedButton.styleFrom(
@@ -901,9 +940,9 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 12 : 20,
+                  vertical: isMobile ? 8 : 12,
                 ),
               ),
             ),
@@ -911,7 +950,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: ResponsiveBreakpoints.pagePadding(context),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 950),
@@ -922,7 +961,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 children: [
                   // Hero Header Card
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: EdgeInsets.all(isMobile ? 16 : 24),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [
@@ -933,7 +972,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(isMobile ? 18 : 24),
                       boxShadow: [
                         BoxShadow(
                           color: const Color(0xFF312E81).withValues(alpha: 0.3),
@@ -946,11 +985,11 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
-                          width: 80,
-                          height: 80,
+                          width: isMobile ? 60 : 80,
+                          height: isMobile ? 60 : 80,
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.15),
@@ -959,7 +998,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(isMobile ? 16 : 20),
                             child:
                                 businessPic.isNotEmpty
                                     ? CachedNetworkImage(
@@ -972,20 +1011,20 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                                             ),
                                           ),
                                       errorWidget:
-                                          (_, __, ___) => const Icon(
+                                          (_, __, ___) => Icon(
                                             Icons.business_rounded,
-                                            color: Color(0xFF6366F1),
-                                            size: 40,
+                                            color: const Color(0xFF6366F1),
+                                            size: isMobile ? 30 : 40,
                                           ),
                                     )
-                                    : const Icon(
+                                    : Icon(
                                       Icons.business_rounded,
-                                      color: Color(0xFF6366F1),
-                                      size: 40,
+                                      color: const Color(0xFF6366F1),
+                                      size: isMobile ? 30 : 40,
                                     ),
                           ),
                         ),
-                        const SizedBox(width: 20),
+                        SizedBox(width: isMobile ? 14 : 20),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -994,7 +1033,7 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                                 businessName,
                                 style: GoogleFonts.poppins(
                                   color: Colors.white,
-                                  fontSize: 22,
+                                  fontSize: isMobile ? 18 : 22,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -1164,12 +1203,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                               size: 20,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              'Account Status & Badges Control 🎛️',
-                              style: GoogleFonts.poppins(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF0F172A),
+                            Expanded(
+                              child: Text(
+                                'Account Status & Badges Control 🎛️',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
                               ),
                             ),
                           ],
@@ -1293,28 +1334,25 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _businessPincodeController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Business Pincode',
-                            Icons.pin_drop_rounded,
-                            accentColor: const Color(0xFF4F46E5),
-                          ),
+                      TextFormField(
+                        controller: _businessPincodeController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Business Pincode',
+                          Icons.pin_drop_rounded,
+                          accentColor: const Color(0xFF4F46E5),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _businessLocationController,
-                          decoration: _buildInputDecoration(
-                            'Business Location',
-                            Icons.place_rounded,
-                            accentColor: const Color(0xFF4F46E5),
-                          ),
+                      TextFormField(
+                        controller: _businessLocationController,
+                        decoration: _buildInputDecoration(
+                          'Business Location',
+                          Icons.place_rounded,
+                          accentColor: const Color(0xFF4F46E5),
                         ),
                       ),
                     ],
@@ -1327,81 +1365,72 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     Icons.person_rounded,
                     [const Color(0xFF0EA5E9), const Color(0xFF0284C7)],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _firstNameController,
-                          decoration: _buildInputDecoration(
-                            'First Name',
-                            Icons.person_outline_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _firstNameController,
+                        decoration: _buildInputDecoration(
+                          'First Name',
+                          Icons.person_outline_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _lastNameController,
-                          decoration: _buildInputDecoration(
-                            'Last Name',
-                            Icons.person_outline_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _lastNameController,
+                        decoration: _buildInputDecoration(
+                          'Last Name',
+                          Icons.person_outline_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _usernameController,
-                          decoration: _buildInputDecoration(
-                            'Username',
-                            Icons.alternate_email_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _usernameController,
+                        decoration: _buildInputDecoration(
+                          'Username',
+                          Icons.alternate_email_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _genderController,
-                          decoration: _buildInputDecoration(
-                            'Gender',
-                            Icons.wc_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _genderController,
+                        decoration: _buildInputDecoration(
+                          'Gender',
+                          Icons.wc_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: _buildInputDecoration(
-                            'Phone Number',
-                            Icons.phone_android_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: _buildInputDecoration(
+                          'Phone Number',
+                          Icons.phone_android_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _buildInputDecoration(
-                            'Email Address',
-                            Icons.email_rounded,
-                            accentColor: const Color(0xFF0EA5E9),
-                          ),
+                      TextFormField(
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: _buildInputDecoration(
+                          'Email Address',
+                          Icons.email_rounded,
+                          accentColor: const Color(0xFF0EA5E9),
                         ),
                       ),
                     ],
@@ -1416,113 +1445,110 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                   ),
 
                   // Pay per lead & Extra plan charge row
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFFDE68A)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.monetization_on_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Pay Per Lead Charge (₹)',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF78350F),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _payPerLeadChargeController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: _buildInputDecoration(
-                                        'Charge (₹)',
-                                        Icons.currency_rupee_rounded,
-                                        accentColor: const Color(0xFFF59E0B),
-                                        hintText: 'e.g. 50',
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              child: const Icon(
+                                Icons.monetization_on_rounded,
+                                color: Colors.white,
+                                size: 22,
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Pay Per Lead Charge (₹)',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF78350F),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextFormField(
+                                    controller: _payPerLeadChargeController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: _buildInputDecoration(
+                                      'Charge (₹)',
+                                      Icons.currency_rupee_rounded,
+                                      accentColor: const Color(0xFFF59E0B),
+                                      hintText: 'e.g. 50',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFFDE68A)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD97706),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.add_card_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD97706),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Extra Plan Charge (₹)',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF78350F),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _extraPlanChargeController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: _buildInputDecoration(
-                                        'Extra (₹)',
-                                        Icons.currency_rupee_rounded,
-                                        accentColor: const Color(0xFFD97706),
-                                        hintText: 'e.g. 0',
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                              child: const Icon(
+                                Icons.add_card_rounded,
+                                color: Colors.white,
+                                size: 22,
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Extra Plan Charge (₹)',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF78350F),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextFormField(
+                                    controller: _extraPlanChargeController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: _buildInputDecoration(
+                                      'Extra (₹)',
+                                      Icons.currency_rupee_rounded,
+                                      accentColor: const Color(0xFFD97706),
+                                      hintText: 'e.g. 0',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1548,10 +1574,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(
                                   Icons.receipt_long_rounded,
@@ -1559,12 +1589,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                                   size: 22,
                                 ),
                                 const SizedBox(width: 10),
-                                Text(
-                                  'Service Rate Card Items (${_serviceRateCardControllers.length})',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF0F172A),
+                                Flexible(
+                                  child: Text(
+                                    'Service Rate Card Items (${_serviceRateCardControllers.length})',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: isMobile ? 14 : 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1651,63 +1683,156 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                                     color: const Color(0xFFE2E8F0),
                                   ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFFF59E0B,
-                                        ).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '#${index + 1}',
-                                        style: GoogleFonts.poppins(
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFFD97706),
+                                child:
+                                    isMobile
+                                        ? Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(
+                                                    8,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFFF59E0B,
+                                                    ).withValues(alpha: 0.15),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    '#${index + 1}',
+                                                    style: GoogleFonts.poppins(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: const Color(
+                                                        0xFFD97706,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: TextFormField(
+                                                    controller:
+                                                        item.serviceController,
+                                                    decoration:
+                                                        _buildInputDecoration(
+                                                          'Service Name',
+                                                          Icons.build_rounded,
+                                                          accentColor:
+                                                              const Color(
+                                                                0xFFF59E0B,
+                                                              ),
+                                                          hintText:
+                                                              'e.g. AC Repair',
+                                                        ),
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  onPressed:
+                                                      () =>
+                                                          _removeServiceRateCardItem(
+                                                            index,
+                                                          ),
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .delete_outline_rounded,
+                                                    color: Color(0xFFEF4444),
+                                                  ),
+                                                  tooltip: 'Delete Service',
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                            TextFormField(
+                                              controller: item.rateController,
+                                              decoration: _buildInputDecoration(
+                                                'Rate (₹)',
+                                                Icons.currency_rupee_rounded,
+                                                accentColor: const Color(
+                                                  0xFFF59E0B,
+                                                ),
+                                                hintText: 'e.g. 499',
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                        : Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(
+                                                  0xFFF59E0B,
+                                                ).withValues(alpha: 0.15),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                '#${index + 1}',
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: const Color(
+                                                    0xFFD97706,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              flex: 3,
+                                              child: TextFormField(
+                                                controller:
+                                                    item.serviceController,
+                                                decoration:
+                                                    _buildInputDecoration(
+                                                      'Service Name',
+                                                      Icons.build_rounded,
+                                                      accentColor: const Color(
+                                                        0xFFF59E0B,
+                                                      ),
+                                                      hintText:
+                                                          'e.g. AC Repair',
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              flex: 2,
+                                              child: TextFormField(
+                                                controller: item.rateController,
+                                                decoration:
+                                                    _buildInputDecoration(
+                                                      'Rate (₹)',
+                                                      Icons
+                                                          .currency_rupee_rounded,
+                                                      accentColor: const Color(
+                                                        0xFFF59E0B,
+                                                      ),
+                                                      hintText: 'e.g. 499',
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              onPressed:
+                                                  () =>
+                                                      _removeServiceRateCardItem(
+                                                        index,
+                                                      ),
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                                color: Color(0xFFEF4444),
+                                              ),
+                                              tooltip: 'Delete Service',
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 3,
-                                      child: TextFormField(
-                                        controller: item.serviceController,
-                                        decoration: _buildInputDecoration(
-                                          'Service Name',
-                                          Icons.build_rounded,
-                                          accentColor: const Color(0xFFF59E0B),
-                                          hintText: 'e.g. AC Repair',
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 2,
-                                      child: TextFormField(
-                                        controller: item.rateController,
-                                        decoration: _buildInputDecoration(
-                                          'Rate (₹)',
-                                          Icons.currency_rupee_rounded,
-                                          accentColor: const Color(0xFFF59E0B),
-                                          hintText: 'e.g. 499',
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      onPressed:
-                                          () =>
-                                              _removeServiceRateCardItem(index),
-                                      icon: const Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: Color(0xFFEF4444),
-                                      ),
-                                      tooltip: 'Delete Service',
-                                    ),
-                                  ],
-                                ),
                               );
                             },
                           ),
@@ -1789,131 +1914,116 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     Icons.card_membership_rounded,
                     [const Color(0xFF10B981), const Color(0xFF059669)],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _planController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Active Plan Code',
-                            Icons.card_membership_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _planController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Active Plan Code',
+                          Icons.card_membership_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _paymentPlanController,
-                          decoration: _buildInputDecoration(
-                            'Payment Plan Duration',
-                            Icons.workspace_premium_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _paymentPlanController,
+                        decoration: _buildInputDecoration(
+                          'Payment Plan Duration',
+                          Icons.workspace_premium_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _ownerPaidController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Owner Paid Property Count',
-                            Icons.monetization_on_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _ownerPaidController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Owner Paid Property Count',
+                          Icons.monetization_on_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _userPaidController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'User Paid Property Count',
-                            Icons.account_balance_wallet_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _userPaidController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'User Paid Property Count',
+                          Icons.account_balance_wallet_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 16,
+                    verticalSpacing: 16,
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _transactionIdController,
-                          decoration: _buildInputDecoration(
-                            'Transaction ID',
-                            Icons.receipt_long_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _transactionIdController,
+                        decoration: _buildInputDecoration(
+                          'Transaction ID',
+                          Icons.receipt_long_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _paymentCountController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Payment Count',
-                            Icons.numbers_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _paymentCountController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Payment Count',
+                          Icons.numbers_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _totalAmountController,
-                          keyboardType: TextInputType.number,
-                          decoration: _buildInputDecoration(
-                            'Total Amount Paid (₹)',
-                            Icons.payments_rounded,
-                            accentColor: const Color(0xFF10B981),
-                          ),
+                      TextFormField(
+                        controller: _totalAmountController,
+                        keyboardType: TextInputType.number,
+                        decoration: _buildInputDecoration(
+                          'Total Amount Paid (₹)',
+                          Icons.payments_rounded,
+                          accentColor: const Color(0xFF10B981),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 16,
+                    verticalSpacing: 12,
                     children: [
-                      Expanded(
-                        child: _buildEditableDateTimeField(
-                          label: 'Last Payment At',
-                          value: _lastPaymentAt,
-                          icon: Icons.history_rounded,
-                          onTap:
-                              () => _selectDateTime(
-                                initialValue: _lastPaymentAt,
-                                onChanged:
-                                    (val) =>
-                                        setState(() => _lastPaymentAt = val),
-                              ),
-                          onClear: () => setState(() => _lastPaymentAt = null),
-                        ),
+                      _buildEditableDateTimeField(
+                        label: 'Last Payment At',
+                        value: _lastPaymentAt,
+                        icon: Icons.history_rounded,
+                        onTap:
+                            () => _selectDateTime(
+                              initialValue: _lastPaymentAt,
+                              onChanged:
+                                  (val) => setState(() => _lastPaymentAt = val),
+                            ),
+                        onClear: () => setState(() => _lastPaymentAt = null),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildEditableDateTimeField(
-                          label: 'Payment Date',
-                          value: _paymentDate,
-                          icon: Icons.calendar_month_rounded,
-                          onTap:
-                              () => _selectDateTime(
-                                initialValue: _paymentDate,
-                                onChanged:
-                                    (val) => setState(() => _paymentDate = val),
-                              ),
-                          onClear: () => setState(() => _paymentDate = null),
-                        ),
+                      _buildEditableDateTimeField(
+                        label: 'Payment Date',
+                        value: _paymentDate,
+                        icon: Icons.calendar_month_rounded,
+                        onTap:
+                            () => _selectDateTime(
+                              initialValue: _paymentDate,
+                              onChanged:
+                                  (val) => setState(() => _paymentDate = val),
+                            ),
+                        onClear: () => setState(() => _paymentDate = null),
                       ),
                     ],
                   ),
@@ -1925,86 +2035,90 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     Icons.insights_rounded,
                     [const Color(0xFF8B5CF6), const Color(0xFF6D28D9)],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Call Logs',
-                          data['totalCallLogs']?.toString() ?? '0',
-                          Icons.call_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Total Call Logs',
+                        data['totalCallLogs']?.toString() ?? '0',
+                        Icons.call_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Calls Generated',
-                          data['totalCallsGenerated']?.toString() ?? '0',
-                          Icons.trending_up_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Total Calls Generated',
+                        data['totalCallsGenerated']?.toString() ?? '0',
+                        Icons.trending_up_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Calls Post Payment',
-                          data['callsAfterLastPayment']?.toString() ?? '0',
-                          Icons.phone_callback_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Calls Post Payment',
+                        data['callsAfterLastPayment']?.toString() ?? '0',
+                        Icons.phone_callback_rounded,
                       ),
                     ],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Average Rating ⭐',
-                          "${data['avgRating']?.toString() ?? '0.0'} / 5.0",
-                          Icons.star_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Average Rating ⭐',
+                        "${data['avgRating']?.toString() ?? '0.0'} / 5.0",
+                        Icons.star_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Rating Sum',
-                          data['ratingSum']?.toString() ?? '0',
-                          Icons.stars_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Rating Sum',
+                        data['ratingSum']?.toString() ?? '0',
+                        Icons.stars_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total Ratings Received',
-                          data['totalRatings']?.toString() ?? '0',
-                          Icons.reviews_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Total Ratings Received',
+                        data['totalRatings']?.toString() ?? '0',
+                        Icons.reviews_rounded,
                       ),
                     ],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Today App Clicks',
-                          data['todayApplinkClicks']?.toString() ?? '0',
-                          Icons.touch_app_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Today App Clicks',
+                        data['todayApplinkClicks']?.toString() ?? '0',
+                        Icons.touch_app_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Total App Clicks',
-                          data['totalApplinkClicks']?.toString() ?? '0',
-                          Icons.ads_click_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Total App Clicks',
+                        data['totalApplinkClicks']?.toString() ?? '0',
+                        Icons.ads_click_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Click Counter Date',
-                          data['clickCounterDate']?.toString() ?? 'N/A',
-                          Icons.calendar_today_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Click Counter Date',
+                        data['clickCounterDate']?.toString() ?? 'N/A',
+                        Icons.calendar_today_rounded,
                       ),
                     ],
+                  ),
+
+                  // Provider Call Logs Section
+                  _buildSectionHeader(
+                    'Provider Call Logs 📞',
+                    'All call log records associated with this provider, customer details, and feedback status',
+                    Icons.phone_in_talk_rounded,
+                    [const Color(0xFF0284C7), const Color(0xFF0369A1)],
+                  ),
+                  ProviderCallLogsSection(
+                    providerId: (data['uid']?.toString().isNotEmpty == true
+                        ? data['uid']
+                        : data['id'] ?? data['docId'])
+                            ?.toString()
+                            .trim() ??
+                        '',
+                    providerData: data,
+                    callLogsStream: widget.callLogsStream,
+                    firestore: widget.callLogsFirestore,
                   ),
 
                   // Activity Timestamps Section
@@ -2014,88 +2128,75 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     Icons.history_rounded,
                     [const Color(0xFFEC4899), const Color(0xFFDB2777)],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Created At',
-                          _formatTimestamp(data['createdAt']),
-                          Icons.calendar_month_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Created At',
+                        _formatTimestamp(data['createdAt']),
+                        Icons.calendar_month_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Updated At',
-                          _formatTimestamp(data['updatedAt']),
-                          Icons.update_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Updated At',
+                        _formatTimestamp(data['updatedAt']),
+                        Icons.update_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Verified At',
-                          _formatTimestamp(data['verifiedAt']),
-                          Icons.verified_user_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Verified At',
+                        _formatTimestamp(data['verifiedAt']),
+                        Icons.verified_user_rounded,
                       ),
                     ],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    breakpoint: 720,
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Last Call At',
-                          _formatTimestamp(data['lastCallAt']),
-                          Icons.phone_in_talk_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Last Call At',
+                        _formatTimestamp(data['lastCallAt']),
+                        Icons.phone_in_talk_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Last Payment At',
-                          _lastPaymentAt != null
-                              ? DateFormat(
-                                'dd MMM yyyy, hh:mm:ss a',
-                              ).format(_lastPaymentAt!)
-                              : 'N/A',
-                          Icons.payment_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Last Payment At',
+                        _lastPaymentAt != null
+                            ? DateFormat(
+                              'dd MMM yyyy, hh:mm:ss a',
+                            ).format(_lastPaymentAt!)
+                            : 'N/A',
+                        Icons.payment_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Payment Date',
-                          _paymentDate != null
-                              ? DateFormat(
-                                'dd MMM yyyy, hh:mm:ss a',
-                              ).format(_paymentDate!)
-                              : 'N/A',
-                          Icons.event_available_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Payment Date',
+                        _paymentDate != null
+                            ? DateFormat(
+                              'dd MMM yyyy, hh:mm:ss a',
+                            ).format(_paymentDate!)
+                            : 'N/A',
+                        Icons.event_available_rounded,
                       ),
                     ],
                   ),
                   if (_deactivatedAt != null ||
                       data['deactivatedAt'] != null) ...[
-                    Row(
+                    ResponsiveRowColumn(
+                      horizontalSpacing: 12,
+                      verticalSpacing: 0,
                       children: [
-                        Expanded(
-                          child: _buildReadOnlyField(
-                            'Deactivated At',
-                            _formatTimestamp(
-                              _deactivatedAt ?? data['deactivatedAt'],
-                            ),
-                            Icons.pause_circle_rounded,
+                        _buildReadOnlyField(
+                          'Deactivated At',
+                          _formatTimestamp(
+                            _deactivatedAt ?? data['deactivatedAt'],
                           ),
+                          Icons.pause_circle_rounded,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildReadOnlyField(
-                            'Deactivation Reason',
-                            data['deactivationReason']?.toString() ?? 'N/A',
-                            Icons.info_outline_rounded,
-                          ),
+                        _buildReadOnlyField(
+                          'Deactivation Reason',
+                          data['deactivationReason']?.toString() ?? 'N/A',
+                          Icons.info_outline_rounded,
                         ),
                       ],
                     ),
@@ -2108,24 +2209,21 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                     Icons.developer_board_rounded,
                     [const Color(0xFF64748B), const Color(0xFF334155)],
                   ),
-                  Row(
+                  ResponsiveRowColumn(
+                    horizontalSpacing: 12,
+                    verticalSpacing: 0,
                     children: [
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'City',
-                          data['city']?.toString() ??
-                              data['City']?.toString() ??
-                              'N/A',
-                          Icons.location_city_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'City',
+                        data['city']?.toString() ??
+                            data['City']?.toString() ??
+                            'N/A',
+                        Icons.location_city_rounded,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildReadOnlyField(
-                          'Canonical City Key',
-                          data['cityKey']?.toString() ?? 'N/A',
-                          Icons.key_rounded,
-                        ),
+                      _buildReadOnlyField(
+                        'Canonical City Key',
+                        data['cityKey']?.toString() ?? 'N/A',
+                        Icons.key_rounded,
                       ),
                     ],
                   ),
@@ -2143,57 +2241,49 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                       final (latCoord, lngCoord) = _extractCoordinates(data);
                       return Column(
                         children: [
-                          Row(
+                          ResponsiveRowColumn(
+                            horizontalSpacing: 12,
+                            verticalSpacing: 0,
                             children: [
-                              Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Coordinate 1 (Latitude)',
-                                  latCoord,
-                                  Icons.north_rounded,
-                                  copyLabel: 'Latitude',
-                                  accentColor: const Color(0xFF6366F1),
-                                ),
+                              _buildCopyableCoordinateField(
+                                'Coordinate 1 (Latitude)',
+                                latCoord,
+                                Icons.north_rounded,
+                                copyLabel: 'Latitude',
+                                accentColor: const Color(0xFF6366F1),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Coordinate 2 (Longitude)',
-                                  lngCoord,
-                                  Icons.east_rounded,
-                                  copyLabel: 'Longitude',
-                                  accentColor: const Color(0xFF8B5CF6),
-                                ),
+                              _buildCopyableCoordinateField(
+                                'Coordinate 2 (Longitude)',
+                                lngCoord,
+                                Icons.east_rounded,
+                                copyLabel: 'Longitude',
+                                accentColor: const Color(0xFF8B5CF6),
                               ),
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Row(
+                          ResponsiveRowColumn(
+                            breakpoint: 720,
+                            horizontalSpacing: 12,
+                            verticalSpacing: 0,
                             children: [
-                              Expanded(
-                                child: _buildReadOnlyField(
-                                  'Location (Geopoint)',
-                                  data['location']?['geopoint']?.toString() ??
-                                      'N/A',
-                                  Icons.map_rounded,
-                                ),
+                              _buildReadOnlyField(
+                                'Location (Geopoint)',
+                                data['location']?['geopoint']?.toString() ??
+                                    'N/A',
+                                Icons.map_rounded,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildCopyableCoordinateField(
-                                  'Combined Coordinates',
-                                  '$latCoord, $lngCoord',
-                                  Icons.gps_fixed_rounded,
-                                  copyLabel: 'Combined Coordinates',
-                                  accentColor: const Color(0xFF10B981),
-                                ),
+                              _buildCopyableCoordinateField(
+                                'Combined Coordinates',
+                                '$latCoord, $lngCoord',
+                                Icons.gps_fixed_rounded,
+                                copyLabel: 'Combined Coordinates',
+                                accentColor: const Color(0xFF10B981),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildReadOnlyField(
-                                  'Geohash (5/7)',
-                                  "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
-                                  Icons.language_rounded,
-                                ),
+                              _buildReadOnlyField(
+                                'Geohash (5/7)',
+                                "${data['geohash5'] ?? 'N/A'} / ${data['geohash7'] ?? 'N/A'}",
+                                Icons.language_rounded,
                               ),
                             ],
                           ),
@@ -2302,10 +2392,12 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                           size: 16,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '$displayCopyLabel copied!',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: Text(
+                            '$displayCopyLabel copied!',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -2357,12 +2449,16 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             color: isStar ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8),
           ),
           const SizedBox(width: 8),
-          Text(
-            'Star Provider',
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              fontWeight: isStar ? FontWeight.w700 : FontWeight.w500,
-              color: isStar ? const Color(0xFFF59E0B) : const Color(0xFF475569),
+          Flexible(
+            child: Text(
+              'Star Provider',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: isStar ? FontWeight.w700 : FontWeight.w500,
+                color: isStar ? const Color(0xFFF59E0B) : const Color(0xFF475569),
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -2435,12 +2531,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 size: 22,
               ),
               const SizedBox(width: 10),
-              Text(
-                'Categories Assigned 🏷️',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  'Categories Assigned 🏷️',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ),
             ],
@@ -2595,12 +2693,14 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
                 size: 22,
               ),
               const SizedBox(width: 10),
-              Text(
-                'Category Priority 🏆',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF78350F),
+              Expanded(
+                child: Text(
+                  'Category Priority 🏆',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF78350F),
+                  ),
                 ),
               ),
             ],
@@ -2713,12 +2813,16 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
         children: [
           Icon(icon, color: Colors.white, size: 14),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -2760,12 +2864,16 @@ class _BusinessProfilePageState extends ConsumerState<BusinessProfilePage> {
             ),
             const SizedBox(width: 8),
           ],
-          Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              fontWeight: value ? FontWeight.w700 : FontWeight.w500,
-              color: value ? activeColor : const Color(0xFF475569),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: value ? FontWeight.w700 : FontWeight.w500,
+                color: value ? activeColor : const Color(0xFF475569),
+              ),
             ),
           ),
           const SizedBox(width: 6),

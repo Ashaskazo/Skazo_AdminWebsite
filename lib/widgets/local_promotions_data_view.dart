@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/pages/promotion_details_page.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LocalPromotionsDataView extends ConsumerStatefulWidget {
@@ -30,37 +33,41 @@ class _LocalPromotionsDataViewState
     final selectedType = ref.watch(localPromotionsTypeFilterProvider);
     final selectedTime = ref.watch(localPromotionsTimeFilterProvider);
     final notifier = ref.watch(paginatedLocalPromotionsProvider.notifier);
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 18 : 32, isMobile ? 16 : 24, isMobile ? 16 : 24),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Local Promotions',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Local Promotions',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 22 : 28,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manage local business ads and promotions.',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: const Color(0xFF64748B),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage local business ads and promotions.',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 12.5 : 14,
+                        color: const Color(0xFF64748B),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF2563EB).withValues(alpha: 0.1),
@@ -118,7 +125,7 @@ class _LocalPromotionsDataViewState
 
         // Filter Bar
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -267,10 +274,13 @@ class _LocalPromotionsDataViewState
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(child: _buildTypeChips(ref, selectedType)),
-                  const SizedBox(width: 12),
+                  _buildTypeChips(ref, selectedType),
                   Text(
                     'Showing ${notifier.filteredCount} results',
                     style: GoogleFonts.poppins(
@@ -342,10 +352,31 @@ class _LocalPromotionsDataViewState
         promo['docId']?.toString();
   }
 
+  bool _canModifyPromotion(Map<String, dynamic> promo) {
+    final scope = ref.read(cityAccessScopeProvider);
+    final pincodesMap =
+        ref.read(propertyPincodesProvider).valueOrNull ?? const {};
+    final allowed =
+        scope.isAuthorized &&
+        scope.allowsRecord(promo, pincodesMap: pincodesMap);
+    if (!allowed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Access denied: promotion belongs to an unassigned city.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    return allowed;
+  }
+
   Future<void> _updatePromotionStatus({
     required Map<String, dynamic> promo,
     required bool isVerified,
   }) async {
+    if (!_canModifyPromotion(promo)) return;
     final promoId = _getPromotionId(promo);
 
     if (promoId == null || promoId.isEmpty) {
@@ -383,6 +414,7 @@ class _LocalPromotionsDataViewState
     required Map<String, dynamic> promo,
     required bool isVisible,
   }) async {
+    if (!_canModifyPromotion(promo)) return;
     final promoId = _getPromotionId(promo);
 
     if (promoId == null || promoId.isEmpty) {
@@ -623,12 +655,16 @@ class _LocalPromotionsDataViewState
                     color: Color(0xFF64748B),
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    location,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: const Color(0xFF64748B),
-                      fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],

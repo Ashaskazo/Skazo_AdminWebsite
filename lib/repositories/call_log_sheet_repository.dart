@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/models/call_log_sheet_item.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
 
 /// Provider for CallLogSheetRepository
 final callLogSheetRepositoryProvider = Provider<CallLogSheetRepository>((ref) {
@@ -102,9 +103,33 @@ class CallLogSheetRepository {
 
   /// Fetches eligible service providers from `users` and batches associated `callLogs`.
   /// Uses controlled parallel concurrency to prevent WebSocket timeouts and connection exhaustion.
-  Future<CallLogSheetFetchResult> fetchEligibleProviders() async {
+  Future<CallLogSheetFetchResult> fetchEligibleProviders({
+    CityAccessScope? scope,
+    String? selectedCity,
+    Map<String, List<String>> pincodesMap = const {},
+    Map<String, String>? pincodeCityLookup,
+  }) async {
     final stopwatch = Stopwatch()..start();
     bool usedCompositeIndex = false;
+
+    if (scope != null && !scope.isAuthorized) {
+      stopwatch.stop();
+      return CallLogSheetFetchResult(
+        items: const [],
+        metrics: CallLogSheetSyncMetrics(
+          eligibleProvidersCount: 0,
+          totalBatches: 0,
+          successfulBatches: 0,
+          failedBatches: 0,
+          callLogsRetrieved: 0,
+          elapsedMilliseconds: stopwatch.elapsedMilliseconds,
+          usedCompositeIndex: false,
+        ),
+      );
+    }
+
+    final effectiveLookup =
+        pincodeCityLookup ?? buildPincodeCityLookup(pincodesMap);
 
     // 1. Retrieve eligible users from 'users' collection where callsAfterLastPayment > 5
     List<QueryDocumentSnapshot<Map<String, dynamic>>> eligibleUserSnapshots = [];
@@ -177,6 +202,16 @@ class CallLogSheetRepository {
 
       final calls = parseInt(data['callsAfterLastPayment']) ?? 0;
       if (calls <= 5) continue;
+
+      if (scope != null &&
+          !scope.allowsRecord(
+            data,
+            selectedCity: selectedCity,
+            pincodesMap: pincodesMap,
+            pincodeCityLookup: effectiveLookup,
+          )) {
+        continue;
+      }
 
       eligibleProvidersMap[doc.id] = data;
     }

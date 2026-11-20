@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class OrdersDataView extends ConsumerWidget {
   const OrdersDataView({super.key});
@@ -9,15 +10,19 @@ class OrdersDataView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dataAsync = ref.watch(collectionDataProvider('orders'));
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -25,7 +30,7 @@ class OrdersDataView extends ConsumerWidget {
                   Text(
                     'Order Management',
                     style: GoogleFonts.poppins(
-                      fontSize: 24,
+                      fontSize: isMobile ? 20 : 24,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF0F172A),
                     ),
@@ -34,7 +39,7 @@ class OrdersDataView extends ConsumerWidget {
                   Text(
                     'Track and manage platform transactions.',
                     style: GoogleFonts.poppins(
-                      fontSize: 14,
+                      fontSize: isMobile ? 12.5 : 14,
                       color: const Color(0xFF64748B),
                     ),
                   ),
@@ -65,7 +70,7 @@ class OrdersDataView extends ConsumerWidget {
               if (orders.isEmpty) return const Center(child: Text('No orders found'));
 
               return ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24),
                 itemCount: orders.length,
                 itemBuilder: (context, index) {
                   final order = orders[index];
@@ -97,10 +102,14 @@ class OrdersDataView extends ConsumerWidget {
                             children: [
                               Text(
                                 'Order #${order['id'].toString().substring(0, 8)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                               ),
                               Text(
                                 order['userName'] ?? order['customerName'] ?? 'Anonymous',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(color: Colors.grey[600], fontSize: 13),
                               ),
                             ],

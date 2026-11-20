@@ -5,24 +5,20 @@ import 'package:skazo_admin/providers/dashboard_provider.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 
 class SidebarNav extends ConsumerWidget {
-  const SidebarNav({super.key});
+  final bool isDrawer;
+
+  const SidebarNav({super.key, this.isDrawer = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    print(
-      "************************************************************************",
-    );
-    print(
-      'Current Admin Profile: ${ref.watch(currentAdminProfileProvider).value}',
-    );
-    print('Is Super Admin: ${ref.watch(isSuperAdminProvider)}');
     final currentView = ref.watch(currentDashboardViewProvider);
-    final isCollapsed = ref.watch(sidebarCollapsedProvider);
+    final isCollapsed =
+        isDrawer ? false : ref.watch(sidebarCollapsedProvider);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOut,
-      width: isCollapsed ? 84 : 290,
+      width: isDrawer ? 285 : (isCollapsed ? 84 : 290),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -141,19 +137,24 @@ class SidebarNav extends ConsumerWidget {
                               ),
                             ),
                             IconButton(
-                              onPressed:
-                                  () =>
-                                      ref
-                                          .read(
-                                            sidebarCollapsedProvider.notifier,
-                                          )
-                                          .state = true,
-                              icon: const Icon(
-                                Icons.menu_open_rounded,
-                                color: Color(0xFF94A3B8),
+                              onPressed: () {
+                                if (isDrawer) {
+                                  Scaffold.maybeOf(context)?.closeDrawer();
+                                } else {
+                                  ref
+                                      .read(sidebarCollapsedProvider.notifier)
+                                      .state = true;
+                                }
+                              },
+                              icon: Icon(
+                                isDrawer
+                                    ? Icons.close_rounded
+                                    : Icons.menu_open_rounded,
+                                color: const Color(0xFF94A3B8),
                                 size: 22,
                               ),
-                              tooltip: 'Collapse Sidebar',
+                              tooltip:
+                                  isDrawer ? 'Close Menu' : 'Collapse Sidebar',
                             ),
                           ],
                         ),
@@ -245,15 +246,15 @@ class SidebarNav extends ConsumerWidget {
                   activeGradient: const [Color(0xFF0284C7), Color(0xFF0369A1)],
                   badge: 'REPORT',
                 ),
-                _buildNavItem(
-                  ref,
-                  'Service Posts',
-                  Icons.auto_stories_rounded,
-                  DashboardView.servicePosts,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF10B981), Color(0xFF059669)],
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'Service Posts',
+                //   Icons.auto_stories_rounded,
+                //   DashboardView.servicePosts,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF10B981), Color(0xFF059669)],
+                // ),
                 _buildNavItem(
                   ref,
                   'Rental Properties',
@@ -272,16 +273,16 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFFEC4899), Color(0xFFDB2777)],
                 ),
-                _buildNavItem(
-                  ref,
-                  'Payments & Revenue',
-                  Icons.account_balance_wallet_rounded,
-                  DashboardView.payments,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
-                  badge: '₹💰',
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'Payments & Revenue',
+                //   Icons.account_balance_wallet_rounded,
+                //   DashboardView.payments,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF06B6D4), Color(0xFF0891B2)],
+                //   badge: '₹💰',
+                // ),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('OPERATIONS & HELPDESK 🛠️', isCollapsed),
@@ -477,12 +478,16 @@ class SidebarNav extends ConsumerWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      role,
-                                      style: GoogleFonts.poppins(
-                                        color: const Color(0xFF6366F1),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
+                                    Flexible(
+                                      child: Text(
+                                        role,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.poppins(
+                                          color: const Color(0xFF6366F1),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -598,10 +603,16 @@ class SidebarNav extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap:
-            () => ref.read(currentDashboardViewProvider.notifier).state = view,
-        borderRadius: BorderRadius.circular(14),
+      child: Builder(
+        builder:
+            (itemContext) => InkWell(
+              onTap: () {
+                ref.read(currentDashboardViewProvider.notifier).state = view;
+                if (isDrawer) {
+                  Scaffold.maybeOf(itemContext)?.closeDrawer();
+                }
+              },
+              borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
@@ -669,6 +680,7 @@ class SidebarNav extends ConsumerWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

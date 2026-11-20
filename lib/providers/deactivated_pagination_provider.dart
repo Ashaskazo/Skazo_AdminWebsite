@@ -44,13 +44,16 @@ final deactivatedStatusFilterProvider = StateProvider<String>(
 class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
   Timer? _filterDebounce;
   int _requestId = 0;
+  bool _isDisposed = false;
   final Map<String, _CachedDeactivatedCounts> _countCache = {};
   final Map<String, Future<_CachedDeactivatedCounts>> _countRequests = {};
   final Map<String, Future<PageResult<UserModel>>> _pageRequests = {};
 
   @override
   UserPaginationState build() {
+    _isDisposed = false;
     ref.onDispose(() {
+      _isDisposed = true;
       _filterDebounce?.cancel();
       _countRequests.clear();
       _pageRequests.clear();
@@ -78,6 +81,10 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
       clearOptimizationCaches();
       _scheduleRefresh();
     });
+    ref.listen(cityAccessScopeProvider, (_, __) {
+      clearOptimizationCaches();
+      _scheduleRefresh();
+    });
 
     Future.microtask(refresh);
     return UserPaginationState.initial();
@@ -95,6 +102,7 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
   }
 
   Future<void> refresh() async {
+    if (_isDisposed) return;
     _requestId++;
     final requestId = _requestId;
     _filterDebounce?.cancel();
@@ -208,7 +216,15 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      return _CachedDeactivatedCounts(
+        filteredCount: 0,
+        totalCount: 0,
+        cachedAt: DateTime.now(),
+      );
+    }
+    final assignedCities = scope.assignedCities;
 
     final filteredCountFuture = repository.countDeactivatedUsers(
       searchQuery: searchQuery,
@@ -217,6 +233,7 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
       customDateRange: customDateRange,
       statusFilter: statusFilter,
       assignedCities: assignedCities,
+      isSuperAdmin: scope.isUnrestricted,
     );
 
     final totalCountFuture = repository.countDeactivatedUsers(
@@ -226,6 +243,7 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
       customDateRange: null,
       statusFilter: 'Deactivated',
       assignedCities: assignedCities,
+      isSuperAdmin: scope.isUnrestricted,
     );
 
     final results = await Future.wait([
@@ -259,7 +277,19 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      state = state.copyWith(
+        users: const [],
+        loading: false,
+        loadingMore: false,
+        hasMore: false,
+        clearLastDocument: true,
+        clearError: true,
+      );
+      return;
+    }
+    final assignedCities = scope.assignedCities;
     final searchQuery = ref.read(deactivatedSearchQueryProvider);
     final selectedCity = ref.read(deactivatedSelectedCityProvider);
     final dateFilter = ref.read(deactivatedDateFilterProvider);
@@ -286,6 +316,7 @@ class DeactivatedPaginationNotifier extends Notifier<UserPaginationState> {
             customDateRange: customDateRange,
             statusFilter: statusFilter,
             assignedCities: assignedCities,
+            isSuperAdmin: scope.isUnrestricted,
             startAfter: startAfter,
           );
 

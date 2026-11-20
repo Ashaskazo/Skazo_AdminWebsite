@@ -8,8 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/call_logs_detail_provider.dart';
 import 'package:skazo_admin/utils/city_resolver.dart';
 import 'package:skazo_admin/utils/property_pincodes_cache.dart';
+import 'package:skazo_admin/utils/responsive.dart';
+import 'package:skazo_admin/widgets/call_logs_detail_data_view.dart';
 
 
 class CallLogsDataView extends ConsumerStatefulWidget {
@@ -25,6 +28,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   List<Map<String, dynamic>> _allDocs = [];
   Map<String, List<String>> _pincodesMap = {};
   Map<String, String> _pincodeCityLookup = {};
+  final Map<String, Map<String, dynamic>> _businessUsersLookup = {};
 
   // Filters & Controllers
   final TextEditingController _searchController = TextEditingController();
@@ -37,6 +41,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       TextEditingController();
   final TextEditingController _assignedPersonController =
       TextEditingController();
+  final TextEditingController _feedbackDescriptionController =
+      TextEditingController();
+  bool _isSavingFeedbackDescription = false;
+  String? _lastLoadedFeedbackDocId;
 
   final int _pageSize = 10;
   String _dateFilter = 'Last 7 Days'; // Default to Last 7 Days
@@ -47,8 +55,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   String _filterPlan = 'All';
 
   String? _activeSavedView;
-  String _userRole =
-      'Super Admin'; // Role selector (allows toggle for testing role-based security)
+  String get _userRole =>
+      ref.read(cityAccessScopeProvider).isUnrestricted
+          ? 'Super Admin'
+          : 'Sales Team';
 
   // Loading & Data State
   bool _isLoading = true;
@@ -61,8 +71,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   List<Map<String, dynamic>> _filteredLogs = [];
   String? _selectedDocId;
   Map<String, dynamic>? _selectedDocData;
+  bool _showMobileDetail = false;
 
-  // Selected City Scope for Super Admin (null means All Cities)
+  // Selected City Scope (null means All Cities for Super Admin, or all assigned cities)
   String? _selectedCity;
 
   // Header Dashboard Stats
@@ -76,7 +87,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   @override
   void initState() {
     super.initState();
-    _determineUserRole();
     _resetAndLoad();
   }
 
@@ -90,36 +100,45 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     _customerPhoneController.dispose();
     _providerPhoneController.dispose();
     _assignedPersonController.dispose();
+    _feedbackDescriptionController.dispose();
     super.dispose();
   }
 
-  Future<void> _determineUserRole() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null ||
-        // AuthPage.isDummyUser ||
-        user.email?.toLowerCase().trim() == 'admin@skazo.com') {
-      setState(() {
-        _userRole = 'Super Admin';
-      });
-      return;
-    }
-    try {
-      final snapshot =
-          await FirebaseFirestore.instance
-              .collection('admin')
-              .where('email', isEqualTo: user.email?.toLowerCase().trim())
-              .limit(1)
-              .get();
-      if (snapshot.docs.isNotEmpty) {
-        final data = snapshot.docs.first.data();
-        final role = data['role']?.toString();
-        setState(() {
-          _userRole = (role == 'sales') ? 'Sales Team' : 'Super Admin';
-        });
+  Future<void> _hydrateBusinessUsersLookup(
+    List<Map<String, dynamic>> docs,
+  ) async {
+    final idsToFetch = <String>{};
+    for (final log in docs) {
+      final raw = (log['rawData'] as Map<String, dynamic>?) ?? const {};
+      if (resolveRecordCity(
+            raw,
+            pincodesMap: _pincodesMap,
+            pincodeCityLookup: _pincodeCityLookup,
+          ) ==
+          null) {
+        for (final id in extractAssociatedEntityIds(raw)) {
+          if (!_businessUsersLookup.containsKey(id)) {
+            idsToFetch.add(id);
+          }
+        }
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error determining user role: $e');
+    }
+    if (idsToFetch.isEmpty) return;
+
+    final chunks = chunkList<String>(idsToFetch.toList(), 30);
+    for (final chunk in chunks) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        for (final doc in snap.docs) {
+          _businessUsersLookup[doc.id] = {'id': doc.id, ...doc.data()};
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Error hydrating business users lookup: $e');
+        }
       }
     }
   }
@@ -144,8 +163,19 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     });
 
     await _loadPincodesMap();
-    await _fetchDashboardStats();
-    _subscribeToLogs();
+    try {
+      await _fetchDashboardStats();
+      _subscribeToLogs();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Error initializing call logs: $e');
+      }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadPincodesMap() async {
@@ -181,9 +211,9 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   Future<void> _fetchDashboardStats() async {
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
-    if (assignedCities.isNotEmpty) {
-      // Regular admin with assigned city: skip unfiltered global collection count query
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized || !scope.isUnrestricted) {
+      // Non-Super-Admin or unauthorized accounts derive stats strictly from city-scoped docs.
       return;
     }
 
@@ -272,34 +302,48 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   void _subscribeToLogs() {
     _logsSubscription?.cancel();
 
-    final baseQuery = FirebaseFirestore.instance
-        .collection('callLogs')
-        .orderBy('timestamp', descending: true);
+    try {
+      final baseQuery = FirebaseFirestore.instance
+          .collection('callLogs')
+          .orderBy('timestamp', descending: true);
 
-    final dateFilterDate = _getDateFilterDate();
-    Query query = baseQuery;
+      final dateFilterDate = _getDateFilterDate();
+      Query query = baseQuery;
 
-    if (dateFilterDate != null) {
-      query = query.where(
-        'timestamp',
-        isGreaterThanOrEqualTo: Timestamp.fromDate(dateFilterDate),
+      if (dateFilterDate != null) {
+        query = query.where(
+          'timestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(dateFilterDate),
+        );
+      }
+
+      _logsSubscription = query.snapshots().listen(
+        (snapshot) async {
+          final docs = snapshot.docs.map((doc) => _buildCallLogRow(doc)).toList();
+          await _hydrateBusinessUsersLookup(docs);
+          if (!mounted) return;
+          _allDocs = docs;
+          _applyFilters();
+        },
+        onError: (e) {
+          if (mounted) {
+            setState(() {
+              _errorMessage = e.toString();
+              _isLoading = false;
+            });
+          }
+        },
       );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Error subscribing to call logs: $e');
+      }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-
-    _logsSubscription = query.snapshots().listen(
-      (snapshot) {
-        _allDocs = snapshot.docs.map((doc) => _buildCallLogRow(doc)).toList();
-        _applyFilters();
-      },
-      onError: (e) {
-        if (mounted) {
-          setState(() {
-            _errorMessage = e.toString();
-            _isLoading = false;
-          });
-        }
-      },
-    );
   }
 
   /// Applies all active in-memory filters to [_allDocs] and updates the
@@ -308,11 +352,25 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   void _applyFilters() {
     if (!mounted) return;
 
-    final isSuper = ref.read(isSuperAdminProvider);
-    final assignedCities =
-        isSuper
-            ? const <String>[]
-            : ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      setState(() {
+        _filteredLogs = [];
+        _currentPageLogs = [];
+        _totalMatches = 0;
+        _hasNextPage = false;
+        _selectedDocId = null;
+        _selectedDocData = null;
+        _statOverallCalls = 0;
+        _statOverallLeads = 0;
+        _statTodayCalls = 0;
+        _statInterested = 0;
+        _statConverted = 0;
+        _statFollowUpsDue = 0;
+        _isLoading = false;
+      });
+      return;
+    }
 
     final cityFilter = _selectedCity ?? _cityController.text.trim();
     final effectiveCityFilter =
@@ -322,55 +380,23 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
             ? cityFilter
             : null;
 
-    // 0. Filter by City Scope (Admin assigned cities OR Super Admin selected city)
+    // 0. Filter by City Scope (Employee assigned cities OR Super Admin selected city)
     final cityScopedDocs =
         _allDocs.where((log) {
-          final raw = log['rawData'] ?? {};
-
-          // If Admin has assigned cities, restrict to them
-          if (assignedCities.isNotEmpty) {
-            final matchesResolver = userMatchesAssignedCities(
-              raw,
-              effectiveCityFilter,
-              assignedCities,
-              _pincodesMap,
-              _pincodeCityLookup,
-            );
-            if (matchesResolver) return true;
-
-            final logCity = _normalizeString(log['city']);
-            if (logCity.isNotEmpty &&
-                assignedCities.any(
-                  (c) =>
-                      logCity.contains(c.toLowerCase()) ||
-                      c.toLowerCase().contains(logCity),
-                )) {
-              return true;
-            }
-            return false;
-          }
-
-          // If Super Admin selected a specific city
-          if (effectiveCityFilter != null) {
-            final matchesCity = userMatchesCity(
-              raw,
-              effectiveCityFilter,
-              _pincodesMap,
-              _pincodeCityLookup,
-            );
-            if (matchesCity) return true;
-
-            final logCity = _normalizeString(log['city']);
-            if (logCity.isNotEmpty &&
-                (logCity.contains(effectiveCityFilter.toLowerCase()) ||
-                    effectiveCityFilter.toLowerCase().contains(logCity))) {
-              return true;
-            }
-            return false;
-          }
-
-          // Super Admin with All Cities: include all
-          return true;
+          final raw = (log['rawData'] as Map<String, dynamic>?) ?? {};
+          final rawWithResolvedCity = <String, dynamic>{
+            ...raw,
+            if ((log['city']?.toString().trim().isNotEmpty ?? false) &&
+                (raw['city']?.toString().trim().isEmpty ?? true))
+              'city': log['city'],
+          };
+          return scope.allowsRecord(
+            rawWithResolvedCity,
+            selectedCity: effectiveCityFilter,
+            pincodesMap: _pincodesMap,
+            pincodeCityLookup: _pincodeCityLookup,
+            relatedEntityLookup: _businessUsersLookup,
+          );
         }).toList();
 
     // Update Header Dashboard Stats to match selected city and active date scope
@@ -566,6 +592,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       _selectedDocData = null;
     }
 
+    _syncFeedbackDescriptionWithSelectedDoc();
+
     setState(() {
       _isLoading = false;
       _errorMessage = null;
@@ -731,7 +759,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   bool _canEditField(String fieldName) {
-    if (_userRole == 'Super Admin') return true;
+    if (ref.read(cityAccessScopeProvider).isUnrestricted) return true;
 
     final allowedCRMFields = {
       'salesStatus',
@@ -741,12 +769,40 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       'leadQuality',
       'paymentInterest',
       'calledBySales',
+      'feedbackStatus',
+      'feedbackDescription',
     };
     return allowedCRMFields.contains(fieldName);
   }
 
+  bool _verifySelectedDocEditable() {
+    if (_selectedDocId == null || _selectedDocData == null) return false;
+    final scope = ref.read(cityAccessScopeProvider);
+    final raw =
+        (_selectedDocData!['rawData'] as Map<String, dynamic>?) ?? const {};
+    final allowed =
+        scope.isAuthorized &&
+        scope.allowsRecord(
+          raw,
+          pincodesMap: _pincodesMap,
+          pincodeCityLookup: _pincodeCityLookup,
+          relatedEntityLookup: _businessUsersLookup,
+        );
+    if (!allowed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Access denied: record belongs to an unassigned city.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    return allowed;
+  }
+
   Future<void> _changeCRMStatus(String status) async {
-    if (_selectedDocId == null) return;
+    if (_selectedDocId == null || !_verifySelectedDocEditable()) return;
 
     final raw = _selectedDocData!['rawData'] ?? {};
     final oldStatus = raw['salesStatus'];
@@ -789,7 +845,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   Future<void> _updateFeedbackStatus(String status) async {
-    if (_selectedDocId == null) return;
+    if (_selectedDocId == null || !_verifySelectedDocEditable()) return;
 
     final raw = _selectedDocData!['rawData'] ?? {};
     final oldFeedbackStatus = raw['feedbackStatus'];
@@ -844,8 +900,100 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     }
   }
 
+  void _syncFeedbackDescriptionWithSelectedDoc() {
+    if (_selectedDocId == null) {
+      if (_lastLoadedFeedbackDocId != null) {
+        _lastLoadedFeedbackDocId = null;
+        _feedbackDescriptionController.clear();
+      }
+      return;
+    }
+
+    if (_lastLoadedFeedbackDocId != _selectedDocId) {
+      _lastLoadedFeedbackDocId = _selectedDocId;
+      final raw =
+          (_selectedDocData?['rawData'] as Map<String, dynamic>?) ?? const {};
+      final existingDesc = (raw['feedbackDescription'] ?? '').toString();
+      _feedbackDescriptionController.value = TextEditingValue(
+        text: existingDesc,
+        selection: TextSelection.collapsed(offset: existingDesc.length),
+      );
+    }
+  }
+
+  Future<void> _saveFeedbackDescription() async {
+    if (_selectedDocId == null || !_verifySelectedDocEditable()) return;
+
+    final raw =
+        (_selectedDocData?['rawData'] as Map<String, dynamic>?) ?? const {};
+    final oldDesc = raw['feedbackDescription'];
+    final newDesc = _feedbackDescriptionController.text.trim();
+    final email =
+        FirebaseAuth.instance.currentUser?.email ?? 'sales@skazo.com';
+
+    setState(() {
+      _isSavingFeedbackDescription = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('callLogs')
+          .doc(_selectedDocId)
+          .update({
+            'feedbackDescription': newDesc,
+            'lastFeedbackDescriptionUpdatedAt': FieldValue.serverTimestamp(),
+            'lastFeedbackDescriptionUpdatedBy': email,
+          });
+
+      await _writeAuditLog(
+        docId: _selectedDocId!,
+        fieldName: 'feedbackDescription',
+        oldValue: oldDesc,
+        newValue: newDesc,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (_selectedDocData != null && _selectedDocData!['rawData'] != null) {
+            (_selectedDocData!['rawData']
+                as Map<String, dynamic>)['feedbackDescription'] = newDesc;
+          }
+          for (final doc in _allDocs) {
+            if (doc['id'] == _selectedDocId && doc['rawData'] != null) {
+              (doc['rawData'] as Map<String, dynamic>)['feedbackDescription'] =
+                  newDesc;
+              break;
+            }
+          }
+          _isSavingFeedbackDescription = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Feedback description saved successfully'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSavingFeedbackDescription = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save feedback description: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _setCRMFollowUp() async {
-    if (_selectedDocId == null) return;
+    if (_selectedDocId == null || !_verifySelectedDocEditable()) return;
 
     final date = await showDatePicker(
       context: context,
@@ -918,6 +1066,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   void _showEditFieldDialog(String fieldName, dynamic currentValue) {
+    if (!_verifySelectedDocEditable()) return;
     if (!_canEditField(fieldName)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -937,6 +1086,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           fieldName: fieldName,
           currentValue: currentValue,
           onSave: (newValue) async {
+            if (!_verifySelectedDocEditable()) return;
             try {
               await FirebaseFirestore.instance
                   .collection('callLogs')
@@ -974,7 +1124,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   void _showAddFieldDialog() {
-    if (_userRole != 'Super Admin') {
+    if (!_verifySelectedDocEditable()) return;
+    if (!ref.read(cityAccessScopeProvider).isUnrestricted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Adding fields is restricted to Super Admin only.'),
@@ -1026,6 +1177,56 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   }
 
   // --- UI Panels ---
+
+  void _openFiltersSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.88,
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Filters & Saved Views',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: Text(
+                          'Done',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF2563EB),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(child: _buildLeftPanel()),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildLeftPanel() {
     return SingleChildScrollView(
@@ -1324,15 +1525,18 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                       : const Color(0xFF64748B),
             ),
             const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color:
-                    isSelected
-                        ? const Color(0xFF1E40AF)
-                        : const Color(0xFF334155),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color:
+                      isSelected
+                          ? const Color(0xFF1E40AF)
+                          : const Color(0xFF334155),
+                ),
               ),
             ),
           ],
@@ -1468,36 +1672,69 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     );
   }
 
-  Widget _buildMiddlePanel() {
+  Widget _buildMiddlePanel({bool showFilterButton = false}) {
     if (_errorMessage != null) {
       return Center(child: Text('Error: $_errorMessage'));
     }
 
     return Column(
       children: [
-        // Quick search box
+        // Quick search box (+ Filters button on tablet/mobile)
         Padding(
           padding: const EdgeInsets.all(12.0),
-          child: TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Quick search (ID, customer, phone)...',
-              prefixIcon: const Icon(Icons.search, size: 18),
-              isDense: true,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: Colors.grey.withOpacity(0.2)),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Quick search (ID, customer, phone)...',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.grey.withOpacity(0.2),
+                      ),
+                    ),
+                  ),
+                  style: GoogleFonts.poppins(fontSize: 13),
+                  onChanged: (_) {
+                    setState(() {
+                      _currentPage = 0;
+                    });
+                    _applyFilters();
+                  },
+                ),
               ),
-            ),
-            style: GoogleFonts.poppins(fontSize: 13),
-            onChanged: (_) {
-              setState(() {
-                _currentPage = 0;
-              });
-              _applyFilters();
-            },
+              if (showFilterButton) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _openFiltersSheet,
+                  icon: const Icon(Icons.tune_rounded, size: 16),
+                  label: Text(
+                    'Filters',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF2563EB),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         Padding(
@@ -1505,17 +1742,21 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _cityController.text.trim().isNotEmpty
-                    ? 'Calls for "${_cityController.text.trim()}": $_totalMatches'
-                    : 'Matching Calls: $_totalMatches',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  _cityController.text.trim().isNotEmpty
+                      ? 'Calls for "${_cityController.text.trim()}": $_totalMatches'
+                      : 'Matching Calls: $_totalMatches',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF0F172A),
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (_totalMatches > 0)
+              if (_totalMatches > 0) ...[
+                const SizedBox(width: 8),
                 Text(
                   'Showing ${_currentPageLogs.length} of $_totalMatches',
                   style: GoogleFonts.poppins(
@@ -1523,6 +1764,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                     color: const Color(0xFF64748B),
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -1577,6 +1819,8 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
         setState(() {
           _selectedDocId = docId;
           _selectedDocData = log;
+          _showMobileDetail = true;
+          _syncFeedbackDescriptionWithSelectedDoc();
         });
       },
       child: Container(
@@ -1639,19 +1883,26 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                 ),
               ),
             const SizedBox(height: 6),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Icon(Icons.phone, size: 12, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  phone,
-                  style: GoogleFonts.sourceCodePro(
-                    fontSize: 12,
-                    color: const Color(0xFF475569),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.phone, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      phone,
+                      style: GoogleFonts.sourceCodePro(
+                        fontSize: 12,
+                        color: const Color(0xFF475569),
+                      ),
+                    ),
+                  ],
                 ),
-                if (city.isNotEmpty) ...[
-                  const SizedBox(width: 8),
+                if (city.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,
@@ -1669,7 +1920,6 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                       ),
                     ),
                   ),
-                ],
               ],
             ),
             const SizedBox(height: 8),
@@ -1920,8 +2170,15 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     );
   }
 
-  Widget _buildRightPanel() {
+  Widget _buildRightPanel({
+    bool showBackButton = false,
+    bool useScrollableBody = false,
+  }) {
     if (_selectedDocId == null) {
+      if (_lastLoadedFeedbackDocId != null) {
+        _lastLoadedFeedbackDocId = null;
+        _feedbackDescriptionController.clear();
+      }
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1937,348 +2194,545 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
       );
     }
 
+    _syncFeedbackDescriptionWithSelectedDoc();
+
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isShortScreen = screenHeight < 600;
+    final bool effectiveUseScrollableBody = useScrollableBody || isShortScreen;
+
     final rawData = _selectedDocData!['rawData'] as Map<String, dynamic>? ?? {};
     final sortedKeys = rawData.keys.toList()..sort();
+
+    final backBar = showBackButton
+        ? Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
+              ),
+            ),
+            child: InkWell(
+              onTap: () => setState(() => _showMobileDetail = false),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.arrow_back_rounded,
+                      size: 18,
+                      color: Color(0xFF2563EB),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Back to Call Logs',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF2563EB),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final fieldsList = sortedKeys.isEmpty
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                'No fields in this document',
+                style: GoogleFonts.poppins(color: Colors.grey),
+              ),
+            ),
+          )
+        : ListView.separated(
+            padding: const EdgeInsets.all(16),
+            shrinkWrap: effectiveUseScrollableBody,
+            physics: effectiveUseScrollableBody
+                ? const NeverScrollableScrollPhysics()
+                : null,
+            itemCount: sortedKeys.length,
+            separatorBuilder: (context, index) => const Divider(height: 12),
+            itemBuilder: (context, index) {
+              final key = sortedKeys[index];
+              final val = rawData[key];
+              return CollapsibleFieldView(
+                label: key,
+                value: val,
+                onEdit: () => _showEditFieldDialog(key, val),
+              );
+            },
+          );
+
+    final docHeaderAndControls = <Widget>[
+      // Doc Header
+      Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DOCUMENT PATH',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF64748B),
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        'callLogs / ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _selectedDocId!,
+                          style: GoogleFonts.sourceCodePro(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.copy,
+                size: 18,
+                color: Color(0xFF2563EB),
+              ),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: _selectedDocId!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Document ID copied to clipboard'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+              tooltip: 'Copy ID',
+            ),
+          ],
+        ),
+      ),
+
+      /*
+      // CRM QUICK ACTIONS (Replaced by SALES FEEDBACK DESCRIPTION)
+      Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'CRM QUICK ACTIONS',
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF64748B),
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildActionButton(
+                  'Mark Interested',
+                  Icons.star,
+                  Colors.teal,
+                  () => _changeCRMStatus('interested'),
+                ),
+                _buildActionButton(
+                  'Mark Not Interested',
+                  Icons.star_border,
+                  Colors.grey,
+                  () => _changeCRMStatus('not_interested'),
+                ),
+                _buildActionButton(
+                  'Set Follow-up',
+                  Icons.alarm,
+                  Colors.purple,
+                  _setCRMFollowUp,
+                ),
+                _buildActionButton(
+                  'Mark Converted',
+                  Icons.check_circle_outline,
+                  Colors.green,
+                  () => _changeCRMStatus('converted'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      */
+
+      // SALES FEEDBACK DESCRIPTION
+      Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.rate_review_outlined,
+                  color: Color(0xFF2563EB),
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'SALES FEEDBACK DESCRIPTION',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF2563EB),
+                      letterSpacing: 1.1,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _feedbackDescriptionController,
+              maxLines: 4,
+              minLines: 3,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: const Color(0xFF0F172A),
+              ),
+              decoration: InputDecoration(
+                labelText: 'Feedback Description',
+                labelStyle: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF64748B),
+                ),
+                hintText: 'Enter sales feedback details here...',
+                hintStyle: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF94A3B8),
+                ),
+                alignLabelWithHint: true,
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF2563EB),
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _isSavingFeedbackDescription
+                    ? null
+                    : _saveFeedbackDescription,
+                icon: _isSavingFeedbackDescription
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_rounded, size: 16),
+                label: Text(
+                  _isSavingFeedbackDescription
+                      ? 'Saving...'
+                      : 'Save Feedback',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      // Sales Feedback Status Dropdown
+      Container(
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.rate_review_rounded,
+                  color: Color(0xFF6366F1),
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'SALES FEEDBACK STATUS',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF6366F1),
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 6,
+                  ),
+                ],
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: () {
+                    final current =
+                        rawData['feedbackStatus']
+                            ?.toString()
+                            .toLowerCase()
+                            .trim();
+                    if (current == 'converted') return 'converted';
+                    if (current == 'not converted' ||
+                        current == 'not converetd') {
+                      return 'not converted';
+                    }
+                    if (current == 'skip') return 'skip';
+                    return 'skip';
+                  }(),
+                  isExpanded: true,
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: Color(0xFF6366F1),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'converted',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            color: Color(0xFF10B981),
+                            size: 18,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'converted',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'not converted',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.cancel_rounded,
+                            color: Color(0xFFEF4444),
+                            size: 18,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'not converted',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'skip',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.redo_rounded,
+                            color: Color(0xFF64748B),
+                            size: 18,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'skip',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onChanged: (newStatus) {
+                    if (newStatus != null) {
+                      _updateFeedbackStatus(newStatus);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      // Add Field Row (Preceded by Add field)
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: const Color(0xFFF1F5F9),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'FIELDS',
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF64748B),
+                letterSpacing: 1.1,
+              ),
+            ),
+            if (_userRole == 'Super Admin')
+              TextButton.icon(
+                icon: const Icon(
+                  Icons.add,
+                  size: 16,
+                  color: Color(0xFF2563EB),
+                ),
+                label: Text(
+                  'Add field',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFF2563EB),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: _showAddFieldDialog,
+              ),
+          ],
+        ),
+      ),
+    ];
+
+    if (effectiveUseScrollableBody) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showBackButton) backBar,
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...docHeaderAndControls,
+                  fieldsList,
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Doc Header
-        Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'DOCUMENT PATH',
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF64748B),
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          'callLogs / ',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            _selectedDocId!,
-                            style: GoogleFonts.sourceCodePro(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF0F172A),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(
-                  Icons.copy,
-                  size: 18,
-                  color: Color(0xFF2563EB),
-                ),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _selectedDocId!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Document ID copied to clipboard'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                tooltip: 'Copy ID',
-              ),
-            ],
-          ),
-        ),
-
-        // Quick Actions panel
-        Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'CRM QUICK ACTIONS',
-                style: GoogleFonts.poppins(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF64748B),
-                  letterSpacing: 1.1,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildActionButton(
-                    'Mark Interested',
-                    Icons.star,
-                    Colors.teal,
-                    () => _changeCRMStatus('interested'),
-                  ),
-                  _buildActionButton(
-                    'Mark Not Interested',
-                    Icons.star_border,
-                    Colors.grey,
-                    () => _changeCRMStatus('not_interested'),
-                  ),
-                  _buildActionButton(
-                    'Set Follow-up',
-                    Icons.alarm,
-                    Colors.purple,
-                    _setCRMFollowUp,
-                  ),
-                  _buildActionButton(
-                    'Mark Converted',
-                    Icons.check_circle_outline,
-                    Colors.green,
-                    () => _changeCRMStatus('converted'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // Sales Feedback Status Dropdown
-        Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            border: Border(
-              bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.rate_review_rounded,
-                    color: Color(0xFF6366F1),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'SALES FEEDBACK STATUS',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF6366F1),
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 6,
-                    ),
-                  ],
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: () {
-                      final current =
-                          rawData['feedbackStatus']
-                              ?.toString()
-                              .toLowerCase()
-                              .trim();
-                      if (current == 'converted') return 'converted';
-                      if (current == 'not converted' ||
-                          current == 'not converetd')
-                        return 'not converted';
-                      if (current == 'skip') return 'skip';
-                      return 'skip';
-                    }(),
-                    isExpanded: true,
-                    icon: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: Color(0xFF6366F1),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'converted',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: Color(0xFF10B981),
-                              size: 18,
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              'converted',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'not converted',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.cancel_rounded,
-                              color: Color(0xFFEF4444),
-                              size: 18,
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              'not converted',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'skip',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.redo_rounded,
-                              color: Color(0xFF64748B),
-                              size: 18,
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              'skip',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    onChanged: (newStatus) {
-                      if (newStatus != null) {
-                        _updateFeedbackStatus(newStatus);
-                      }
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Add Field Row (Preceded by Add field)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: const Color(0xFFF1F5F9),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'FIELDS',
-                style: GoogleFonts.poppins(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF64748B),
-                  letterSpacing: 1.1,
-                ),
-              ),
-              if (_userRole == 'Super Admin')
-                TextButton.icon(
-                  icon: const Icon(
-                    Icons.add,
-                    size: 16,
-                    color: Color(0xFF2563EB),
-                  ),
-                  label: Text(
-                    'Add field',
-                    style: GoogleFonts.poppins(
-                      color: const Color(0xFF2563EB),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  onPressed: _showAddFieldDialog,
-                ),
-            ],
-          ),
-        ),
-
+        if (showBackButton) backBar,
+        ...docHeaderAndControls,
         // Fields list
-        Expanded(
-          child:
-              sortedKeys.isEmpty
-                  ? Center(
-                    child: Text(
-                      'No fields in this document',
-                      style: GoogleFonts.poppins(color: Colors.grey),
-                    ),
-                  )
-                  : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: sortedKeys.length,
-                    separatorBuilder:
-                        (context, index) => const Divider(height: 12),
-                    itemBuilder: (context, index) {
-                      final key = sortedKeys[index];
-                      final val = rawData[key];
-                      return CollapsibleFieldView(
-                        label: key,
-                        value: val,
-                        onEdit: () => _showEditFieldDialog(key, val),
-                      );
-                    },
-                  ),
-        ),
+        Expanded(child: fieldsList),
       ],
     );
   }
 
+  // ignore: unused_element
   Widget _buildActionButton(
     String label,
     IconData icon,
@@ -2306,118 +2760,219 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
     );
   }
 
-  Widget _buildTopHeader() {
+  Widget _buildTopHeader(CallLogsSubView activeSubView) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
+    final titleAndRole = Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          'CRM Call Logs',
+          style: GoogleFonts.poppins(
+            fontSize: isMobile ? 19 : 22,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF0F172A),
+          ),
+        ),
+        _buildSubViewToggle(activeSubView),
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            _userRole,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF475569),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final statsWrap = Wrap(
+      spacing: isMobile ? 8 : 14,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _buildStatBadge(
+          'Overall Calls',
+          _statOverallCalls,
+          const Color(0xFF3B82F6),
+          const Color(0xFFEFF6FF),
+        ),
+        // _buildStatBadge(
+        //   'Overall Leads',
+        //   _statOverallLeads,
+        //   const Color(0xFF0284C7),
+        //   const Color(0xFFE0F2FE),
+        // ),
+        _buildStatBadge(
+          'Converted',
+          _statConverted,
+          const Color(0xFF10B981),
+          const Color(0xFFECFDF5),
+        ),
+        _buildStatBadge(
+          'Today Calls',
+          _statTodayCalls,
+          const Color(0xFFF59E0B),
+          const Color(0xFFFFFBEB),
+        ),
+        _buildStatBadge(
+          'Interested',
+          _statInterested,
+          const Color(0xFF8B5CF6),
+          const Color(0xFFF5F3FF),
+        ),
+        _buildStatBadge(
+          'Follow-ups Due',
+          _statFollowUpsDue,
+          const Color(0xFFEC4899),
+          const Color(0xFFFDF2F8),
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh, color: Color(0xFF475569)),
+          onPressed: _resetAndLoad,
+          tooltip: 'Reload all data',
+        ),
+      ],
+    );
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 24,
+        vertical: isMobile ? 12 : 16,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
           bottom: BorderSide(color: Colors.grey.withOpacity(0.15)),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Text(
-                'CRM Call Logs',
-                style: GoogleFonts.poppins(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _userRole,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Super Admin',
-                        child: Text('Super Admin'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Sales Team',
-                        child: Text('Sales Team'),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _userRole = val;
-                        });
-                      }
-                    },
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 940) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleAndRole,
+                if (activeSubView == CallLogsSubView.crmCallLogs) ...[
+                  const SizedBox(height: 10),
+                  statsWrap,
+                ],
+              ],
+            );
+          }
 
-          Wrap(
-            spacing: 14,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatBadge(
-                'Overall Calls',
-                _statOverallCalls,
-                const Color(0xFF3B82F6),
-                const Color(0xFFEFF6FF),
-              ),
-              // _buildStatBadge(
-              //   'Overall Leads',
-              //   _statOverallLeads,
-              //   const Color(0xFF0284C7),
-              //   const Color(0xFFE0F2FE),
-              // ),
-              _buildStatBadge(
-                'Converted',
-                _statConverted,
-                const Color(0xFF10B981),
-                const Color(0xFFECFDF5),
-              ),
-              _buildStatBadge(
-                'Today Calls',
-                _statTodayCalls,
-                const Color(0xFFF59E0B),
-                const Color(0xFFFFFBEB),
-              ),
-              _buildStatBadge(
-                'Interested',
-                _statInterested,
-                const Color(0xFF8B5CF6),
-                const Color(0xFFF5F3FF),
-              ),
-              _buildStatBadge(
-                'Follow-ups Due',
-                _statFollowUpsDue,
-                const Color(0xFFEC4899),
-                const Color(0xFFFDF2F8),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Color(0xFF475569)),
-                onPressed: _resetAndLoad,
-                tooltip: 'Reload all data',
-              ),
+              titleAndRole,
+              if (activeSubView == CallLogsSubView.crmCallLogs) ...[
+                const SizedBox(width: 16),
+                Flexible(child: statsWrap),
+              ],
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Toggle switcher between CRM Call Logs and Call Logs Details
+  Widget _buildSubViewToggle(CallLogsSubView activeSubView) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildSubViewButton(
+            title: 'CRM Call Logs',
+            icon: Icons.support_agent_rounded,
+            isSelected: activeSubView == CallLogsSubView.crmCallLogs,
+            onTap: () {
+              if (activeSubView != CallLogsSubView.crmCallLogs) {
+                ref.read(callLogsActiveSubViewProvider.notifier).state =
+                    CallLogsSubView.crmCallLogs;
+              }
+            },
+          ),
+          const SizedBox(width: 4),
+          _buildSubViewButton(
+            title: 'Call Logs Details',
+            icon: Icons.table_chart_rounded,
+            isSelected: activeSubView == CallLogsSubView.callLogsDetails,
+            onTap: () {
+              if (activeSubView != CallLogsSubView.callLogsDetails) {
+                ref.read(callLogsActiveSubViewProvider.notifier).state =
+                    CallLogsSubView.callLogsDetails;
+              }
+            },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSubViewButton({
+    required String title,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? const Color(0xFF0284C7) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2461,52 +3016,125 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(currentAdminAssignedCitiesProvider);
+    final activeSubView = ref.watch(callLogsActiveSubViewProvider);
+    ref.watch(cityAccessScopeProvider);
+    ref.listen(cityAccessScopeProvider, (_, __) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFilters();
+      });
+    });
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
-          _buildTopHeader(),
+          _buildTopHeader(activeSubView),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: IndexedStack(
+              index: activeSubView == CallLogsSubView.crmCallLogs ? 0 : 1,
               children: [
-                // Column 1: Filters & Saved Views
-                Container(
-                  width: 280,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      right: BorderSide(color: Colors.grey.withOpacity(0.15)),
-                    ),
-                  ),
-                  child: _buildLeftPanel(),
-                ),
-
-                // Column 2: Call Logs List
-                Container(
-                  width: 380,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      right: BorderSide(color: Colors.grey.withOpacity(0.15)),
-                    ),
-                  ),
-                  child: _buildMiddlePanel(),
-                ),
-
-                // Column 3: Document Details
-                Expanded(
-                  child: Container(
-                    color: const Color(0xFFF8FAFC),
-                    child: _buildRightPanel(),
-                  ),
-                ),
+                _buildCrmLogsContent(),
+                const CallLogsDetailDataView(),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCrmLogsContent() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Desktop (>= 1060px content width): preserve 3-pane workspace
+        if (constraints.maxWidth >= 1060) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Column 1: Filters & Saved Views
+              Container(
+                width: 280,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    right: BorderSide(
+                      color: Colors.grey.withOpacity(0.15),
+                    ),
+                  ),
+                ),
+                child: _buildLeftPanel(),
+              ),
+
+              // Column 2: Call Logs List
+              Container(
+                width: 380,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    right: BorderSide(
+                      color: Colors.grey.withOpacity(0.15),
+                    ),
+                  ),
+                ),
+                child: _buildMiddlePanel(),
+              ),
+
+              // Column 3: Document Details
+              Expanded(
+                child: Container(
+                  color: const Color(0xFFF8FAFC),
+                  child: _buildRightPanel(),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // Tablet / Compact Split (680-1059px): Filter sheet + 2 panes
+        if (constraints.maxWidth >= 680) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      right: BorderSide(
+                        color: Colors.grey.withOpacity(0.15),
+                      ),
+                    ),
+                  ),
+                  child: _buildMiddlePanel(showFilterButton: true),
+                ),
+              ),
+              Expanded(
+                flex: 5,
+                child: Container(
+                  color: const Color(0xFFF8FAFC),
+                  child: _buildRightPanel(),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // Mobile (< 680px): 1-pane Master -> Detail navigation
+        if (_showMobileDetail && _selectedDocId != null) {
+          return Container(
+            color: const Color(0xFFF8FAFC),
+            child: _buildRightPanel(
+              showBackButton: true,
+              useScrollableBody: true,
+            ),
+          );
+        }
+
+        return Container(
+          color: Colors.white,
+          child: _buildMiddlePanel(showFilterButton: true),
+        );
+      },
     );
   }
 }
@@ -2565,12 +3193,15 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
               constraints: const BoxConstraints(),
             ),
             const SizedBox(width: 4),
-            Text(
-              labelText,
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: const Color(0xFF475569),
+            Expanded(
+              child: Text(
+                labelText,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: const Color(0xFF475569),
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
@@ -2582,7 +3213,7 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 12),
             IconButton(
               icon: const Icon(
                 Icons.copy_rounded,
@@ -2740,12 +3371,15 @@ class _CollapsibleFieldViewState extends State<CollapsibleFieldView> {
             child: Icon(typeIcon, size: 14, color: typeColor.withOpacity(0.7)),
           ),
           const SizedBox(width: 6),
-          Text(
-            '${widget.label}:',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: const Color(0xFF475569),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 145),
+            child: Text(
+              '${widget.label}:',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: const Color(0xFF475569),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -2874,36 +3508,45 @@ class _EditFieldDialogState extends State<_EditFieldDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: ResponsiveBreakpoints.dialogInsetPadding(context),
       title: Text(
         'Edit Field: ${widget.fieldName}',
         style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
       ),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Type: ${_getFieldTypeLabel()}',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildInputWidget(),
-              if (_jsonError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _jsonError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: ResponsiveBreakpoints.dialogMaxWidth(
+            context,
+            desktopMaxWidth: 460,
+          ),
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Type: ${_getFieldTypeLabel()}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
-            ],
+                const SizedBox(height: 16),
+                _buildInputWidget(),
+                if (_jsonError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      _jsonError!,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2988,14 +3631,15 @@ class _EditFieldDialogState extends State<_EditFieldDialog> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
             children: [
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today, size: 16),
                 label: const Text('Pick Date'),
                 onPressed: _pickDate,
               ),
-              const SizedBox(width: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.access_time, size: 16),
                 label: const Text('Pick Time'),
@@ -3149,69 +3793,78 @@ class _AddFieldDialogState extends State<_AddFieldDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: ResponsiveBreakpoints.dialogInsetPadding(context),
       title: Text(
         'Add Field',
         style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
       ),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Field name',
-                  hintText: 'e.g. salesRemark',
-                ),
-                style: GoogleFonts.poppins(),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) {
-                    return 'Field name cannot be empty';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedType,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Type',
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'string', child: Text('string')),
-                  DropdownMenuItem(value: 'number', child: Text('number')),
-                  DropdownMenuItem(value: 'boolean', child: Text('boolean')),
-                  DropdownMenuItem(
-                    value: 'timestamp',
-                    child: Text('timestamp'),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: ResponsiveBreakpoints.dialogMaxWidth(
+            context,
+            desktopMaxWidth: 460,
+          ),
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Field name',
+                    hintText: 'e.g. salesRemark',
                   ),
-                  DropdownMenuItem(value: 'map', child: Text('map')),
-                  DropdownMenuItem(value: 'array', child: Text('array')),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _selectedType = val;
-                    });
-                  }
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildValueInput(),
-              if (_jsonError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _jsonError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
-                  ),
+                  style: GoogleFonts.poppins(),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'Field name cannot be empty';
+                    }
+                    return null;
+                  },
                 ),
-            ],
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _selectedType,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Type',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'string', child: Text('string')),
+                    DropdownMenuItem(value: 'number', child: Text('number')),
+                    DropdownMenuItem(value: 'boolean', child: Text('boolean')),
+                    DropdownMenuItem(
+                      value: 'timestamp',
+                      child: Text('timestamp'),
+                    ),
+                    DropdownMenuItem(value: 'map', child: Text('map')),
+                    DropdownMenuItem(value: 'array', child: Text('array')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _selectedType = val;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildValueInput(),
+                if (_jsonError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      _jsonError!,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3299,14 +3952,15 @@ class _AddFieldDialogState extends State<_AddFieldDialog> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
             children: [
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today, size: 16),
                 label: const Text('Pick Date'),
                 onPressed: _pickDate,
               ),
-              const SizedBox(width: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.access_time, size: 16),
                 label: const Text('Pick Time'),

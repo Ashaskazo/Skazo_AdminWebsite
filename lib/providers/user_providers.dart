@@ -42,7 +42,8 @@ class UserVerificationNotifier extends StateNotifier<bool> {
   Future<bool> verifyUser(String userId) async {
     state = true;
     try {
-      await ref.read(userRepositoryProvider).verifyUser(userId);
+      final scope = ref.read(cityAccessScopeProvider);
+      await ref.read(userRepositoryProvider).verifyUser(userId, scope: scope);
 
       _invalidateUserData();
       state = false;
@@ -56,7 +57,8 @@ class UserVerificationNotifier extends StateNotifier<bool> {
   Future<bool> activateUser(String userId) async {
     state = true;
     try {
-      await ref.read(userRepositoryProvider).activateUser(userId);
+      final scope = ref.read(cityAccessScopeProvider);
+      await ref.read(userRepositoryProvider).activateUser(userId, scope: scope);
 
       _invalidateUserData();
       state = false;
@@ -70,7 +72,12 @@ class UserVerificationNotifier extends StateNotifier<bool> {
   Future<bool> deactivateUser(String userId, {String? reason}) async {
     state = true;
     try {
-      await ref.read(userRepositoryProvider).deactivateUser(userId, reason: reason);
+      final scope = ref.read(cityAccessScopeProvider);
+      await ref.read(userRepositoryProvider).deactivateUser(
+            userId,
+            reason: reason,
+            scope: scope,
+          );
 
       _invalidateUserData();
       state = false;

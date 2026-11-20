@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/models/call_log_sheet_item.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/call_log_sheet_provider.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class CallLogSheetView extends ConsumerStatefulWidget {
   const CallLogSheetView({super.key});
@@ -88,39 +91,104 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Page Header
-            _buildPageHeader(context, state),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 800;
 
-            // Top KPI Cards
-            _buildKpiSummary(state.items),
+            if (isCompact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildPageHeader(context, state),
+                          _buildKpiSummary(state.items),
+                          if (state.warningMessage != null)
+                            _buildWarningBanner(state.warningMessage!),
+                          _buildFilterToolbar(
+                            context,
+                            availableStatuses,
+                            currentStatusFilter,
+                            currentSort,
+                            pagination.pageSize,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildMainContent(
+                            state: state,
+                            pagination: pagination,
+                            currentSort: currentSort,
+                            isCompact: true,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (pagination.totalItems > 0 &&
+                      !(state.isLoading && state.items.isEmpty))
+                    _buildPaginationBar(pagination),
+                ],
+              );
+            }
 
-            // Warning Banner for partial results
-            if (state.warningMessage != null)
-              _buildWarningBanner(state.warningMessage!),
+            final availableHeight = constraints.maxHeight;
+            final double requiredMinHeight =
+                constraints.maxWidth < 1100 ? 900.0 : 600.0;
+            final bool needsVerticalScroll =
+                constraints.hasBoundedHeight && availableHeight < requiredMinHeight;
 
-            // Search, Filter & Controls Toolbar
-            _buildFilterToolbar(
-              context,
-              availableStatuses,
-              currentStatusFilter,
-              currentSort,
-              pagination.pageSize,
-            ),
+            final desktopContent = SizedBox(
+              height:
+                  needsVerticalScroll ? requiredMinHeight : availableHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Page Header
+                  _buildPageHeader(context, state),
 
-            const SizedBox(height: 12),
+                  // Top KPI Cards
+                  _buildKpiSummary(state.items),
 
-            // Table Content or States
-            Expanded(
-              child: _buildMainContent(
-                state: state,
-                pagination: pagination,
-                currentSort: currentSort,
+                  // Warning Banner for partial results
+                  if (state.warningMessage != null)
+                    _buildWarningBanner(state.warningMessage!),
+
+                  // Search, Filter & Controls Toolbar
+                  _buildFilterToolbar(
+                    context,
+                    availableStatuses,
+                    currentStatusFilter,
+                    currentSort,
+                    pagination.pageSize,
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Table Content or States
+                  Expanded(
+                    child: _buildMainContent(
+                      state: state,
+                      pagination: pagination,
+                      currentSort: currentSort,
+                      isCompact: false,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            );
+
+            if (needsVerticalScroll) {
+              return SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: desktopContent,
+              );
+            }
+
+            return desktopContent;
+          },
         ),
       ),
     );
@@ -129,132 +197,170 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
   /// Top Header: Title, Subtitle, and Refresh Button
   Widget _buildPageHeader(BuildContext context, CallLogSheetState state) {
     final isWorking = state.isLoading || state.isRefreshing;
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(28, 20, 28, 16),
-      color: Colors.white,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0284C7).withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.table_chart_rounded,
-                  color: Colors.white,
-                  size: 26,
-                ),
+    final titleSection = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.all(isMobile ? 10 : 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0284C7).withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
-              const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+          child: Icon(
+            Icons.table_chart_rounded,
+            color: Colors.white,
+            size: isMobile ? 22 : 26,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Call Log Sheet',
-                        style: GoogleFonts.poppins(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'READ-ONLY REPORT',
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0284C7),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
                   Text(
-                    'Consolidated provider call log & sales conversion reporting (callLogs + users)',
+                    'Call Log Sheet',
                     style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                      color: const Color(0xFF64748B),
+                      fontSize: isMobile ? 19 : 22,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'READ-ONLY REPORT',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0284C7),
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 2),
+              Text(
+                'Consolidated provider call log & sales conversion reporting (callLogs + users)',
+                style: GoogleFonts.poppins(
+                  fontSize: isMobile ? 12 : 13,
+                  fontWeight: FontWeight.w400,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
             ],
           ),
+        ),
+      ],
+    );
 
-          // Action Buttons
-          OutlinedButton.icon(
-            onPressed: isWorking
-                ? null
-                : () => ref
-                    .read(callLogSheetNotifierProvider.notifier)
-                    .fetchData(isRefresh: true),
-            icon: isWorking
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF0284C7),
-                    ),
-                  )
-                : const Icon(Icons.refresh_rounded, size: 18),
-            label: Text(
-              isWorking
-                  ? (state.isRefreshing ? 'Refreshing...' : 'Syncing...')
-                  : 'Refresh Sheet',
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+    final refreshBtn = OutlinedButton.icon(
+      onPressed: isWorking
+          ? null
+          : () => ref
+              .read(callLogSheetNotifierProvider.notifier)
+              .fetchData(isRefresh: true),
+      icon: isWorking
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFF0284C7),
               ),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0284C7),
-              side: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
+            )
+          : const Icon(Icons.refresh_rounded, size: 18),
+      label: Text(
+        isWorking
+            ? (state.isRefreshing ? 'Refreshing...' : 'Syncing...')
+            : 'Refresh Sheet',
+        style: GoogleFonts.poppins(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF0284C7),
+        side: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 14 : 18,
+          vertical: isMobile ? 10 : 14,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 28,
+        isMobile ? 14 : 20,
+        isMobile ? 16 : 28,
+        isMobile ? 14 : 16,
+      ),
+      color: Colors.white,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 700) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleSection,
+                const SizedBox(height: 12),
+                refreshBtn,
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: titleSection),
+              const SizedBox(width: 16),
+              refreshBtn,
+            ],
+          );
+        },
       ),
     );
   }
 
   /// Warning banner if non-fatal issues occur during parallel log fetch
   Widget _buildWarningBanner(String message) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
     return Container(
-      margin: const EdgeInsets.fromLTRB(28, 12, 28, 0),
+      margin: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 28,
+        12,
+        isMobile ? 16 : 28,
+        0,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFBEB),
@@ -296,9 +402,23 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
       if (it.deactivatedAt != null) deactivatedCount++;
     }
 
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 14, 28, 4),
-      child: Row(
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 28,
+        14,
+        isMobile ? 16 : 28,
+        4,
+      ),
+      child: ResponsiveWrapGrid(
+        mobileColumns: 1,
+        tabletColumns: 2,
+        desktopColumns: 4,
+        mobileBreakpoint: 560,
+        desktopBreakpoint: 1080,
+        spacing: 14,
+        runSpacing: 12,
         children: [
           _buildKpiCard(
             title: 'Eligible Providers',
@@ -308,7 +428,6 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
             iconColor: const Color(0xFF0284C7),
             bgColor: const Color(0xFFE0F2FE),
           ),
-          const SizedBox(width: 16),
           _buildKpiCard(
             title: 'Calls Post-Payment',
             value: '$totalCalls',
@@ -317,7 +436,6 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
             iconColor: const Color(0xFFF59E0B),
             bgColor: const Color(0xFFFEF3C7),
           ),
-          const SizedBox(width: 16),
           _buildKpiCard(
             title: 'Converted Sales',
             value: '$totalConverted',
@@ -326,7 +444,6 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
             iconColor: const Color(0xFF10B981),
             bgColor: const Color(0xFFD1FAE5),
           ),
-          const SizedBox(width: 16),
           _buildKpiCard(
             title: 'Deactivated Providers',
             value: '$deactivatedCount',
@@ -348,9 +465,8 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     required Color iconColor,
     required Color bgColor,
   }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
@@ -410,7 +526,6 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -422,24 +537,36 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     CallLogSheetSortOption currentSort,
     int pageSize,
   ) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
     return Container(
-      margin: const EdgeInsets.fromLTRB(28, 12, 28, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 28,
+        12,
+        isMobile ? 16 : 28,
+        0,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 12 : 16,
+        vertical: 12,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 10,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        alignment: WrapAlignment.spaceBetween,
-        children: [
-          // Search Input
-          SizedBox(
-            width: 320,
-            height: 42,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 680;
+          return Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              // Search Input
+              SizedBox(
+                width: isNarrow ? double.infinity : 320,
+                height: 42,
             child: TextField(
               controller: _searchController,
               onChanged: (val) {
@@ -502,170 +629,303 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
             ),
           ),
 
-          // Filters and Sorting Controls
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              // Feedback Status Filter
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              // Filters and Sorting Controls
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Text(
-                    'Status: ',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF64748B),
-                    ),
+                  // City Filter (Scoped by Employee Permissions)
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final isSuper = ref.watch(isSuperAdminProvider);
+                      final assignedCities = ref.watch(
+                        currentAdminAssignedCitiesProvider,
+                      );
+                      final selectedCity = ref.watch(
+                        callLogSheetSelectedCityProvider,
+                      );
+                      final allowedCities =
+                          ref.watch(allowedCitiesProvider).valueOrNull ??
+                          const <String>[];
+                      final items = allowedCities.toSet().toList()..sort();
+                      final validSelection =
+                          selectedCity == null ||
+                          (isSuper && selectedCity == kMissingCityFilterValue) ||
+                          items.contains(selectedCity);
+                      final effectiveCity = validSelection ? selectedCity : null;
+
+                      return Container(
+                        height: 42,
+                        constraints: BoxConstraints(
+                          maxWidth: isNarrow ? constraints.maxWidth : 280,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'City: ',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Flexible(
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String?>(
+                                  isExpanded: true,
+                                  value: effectiveCity,
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 18,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                  onChanged: (newVal) {
+                                    ref
+                                        .read(
+                                          callLogSheetSelectedCityProvider
+                                              .notifier,
+                                        )
+                                        .state = newVal;
+                                    ref
+                                        .read(
+                                          callLogSheetCurrentPageProvider
+                                              .notifier,
+                                        )
+                                        .state = 0;
+                                  },
+                                  items: [
+                                    DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text(
+                                        (!isSuper && assignedCities.isNotEmpty)  ? 'My Cities '
+        //                                     ? 'My Cities 
+        // // (${assignedCities.join(', ')})'
+                                            : 'All Cities',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isSuper)
+                                      const DropdownMenuItem<String?>(
+                                        value: kMissingCityFilterValue,
+                                        child: Text(
+                                          'Missing City',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ...items.map(
+                                      (c) => DropdownMenuItem<String?>(
+                                        value: c,
+                                        child: Text(
+                                          c,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
+                  // Feedback Status Filter
                   Container(
                     height: 42,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    constraints: BoxConstraints(
+                      maxWidth: isNarrow ? constraints.maxWidth : 220,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: availableStatuses.contains(currentStatusFilter)
-                            ? currentStatusFilter
-                            : 'All',
-                        icon: const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 18,
-                          color: Color(0xFF64748B),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Status: ',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
                         ),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0F172A),
+                        Flexible(
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: availableStatuses.contains(currentStatusFilter)
+                                  ? currentStatusFilter
+                                  : 'All',
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 18,
+                                color: Color(0xFF64748B),
+                              ),
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              onChanged: (String? newVal) {
+                                if (newVal != null) {
+                                  ref
+                                      .read(
+                                        callLogSheetStatusFilterProvider.notifier,
+                                      )
+                                      .state = newVal;
+                                  ref
+                                      .read(
+                                        callLogSheetCurrentPageProvider.notifier,
+                                      )
+                                      .state = 0;
+                                }
+                              },
+                              items: availableStatuses.map((st) {
+                                return DropdownMenuItem<String>(
+                                  value: st,
+                                  child: Text(st, overflow: TextOverflow.ellipsis),
+                                );
+                              }).toList(),
+                            ),
+                          ),
                         ),
-                        onChanged: (String? newVal) {
-                          if (newVal != null) {
-                            ref
-                                .read(
-                                  callLogSheetStatusFilterProvider.notifier,
-                                )
-                                .state = newVal;
-                            ref
-                                .read(
-                                  callLogSheetCurrentPageProvider.notifier,
-                                )
-                                .state = 0;
-                          }
-                        },
-                        items: availableStatuses.map((st) {
-                          return DropdownMenuItem<String>(
-                            value: st,
-                            child: Text(st),
-                          );
-                        }).toList(),
-                      ),
+                      ],
                     ),
                   ),
-                ],
-              ),
 
-              // Sort By Dropdown
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Sort: ',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
+                  // Sort By Dropdown
                   Container(
                     height: 42,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    constraints: BoxConstraints(
+                      maxWidth: isNarrow ? constraints.maxWidth : 280,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<CallLogSheetSortOption>(
-                        value: currentSort,
-                        icon: const Icon(
-                          Icons.sort_rounded,
-                          size: 18,
-                          color: Color(0xFF64748B),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Sort: ',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
                         ),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0F172A),
+                        Flexible(
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<CallLogSheetSortOption>(
+                              isExpanded: true,
+                              value: currentSort,
+                              icon: const Icon(
+                                Icons.sort_rounded,
+                                size: 18,
+                                color: Color(0xFF64748B),
+                              ),
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              onChanged: (CallLogSheetSortOption? newVal) {
+                                if (newVal != null) {
+                                  ref
+                                      .read(callLogSheetSortByProvider.notifier)
+                                      .state = newVal;
+                                  ref
+                                      .read(
+                                        callLogSheetCurrentPageProvider.notifier,
+                                      )
+                                      .state = 0;
+                                }
+                              },
+                              items: const [
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.callsDesc,
+                                  child: Text(
+                                    'Calls (High → Low)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.callsAsc,
+                                  child: Text(
+                                    'Calls (Low → High)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.deactivatedDateDesc,
+                                  child: Text(
+                                    'Deactivated (Newest First)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.deactivatedDateAsc,
+                                  child: Text(
+                                    'Deactivated (Oldest First)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.convertedDesc,
+                                  child: Text(
+                                    'Converted (High → Low)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.convertedAsc,
+                                  child: Text(
+                                    'Converted (Low → High)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.businessNameAsc,
+                                  child: Text(
+                                    'Business Name (A → Z)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: CallLogSheetSortOption.businessNameDesc,
+                                  child: Text(
+                                    'Business Name (Z → A)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        onChanged: (CallLogSheetSortOption? newVal) {
-                          if (newVal != null) {
-                            ref
-                                .read(callLogSheetSortByProvider.notifier)
-                                .state = newVal;
-                            ref
-                                .read(
-                                  callLogSheetCurrentPageProvider.notifier,
-                                )
-                                .state = 0;
-                          }
-                        },
-                        items: const [
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.callsDesc,
-                            child: Text('Calls (High → Low)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.callsAsc,
-                            child: Text('Calls (Low → High)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.deactivatedDateDesc,
-                            child: Text('Deactivated (Newest First)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.deactivatedDateAsc,
-                            child: Text('Deactivated (Oldest First)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.convertedDesc,
-                            child: Text('Converted (High → Low)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.convertedAsc,
-                            child: Text('Converted (Low → High)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.businessNameAsc,
-                            child: Text('Business Name (A → Z)'),
-                          ),
-                          DropdownMenuItem(
-                            value: CallLogSheetSortOption.businessNameDesc,
-                            child: Text('Business Name (Z → A)'),
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
-                ],
-              ),
 
-              // Rows per page selector
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Per page: ',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF64748B),
-                    ),
-                  ),
+                  // Rows per page selector
                   Container(
                     height: 42,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -674,45 +934,58 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: pageSize,
-                        icon: const Icon(
-                          Icons.arrow_drop_down,
-                          size: 18,
-                          color: Color(0xFF64748B),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Per page: ',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
                         ),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF0F172A),
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<int>(
+                            value: pageSize,
+                            icon: const Icon(
+                              Icons.arrow_drop_down,
+                              size: 18,
+                              color: Color(0xFF64748B),
+                            ),
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF0F172A),
+                            ),
+                            onChanged: (int? newSize) {
+                              if (newSize != null) {
+                                ref
+                                    .read(callLogSheetPageSizeProvider.notifier)
+                                    .state = newSize;
+                                ref
+                                    .read(
+                                      callLogSheetCurrentPageProvider.notifier,
+                                    )
+                                    .state = 0;
+                              }
+                            },
+                            items: const [10, 25, 50, 100].map((size) {
+                              return DropdownMenuItem<int>(
+                                value: size,
+                                child: Text('$size'),
+                              );
+                            }).toList(),
+                          ),
                         ),
-                        onChanged: (int? newSize) {
-                          if (newSize != null) {
-                            ref
-                                .read(callLogSheetPageSizeProvider.notifier)
-                                .state = newSize;
-                            ref
-                                .read(
-                                  callLogSheetCurrentPageProvider.notifier,
-                                )
-                                .state = 0;
-                          }
-                        },
-                        items: const [10, 25, 50, 100].map((size) {
-                          return DropdownMenuItem<int>(
-                            value: size,
-                            child: Text('$size'),
-                          );
-                        }).toList(),
-                      ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -722,34 +995,45 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     required CallLogSheetState state,
     required CallLogSheetPaginationData pagination,
     required CallLogSheetSortOption currentSort,
+    required bool isCompact,
   }) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
     if (state.isLoading && state.items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(
-              color: Color(0xFF0284C7),
-              strokeWidth: 3,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Loading Call Log Sheet...',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF64748B),
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 16 : 24,
+          vertical: isCompact ? 48 : 0,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(
+                color: Color(0xFF0284C7),
+                strokeWidth: 3,
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Fetching eligible providers (callsAfterLastPayment > 5) from Firestore',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: const Color(0xFF94A3B8),
+              const SizedBox(height: 16),
+              Text(
+                'Loading Call Log Sheet...',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF64748B),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                'Fetching eligible providers (callsAfterLastPayment > 5) from Firestore',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -757,8 +1041,8 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     if (state.errorMessage != null && state.items.isEmpty) {
       return Center(
         child: Container(
-          margin: const EdgeInsets.all(32),
-          padding: const EdgeInsets.all(28),
+          margin: EdgeInsets.all(isMobile ? 16 : 32),
+          padding: EdgeInsets.all(isMobile ? 20 : 28),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -885,7 +1169,108 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
       );
     }
 
-    // Scrollable Table Container
+    // Status banner shared between mobile card list and desktop table
+    final statusBanner = Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 14 : 20,
+        vertical: 12,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Showing ',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+              Text(
+                '${pagination.startRow} - ${pagination.endRow}',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF0284C7),
+                ),
+              ),
+              Text(
+                ' of ${pagination.totalItems} eligible providers',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+          if (state.lastRefreshed != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (state.isRefreshing) ...[
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: Color(0xFF0284C7),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  'Updated: ${DateFormat('hh:mm:ss a').format(state.lastRefreshed!)}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+
+    if (isCompact) {
+      return Container(
+        margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              statusBanner,
+              _buildMobileCardsList(context, pagination),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Scrollable Table Container (Tablet Landscape & Desktop)
     return Container(
       margin: const EdgeInsets.fromLTRB(28, 4, 28, 24),
       decoration: BoxDecoration(
@@ -903,69 +1288,7 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
       child: Column(
         children: [
           // Table Top Status Banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              border: Border(
-                bottom: BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Showing ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                    Text(
-                      '${pagination.startRow} - ${pagination.endRow}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF0284C7),
-                      ),
-                    ),
-                    Text(
-                      ' of ${pagination.totalItems} eligible providers (callsAfterLastPayment > 5)',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-                if (state.lastRefreshed != null)
-                  Row(
-                    children: [
-                      if (state.isRefreshing) ...[
-                        const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.5,
-                            color: Color(0xFF0284C7),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Text(
-                        'Updated: ${DateFormat('hh:mm:ss a').format(state.lastRefreshed!)}',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
+          statusBanner,
 
           // Responsive Horizontally & Vertically Scrollable DataTable
           // Sized with LayoutBuilder to guarantee ZERO RenderFlex overflow on any screen
@@ -1036,37 +1359,13 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                               ),
                               // 4. Calls After Last Payment
                               DataColumn(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'CALLS > 5',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF475569),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      currentSort ==
-                                              CallLogSheetSortOption.callsDesc
-                                          ? Icons.arrow_downward_rounded
-                                          : (currentSort ==
-                                                  CallLogSheetSortOption.callsAsc
-                                              ? Icons.arrow_upward_rounded
-                                              : Icons.sort_rounded),
-                                      size: 14,
-                                      color: (currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .callsDesc ||
-                                              currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .callsAsc)
-                                          ? const Color(0xFF0284C7)
-                                          : const Color(0xFF94A3B8),
-                                    ),
-                                  ],
+                                label: Text(
+                                  'CALLS > 5',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
                                 ),
                                 onSort: (_, __) {
                                   final notifier = ref.read(
@@ -1080,39 +1379,13 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                               ),
                               // 5. Deactivated Date
                               DataColumn(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'DEACTIVATED DATE',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF475569),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      currentSort ==
-                                              CallLogSheetSortOption
-                                                  .deactivatedDateDesc
-                                          ? Icons.arrow_downward_rounded
-                                          : (currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .deactivatedDateAsc
-                                              ? Icons.arrow_upward_rounded
-                                              : Icons.sort_rounded),
-                                      size: 14,
-                                      color: (currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .deactivatedDateDesc ||
-                                              currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .deactivatedDateAsc)
-                                          ? const Color(0xFF0284C7)
-                                          : const Color(0xFF94A3B8),
-                                    ),
-                                  ],
+                                label: Text(
+                                  'DEACTIVATED DATE',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
                                 ),
                                 onSort: (_, __) {
                                   final notifier = ref.read(
@@ -1150,39 +1423,13 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                               ),
                               // 8. Sales Feedback Converted Count
                               DataColumn(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'CONVERTED COUNT',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF475569),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      currentSort ==
-                                              CallLogSheetSortOption
-                                                  .convertedDesc
-                                          ? Icons.arrow_downward_rounded
-                                          : (currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .convertedAsc
-                                              ? Icons.arrow_upward_rounded
-                                              : Icons.sort_rounded),
-                                      size: 14,
-                                      color: (currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .convertedDesc ||
-                                              currentSort ==
-                                                  CallLogSheetSortOption
-                                                      .convertedAsc)
-                                          ? const Color(0xFF0284C7)
-                                          : const Color(0xFF94A3B8),
-                                    ),
-                                  ],
+                                label: Text(
+                                  'CONVERTED COUNT',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
                                 ),
                                 onSort: (_, __) {
                                   final notifier = ref.read(
@@ -1273,34 +1520,38 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
 
                                     // 3. Phone Number
                                     DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            _formatPhoneNumber(item.phone),
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: const Color(0xFF334155),
-                                            ),
-                                          ),
-                                          if (item.phone.isNotEmpty &&
-                                              item.phone != 'N/A') ...[
-                                            const SizedBox(width: 6),
-                                            InkWell(
-                                              onTap: () => _copyToClipboard(
-                                                context,
-                                                item.phone,
-                                                'Phone number',
-                                              ),
-                                              child: const Icon(
-                                                Icons.copy_rounded,
-                                                size: 14,
-                                                color: Color(0xFF94A3B8),
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              _formatPhoneNumber(item.phone),
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFF334155),
                                               ),
                                             ),
+                                            if (item.phone.isNotEmpty &&
+                                                item.phone != 'N/A') ...[
+                                              const SizedBox(width: 6),
+                                              InkWell(
+                                                onTap: () => _copyToClipboard(
+                                                  context,
+                                                  item.phone,
+                                                  'Phone number',
+                                                ),
+                                                child: const Icon(
+                                                  Icons.copy_rounded,
+                                                  size: 14,
+                                                  color: Color(0xFF94A3B8),
+                                                ),
+                                              ),
+                                            ],
                                           ],
-                                        ],
+                                        ),
                                       ),
                                     ),
 
@@ -1483,20 +1734,322 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
     );
   }
 
+  Widget _buildMobileCardsList(
+    BuildContext context,
+    CallLogSheetPaginationData pagination,
+  ) {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(12),
+      itemCount: pagination.pageItems.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final item = pagination.pageItems[index];
+        final serialNum = pagination.startRow + index;
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: index.isEven ? Colors.white : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '#$serialNum',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.businessName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0F172A),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'UID: ${item.businessId}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      '${item.callsAfterLastPayment} calls',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFD97706),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 14,
+                runSpacing: 10,
+                children: [
+                  SizedBox(
+                    width: 140,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Phone',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _formatPhoneNumber(item.phone),
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF334155),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (item.phone.isNotEmpty && item.phone != 'N/A') ...[
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: () => _copyToClipboard(
+                                  context,
+                                  item.phone,
+                                  'Phone number',
+                                ),
+                                child: const Icon(
+                                  Icons.copy_rounded,
+                                  size: 14,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 125,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Deactivated',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Tooltip(
+                          message: _formatFullDateTime(item.deactivatedAt),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (item.deactivatedAt != null) ...[
+                                const Icon(
+                                  Icons.event_busy_rounded,
+                                  size: 13,
+                                  color: Color(0xFFEF4444),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  _formatDeactivatedDate(item.deactivatedAt),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: item.deactivatedAt != null
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: item.deactivatedAt != null
+                                        ? const Color(0xFFEF4444)
+                                        : const Color(0xFF94A3B8),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Transaction ID',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.transactionId ?? 'N/A',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: item.transactionId != null
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  color: item.transactionId != null
+                                      ? const Color(0xFF475569)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (item.transactionId != null) ...[
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: () => _copyToClipboard(
+                                  context,
+                                  item.transactionId!,
+                                  'Transaction ID',
+                                ),
+                                child: const Icon(
+                                  Icons.copy_rounded,
+                                  size: 14,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Converted',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: const Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color:
+                                const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          '${item.convertedCount}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF7C3AED),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// Builds responsive pagination bar at table bottom
   Widget _buildPaginationBar(CallLogSheetPaginationData pagination) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 14 : 20,
+        vertical: 10,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           // Range Indicator
           Text(
-            'Showing ${pagination.startRow} - ${pagination.endRow} of ${pagination.totalItems} entries',
+            isMobile
+                ? '${pagination.startRow}–${pagination.endRow} of ${pagination.totalItems} entries'
+                : 'Showing ${pagination.startRow} - ${pagination.endRow} of ${pagination.totalItems} entries',
             style: GoogleFonts.poppins(
               fontSize: 12,
               fontWeight: FontWeight.w500,
@@ -1505,9 +2058,12 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
           ),
 
           // Page Navigation Buttons
-          Row(
-            children: [
-              // First Page Button
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // First Page Button
               IconButton(
                 onPressed: pagination.hasPreviousPage
                     ? () => ref
@@ -1518,6 +2074,10 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                 tooltip: 'First Page',
                 color: const Color(0xFF0284C7),
                 disabledColor: const Color(0xFFCBD5E1),
+                constraints: isMobile
+                    ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                    : null,
+                padding: isMobile ? const EdgeInsets.all(4) : null,
               ),
 
               // Previous Page Button
@@ -1531,13 +2091,17 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                 tooltip: 'Previous Page',
                 color: const Color(0xFF0284C7),
                 disabledColor: const Color(0xFFCBD5E1),
+                constraints: isMobile
+                    ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                    : null,
+                padding: isMobile ? const EdgeInsets.all(4) : null,
               ),
 
               // Page Status Badge
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
+                margin: EdgeInsets.symmetric(horizontal: isMobile ? 4 : 8),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 10 : 12,
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
@@ -1565,6 +2129,10 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                 tooltip: 'Next Page',
                 color: const Color(0xFF0284C7),
                 disabledColor: const Color(0xFFCBD5E1),
+                constraints: isMobile
+                    ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                    : null,
+                padding: isMobile ? const EdgeInsets.all(4) : null,
               ),
 
               // Last Page Button
@@ -1578,9 +2146,14 @@ class _CallLogSheetViewState extends ConsumerState<CallLogSheetView> {
                 tooltip: 'Last Page',
                 color: const Color(0xFF0284C7),
                 disabledColor: const Color(0xFFCBD5E1),
+                constraints: isMobile
+                    ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                    : null,
+                padding: isMobile ? const EdgeInsets.all(4) : null,
               ),
             ],
           ),
+        ),
         ],
       ),
     );

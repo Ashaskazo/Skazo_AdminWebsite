@@ -38,13 +38,16 @@ class _CachedUserCounts {
 class UserPaginationNotifier extends Notifier<UserPaginationState> {
   Timer? _filterDebounce;
   int _requestId = 0;
+  bool _isDisposed = false;
   final Map<String, _CachedUserCounts> _countCache = {};
   final Map<String, Future<_CachedUserCounts>> _countRequests = {};
   final Map<String, Future<PageResult<UserModel>>> _pageRequests = {};
 
   @override
   UserPaginationState build() {
+    _isDisposed = false;
     ref.onDispose(() {
+      _isDisposed = true;
       _filterDebounce?.cancel();
       _countRequests.clear();
       _pageRequests.clear();
@@ -73,6 +76,10 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
       _scheduleRefresh();
     });
     ref.listen(currentAdminProfileProvider, (_, __) {
+      clearOptimizationCaches();
+      _scheduleRefresh();
+    });
+    ref.listen(cityAccessScopeProvider, (_, __) {
       clearOptimizationCaches();
       _scheduleRefresh();
     });
@@ -116,6 +123,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
   }
 
   Future<void> refresh() async {
+    if (_isDisposed) return;
     _requestId++;
     final requestId = _requestId;
     _filterDebounce?.cancel();
@@ -210,7 +218,19 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      state = state.copyWith(
+        users: const [],
+        loading: false,
+        loadingMore: false,
+        hasMore: false,
+        clearLastDocument: true,
+        clearError: true,
+      );
+      return;
+    }
+    final assignedCities = scope.assignedCities;
     final filters = state.filters;
     final searchQuery = state.searchQuery;
     final startAfter = isRefresh ? null : state.lastDocument;
@@ -228,6 +248,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
               filters: filters,
               searchQuery: searchQuery,
               assignedCities: assignedCities,
+              isSuperAdmin: scope.isUnrestricted,
               pincodesMap: const {},
               startAfter: startAfter,
             );
@@ -283,12 +304,22 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
     required int requestId,
   }) async {
     final repository = ref.read(userRepositoryProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      return _CachedUserCounts(
+        filteredCount: 0,
+        totalCount: 0,
+        serviceProviderCount: 0,
+        cachedAt: DateTime.now(),
+      );
+    }
+    final assignedCities = scope.assignedCities;
     _throwIfStale(requestId);
     final filteredCount = await repository.countUsers(
       filters: filters,
       searchQuery: searchQuery,
       assignedCities: assignedCities,
+      isSuperAdmin: scope.isUnrestricted,
       pincodesMap: const {},
     );
     _throwIfStale(requestId);
@@ -299,6 +330,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
                 : await repository.countServiceProviders(
                   filters: filters,
                   assignedCities: assignedCities,
+                  isSuperAdmin: scope.isUnrestricted,
                   pincodesMap: const {},
                 ))
             : null;
@@ -310,6 +342,7 @@ class UserPaginationNotifier extends Notifier<UserPaginationState> {
               filters: const UserFilters(),
               searchQuery: '',
               assignedCities: assignedCities,
+              isSuperAdmin: scope.isUnrestricted,
               pincodesMap: const {},
             );
     _throwIfStale(requestId);

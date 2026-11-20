@@ -6,6 +6,7 @@ enum DashboardView {
   payPerLead,
   deactivatedList,
   callLogSheet,
+  callLogsDetails,
   servicePosts,
   // orders,
   rentalProperties,

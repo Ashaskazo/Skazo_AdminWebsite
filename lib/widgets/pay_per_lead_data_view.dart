@@ -8,6 +8,7 @@ import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/pay_per_lead_providers.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 /// Production-ready, strictly read-only Pay Per Lead entity view.
 ///
@@ -130,23 +131,45 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final isDesktop = constraints.maxWidth >= 1024;
+          final isCompactScroll = constraints.maxWidth < 768;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(),
-              _buildFilterSection(
-                allowedCitiesAsync,
-                isSuper,
-                assignedCities,
-                state,
-              ),
-              _buildSummaryBanner(state),
+              if (isCompactScroll)
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(),
+                        _buildFilterSection(
+                          allowedCitiesAsync,
+                          isSuper,
+                          assignedCities,
+                          state,
+                        ),
+                        _buildSummaryBanner(state),
+                        _buildContent(state, isDesktop, shrinkWrap: true),
+                      ],
+                    ),
+                  ),
+                )
+              else ...[
+                _buildHeader(),
+                _buildFilterSection(
+                  allowedCitiesAsync,
+                  isSuper,
+                  assignedCities,
+                  state,
+                ),
+                _buildSummaryBanner(state),
 
-              /// Expanded content area fills all available vertical space
-              Expanded(
-                child: _buildContent(state, isDesktop),
-              ),
+                /// Expanded content area fills all available vertical space
+                Expanded(
+                  child: _buildContent(state, isDesktop),
+                ),
+              ],
 
               /// Pinned pagination footer (outside scrolling area, stays visible)
               if (state.providers.isNotEmpty ||
@@ -164,8 +187,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   /// ------------------------------------------------------------
 
   Widget _buildHeader() {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+    final hPad = isMobile ? 16.0 : 24.0;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+      padding: EdgeInsets.fromLTRB(hPad, isMobile ? 16 : 24, hPad, 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -192,7 +217,7 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                       child: Text(
                         'Pay Per Lead',
                         style: GoogleFonts.poppins(
-                          fontSize: 24,
+                          fontSize: isMobile ? 20 : 24,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF0F172A),
                           letterSpacing: -0.5,
@@ -268,11 +293,13 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
     PayPerLeadPaginationState state,
   ) {
     final dateFormat = DateFormat('dd MMM yyyy');
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        width: double.infinity,
+        padding: EdgeInsets.all(isMobile ? 12 : 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -297,6 +324,9 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
 
                 return Container(
                   height: 42,
+                  constraints: BoxConstraints(
+                    maxWidth: isMobile ? double.infinity : 280,
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
@@ -305,7 +335,10 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String?>(
-                      value: _selectedCity,
+                      isExpanded: isMobile,
+                      value: (_selectedCity != null && items.contains(_selectedCity))
+                          ? _selectedCity
+                          : null,
                       hint: Text(
                         'Select City',
                         style: GoogleFonts.poppins(
@@ -539,11 +572,15 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
     final countText = state.isLoading
         ? '...'
         : '${state.totalCount ?? 0}';
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
+      padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 10, isMobile ? 16 : 24, 12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        padding: EdgeInsets.symmetric(
+          horizontal: isMobile ? 14 : 20,
+          vertical: isMobile ? 12 : 14,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -611,11 +648,12 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
                   ),
 
                   // Divider between stats on wider screens
-                  Container(
-                    width: 1,
-                    height: 36,
-                    color: const Color(0xFFE2E8F0),
-                  ),
+                  if (!isMobile)
+                    Container(
+                      width: 1,
+                      height: 36,
+                      color: const Color(0xFFE2E8F0),
+                    ),
 
                   // TOTAL PROVIDERS
                   Row(
@@ -687,42 +725,60 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   /// CONTENT (Stack with table/cards and overlays)
   /// ------------------------------------------------------------
 
-  Widget _buildContent(PayPerLeadPaginationState state, bool isDesktop) {
+  Widget _buildContent(
+    PayPerLeadPaginationState state,
+    bool isDesktop, {
+    bool shrinkWrap = false,
+  }) {
     /// INITIAL LOADING ONLY (when no providers are available yet)
     if (state.isLoading && state.providers.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: Color(0xFF0284C7)),
-            SizedBox(height: 16),
-            Text(
-              'Loading Pay Per Lead providers...',
-              style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
-            ),
-          ],
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF0284C7)),
+              SizedBox(height: 16),
+              Text(
+                'Loading Pay Per Lead providers...',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     /// INITIAL LOAD ERROR
     if (state.errorMessage != null && state.providers.isEmpty) {
-      return _buildInitialError(state);
+      final err = _buildInitialError(state);
+      return shrinkWrap
+          ? Padding(padding: const EdgeInsets.all(16), child: err)
+          : err;
     }
 
     /// NO RESULTS
     if (state.providers.isEmpty) {
-      return _buildEmptyState();
+      final empty = _buildEmptyState();
+      return shrinkWrap
+          ? Padding(padding: const EdgeInsets.all(16), child: empty)
+          : empty;
     }
 
     /// DATA PRESENT: Render full scrollable content
+    final bodyChild = isDesktop
+        ? _buildDesktopTable(state)
+        : _buildMobileCardsList(state, shrinkWrap: shrinkWrap);
+
     return Stack(
       children: [
-        Positioned.fill(
-          child: isDesktop
-              ? _buildDesktopTable(state)
-              : _buildMobileCardsList(state),
-        ),
+        if (shrinkWrap)
+          bodyChild
+        else
+          Positioned.fill(
+            child: bodyChild,
+          ),
 
         /// Loading badge while navigating pages (without removing table content)
         if (state.isLoadingPage)
@@ -1214,12 +1270,22 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
   /// MOBILE LIST (Responsive Card Layout)
   /// ------------------------------------------------------------
 
-  Widget _buildMobileCardsList(PayPerLeadPaginationState state) {
+  Widget _buildMobileCardsList(
+    PayPerLeadPaginationState state, {
+    bool shrinkWrap = false,
+  }) {
     final providers = state.providers;
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 24,
+        vertical: 8,
+      ),
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap
+          ? const NeverScrollableScrollPhysics()
+          : const AlwaysScrollableScrollPhysics(),
       itemCount: providers.length,
       itemBuilder: (context, index) {
         final user = providers[index];
@@ -1377,7 +1443,7 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
 
   Widget _buildMobileDetailItem(String label, String value) {
     return SizedBox(
-      width: 140,
+      width: 128,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1422,10 +1488,14 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
 
     final bool canGoPrevious = state.currentPage > 0 && !state.isLoadingPage;
     final bool canGoNext = state.hasNextPage && !state.isLoadingPage;
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 24,
+        vertical: 8,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -1438,12 +1508,14 @@ class _PayPerLeadDataViewState extends ConsumerState<PayPerLeadDataView> {
           Flexible(
             child: Text(
               total > 0
-                  ? 'Showing $start–$end of $total providers'
+                  ? (isMobile
+                      ? '$start–$end of $total'
+                      : 'Showing $start–$end of $total providers')
                   : state.isLoading
                       ? 'Loading providers...'
                       : 'No providers to display',
               style: GoogleFonts.poppins(
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 color: const Color(0xFF64748B),
                 fontWeight: FontWeight.w500,
               ),
@@ -1582,9 +1654,11 @@ class _PayPerLeadDetailsDialogState
 
     try {
       final repo = ref.read(userRepositoryProvider);
+      final scope = ref.read(cityAccessScopeProvider);
       await repo.savePayPerLeadFeedback(
         userId: widget.user.id,
         feedback: text,
+        scope: scope,
       );
 
       // Update in-memory state so it's immediately reflected
@@ -1653,11 +1727,12 @@ class _PayPerLeadDetailsDialogState
     final dialogWidth = min(screenWidth * 0.9, 520.0);
 
     return AlertDialog(
+      insetPadding: ResponsiveBreakpoints.dialogInsetPadding(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
-      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
       title: Row(
         children: [
           Container(
@@ -1860,13 +1935,14 @@ class _PayPerLeadDetailsDialogState
   }
 
   Widget _buildRow(String label, String value) {
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 150,
+            width: isMobile ? 110 : 150,
             child: Text(
               label,
               style: GoogleFonts.poppins(

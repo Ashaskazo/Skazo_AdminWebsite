@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class AdminsDataView extends ConsumerWidget {
   const AdminsDataView({super.key});
@@ -15,15 +16,19 @@ class AdminsDataView extends ConsumerWidget {
     final isSuperAdmin = ref.watch(isSuperAdminProvider);
     final adminsAsync = ref.watch(adminsStreamProvider);
     final systemCitiesAsync = ref.watch(userFilterCitiesProvider);
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -31,7 +36,7 @@ class AdminsDataView extends ConsumerWidget {
                   Text(
                     'Admin Management',
                     style: GoogleFonts.poppins(
-                      fontSize: 24,
+                      fontSize: isMobile ? 20 : 24,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF0F172A),
                     ),
@@ -40,7 +45,7 @@ class AdminsDataView extends ConsumerWidget {
                   Text(
                     'Manage administrative access, assigned cities, and active statuses.',
                     style: GoogleFonts.poppins(
-                      fontSize: 14,
+                      fontSize: isMobile ? 12.5 : 14,
                       color: const Color(0xFF64748B),
                     ),
                   ),
@@ -49,7 +54,8 @@ class AdminsDataView extends ConsumerWidget {
               if (isSuperAdmin)
                 ElevatedButton.icon(
                   onPressed: () {
-                    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
+                    final baseCities = systemCitiesAsync.value ?? const ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bhimavaram', 'Tirupathi'];
+                    final systemCities = {...baseCities, 'Bhimavaram', 'Bheemavaram', 'Tirupati', 'Tirupathi'}.toList()..sort();
                     _showAddAdminDialog(context, ref, systemCities);
                   },
                   icon: const Icon(Icons.add, size: 18),
@@ -76,7 +82,7 @@ class AdminsDataView extends ConsumerWidget {
               if (docs.isEmpty) return const Center(child: Text('No admins found'));
 
               return ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24),
                 itemCount: docs.length,
                 itemBuilder: (context, index) {
                   final data = docs[index].data() as Map<String, dynamic>;
@@ -108,183 +114,160 @@ class AdminsDataView extends ConsumerWidget {
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
+                      padding: EdgeInsets.all(isMobile ? 14.0 : 16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor: isCurrentSuperAdmin
-                                ? const Color(0xFF2563EB).withValues(alpha: 0.1)
-                                : (isActive ? const Color(0xFFF1F5F9) : Colors.red.withValues(alpha: 0.1)),
-                            child: Icon(
-                              isCurrentSuperAdmin ? Icons.shield : Icons.person,
-                              color: isCurrentSuperAdmin
-                                  ? const Color(0xFF2563EB)
-                                  : (isActive ? const Color(0xFF64748B) : Colors.red),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor: isCurrentSuperAdmin
+                                    ? const Color(0xFF2563EB).withValues(alpha: 0.1)
+                                    : (isActive ? const Color(0xFFF1F5F9) : Colors.red.withValues(alpha: 0.1)),
+                                child: Icon(
+                                  isCurrentSuperAdmin ? Icons.shield : Icons.person,
+                                  color: isCurrentSuperAdmin
+                                      ? const Color(0xFF2563EB)
+                                      : (isActive ? const Color(0xFF64748B) : Colors.red),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      name,
-                                      style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16,
-                                      ),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: GoogleFonts.poppins(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        // Status Chip
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isActive ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            isActive ? 'Active' : 'Inactive',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: isActive ? Colors.green[700] : Colors.red[700],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    // Status Chip
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: isActive ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        isActive ? 'Active' : 'Inactive',
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      email,
+                                      style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
+                                    ),
+                                    if (data['admin_id'] != null)
+                                      Text(
+                                        'ID: ${data['admin_id']}',
                                         style: GoogleFonts.poppins(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
-                                          color: isActive ? Colors.green[700] : Colors.red[700],
+                                          color: const Color(0xFF2563EB),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  email,
-                                  style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
-                                ),
-                                if (data['admin_id'] != null)
-                                  Text(
-                                    'ID: ${data['admin_id']}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF2563EB),
-                                    ),
-                                  ),
-                                const SizedBox(height: 8),
-                                // Assigned Cities Badges
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: isCurrentSuperAdmin
-                                      ? [
-                                          Chip(
-                                            avatar: const Icon(Icons.star, size: 12, color: Color(0xFF2563EB)),
-                                            label: Text(
-                                              'All Cities (Super Admin)',
-                                              style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF2563EB)),
-                                            ),
-                                            backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.08),
-                                            visualDensity: VisualDensity.compact,
-                                            padding: EdgeInsets.zero,
-                                          ),
-                                        ]
-                                      : (assignedCities.isEmpty
+                                    const SizedBox(height: 8),
+                                    // Assigned Cities Badges
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: isCurrentSuperAdmin
                                           ? [
                                               Chip(
-                                                avatar: const Icon(Icons.location_off, size: 12, color: Colors.orange),
+                                                avatar: const Icon(Icons.star, size: 12, color: Color(0xFF2563EB)),
                                                 label: Text(
-                                                  'No Cities Assigned',
-                                                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange[800]),
+                                                  'All Cities (Super Admin)',
+                                                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF2563EB)),
                                                 ),
-                                                backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                                                backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.08),
                                                 visualDensity: VisualDensity.compact,
                                                 padding: EdgeInsets.zero,
                                               ),
                                             ]
-                                          : assignedCities
-                                              .map(
-                                                (c) => Chip(
-                                                  avatar: const Icon(Icons.location_city, size: 12, color: Color(0xFF0284C7)),
-                                                  label: Text(
-                                                    c,
-                                                    style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF0369A1)),
+                                          : (assignedCities.isEmpty
+                                              ? [
+                                                  Chip(
+                                                    avatar: const Icon(Icons.location_off, size: 12, color: Colors.orange),
+                                                    label: Text(
+                                                      'No Cities Assigned',
+                                                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.orange[800]),
+                                                    ),
+                                                    backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                                                    visualDensity: VisualDensity.compact,
+                                                    padding: EdgeInsets.zero,
                                                   ),
-                                                  backgroundColor: const Color(0xFFE0F2FE),
-                                                  visualDensity: VisualDensity.compact,
-                                                  padding: EdgeInsets.zero,
-                                                ),
-                                              )
-                                              .toList()),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: isCurrentSuperAdmin ? const Color(0xFF2563EB).withValues(alpha: 0.1) : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  role.toUpperCase(),
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isCurrentSuperAdmin ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                                  ),
+                                                ]
+                                              : assignedCities
+                                                  .map(
+                                                    (c) => Chip(
+                                                      avatar: const Icon(Icons.location_city, size: 12, color: Color(0xFF0284C7)),
+                                                      label: Text(
+                                                        c,
+                                                        style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFF0369A1)),
+                                                      ),
+                                                      backgroundColor: const Color(0xFFE0F2FE),
+                                                      visualDensity: VisualDensity.compact,
+                                                      padding: EdgeInsets.zero,
+                                                    ),
+                                                  )
+                                                  .toList()),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              if (isSuperAdmin) ...[
+                              if (!isMobile) ...[
                                 const SizedBox(width: 8),
-                                // Edit Admin Button
-                                IconButton(
-                                  onPressed: () {
-                                    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
-                                    _showEditAdminDialog(context, ref, id, data, systemCities);
-                                  },
-                                  icon: const Icon(Icons.edit_outlined, color: Color(0xFF2563EB), size: 20),
-                                  tooltip: 'Edit Admin & Assigned Cities',
-                                ),
-                                IconButton(
-                                  onPressed: () async {
-                                    try {
-                                      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Password reset email sent to $email.'),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Failed to send reset email: $e'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.lock_reset, color: Color(0xFF475569), size: 20),
-                                  tooltip: 'Send Password Reset Email',
-                                ),
-                              ],
-                              if (isSuperAdmin && !isCurrentSuperAdmin) ...[
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  onPressed: () => _deleteAdmin(context, ref, id, name),
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                  tooltip: 'Remove Admin',
+                                _buildAdminActions(
+                                  context: context,
+                                  ref: ref,
+                                  id: id,
+                                  name: name,
+                                  email: email,
+                                  role: role,
+                                  data: data,
+                                  isCurrentSuperAdmin: isCurrentSuperAdmin,
+                                  isSuperAdmin: isSuperAdmin,
+                                  systemCitiesAsync: systemCitiesAsync,
                                 ),
                               ],
                             ],
                           ),
+                          if (isMobile) ...[
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildAdminActions(
+                                context: context,
+                                ref: ref,
+                                id: id,
+                                name: name,
+                                email: email,
+                                role: role,
+                                data: data,
+                                isCurrentSuperAdmin: isCurrentSuperAdmin,
+                                isSuperAdmin: isSuperAdmin,
+                                systemCitiesAsync: systemCitiesAsync,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -296,6 +279,84 @@ class AdminsDataView extends ConsumerWidget {
             error: (err, stack) => Center(child: Text('Error: $err')),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildAdminActions({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String id,
+    required String name,
+    required String email,
+    required String role,
+    required Map<String, dynamic> data,
+    required bool isCurrentSuperAdmin,
+    required bool isSuperAdmin,
+    required AsyncValue<List<String>> systemCitiesAsync,
+  }) {
+    return Wrap(
+      spacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isCurrentSuperAdmin ? const Color(0xFF2563EB).withValues(alpha: 0.1) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            role.toUpperCase(),
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: isCurrentSuperAdmin ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+            ),
+          ),
+        ),
+        if (isSuperAdmin) ...[
+          IconButton(
+            onPressed: () {
+              final baseCities = systemCitiesAsync.value ?? const ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bhimavaram', 'Tirupathi'];
+              final systemCities = {...baseCities, 'Bhimavaram', 'Bheemavaram', 'Tirupati', 'Tirupathi'}.toList()..sort();
+              _showEditAdminDialog(context, ref, id, data, systemCities);
+            },
+            icon: const Icon(Icons.edit_outlined, color: Color(0xFF2563EB), size: 20),
+            tooltip: 'Edit Admin & Assigned Cities',
+          ),
+          IconButton(
+            onPressed: () async {
+              try {
+                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Password reset email sent to $email.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to send reset email: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.lock_reset, color: Color(0xFF475569), size: 20),
+            tooltip: 'Send Password Reset Email',
+          ),
+        ],
+        if (isSuperAdmin && !isCurrentSuperAdmin)
+          IconButton(
+            onPressed: () => _deleteAdmin(context, ref, id, name),
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+            tooltip: 'Remove Admin',
+          ),
       ],
     );
   }
@@ -313,9 +374,14 @@ class AdminsDataView extends ConsumerWidget {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          insetPadding: ResponsiveBreakpoints.dialogInsetPadding(context),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text('Add New Admin', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: ResponsiveBreakpoints.dialogMaxWidth(context, desktopMaxWidth: 460),
+            ),
+            child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,6 +406,7 @@ class AdminsDataView extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   value: selectedRole,
                   decoration: InputDecoration(
                     labelText: 'Role',
@@ -365,8 +432,11 @@ class AdminsDataView extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    Expanded(
+                      child: Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(isActive ? 'Active' : 'Inactive', style: TextStyle(color: isActive ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
                         Switch(
@@ -384,7 +454,7 @@ class AdminsDataView extends ConsumerWidget {
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
-                    children: availableCities.map((city) {
+                    children: ({...availableCities, ...selectedCities}.toList()..sort()).map((city) {
                       final isSelected = selectedCities.contains(city);
                       return FilterChip(
                         label: Text(city),
@@ -416,6 +486,7 @@ class AdminsDataView extends ConsumerWidget {
                 ],
               ],
             ),
+          ),
           ),
           actions: [
             TextButton(
@@ -495,6 +566,13 @@ class AdminsDataView extends ConsumerWidget {
                   final count = countSnapshot.count ?? 0;
                   final adminId = 'ADM${(count + 1).toString().padLeft(3, '0')}';
 
+                  final normalizedCities =
+                      selectedCities
+                          .map((e) => e.trim())
+                          .where((e) => e.isNotEmpty)
+                          .toSet()
+                          .toList();
+
                   final newAdminData = <String, dynamic>{
                     'name': name,
                     'email': email,
@@ -502,7 +580,7 @@ class AdminsDataView extends ConsumerWidget {
                     'level': selectedRole == 'super_admin' ? 'administrator' : 'staff',
                     'admin_id': adminId,
                     'isActive': isActive,
-                    'assignedCities': selectedRole == 'super_admin' ? [] : selectedCities,
+                    'assignedCities': selectedRole == 'super_admin' ? [] : normalizedCities,
                     'createdAt': FieldValue.serverTimestamp(),
                   };
                   if (createdUid != null) {
@@ -575,9 +653,14 @@ class AdminsDataView extends ConsumerWidget {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
+          insetPadding: ResponsiveBreakpoints.dialogInsetPadding(context),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text('Edit Admin Details', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: ResponsiveBreakpoints.dialogMaxWidth(context, desktopMaxWidth: 460),
+            ),
+            child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,6 +676,7 @@ class AdminsDataView extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   value: selectedRole,
                   decoration: InputDecoration(
                     labelText: 'Role',
@@ -608,8 +692,11 @@ class AdminsDataView extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    Expanded(
+                      child: Text('Account Status:', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                    ),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(isActive ? 'Active' : 'Inactive', style: TextStyle(color: isActive ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
                         Switch(
@@ -627,7 +714,7 @@ class AdminsDataView extends ConsumerWidget {
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
-                    children: availableCities.map((city) {
+                    children: ({...availableCities, ...selectedCities}.toList()..sort()).map((city) {
                       final isSelected = selectedCities.contains(city);
                       return FilterChip(
                         label: Text(city),
@@ -658,6 +745,7 @@ class AdminsDataView extends ConsumerWidget {
               ],
             ),
           ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -676,12 +764,19 @@ class AdminsDataView extends ConsumerWidget {
                 setState(() => isSaving = true);
 
                 try {
+                  final normalizedCities =
+                      selectedCities
+                          .map((e) => e.trim())
+                          .where((e) => e.isNotEmpty)
+                          .toSet()
+                          .toList();
+
                   final updateData = <String, dynamic>{
                     'name': name,
                     'role': selectedRole,
                     'level': selectedRole == 'super_admin' ? 'administrator' : 'staff',
                     'isActive': isActive,
-                    'assignedCities': selectedRole == 'super_admin' ? [] : selectedCities,
+                    'assignedCities': selectedRole == 'super_admin' ? [] : normalizedCities,
                     'updatedAt': FieldValue.serverTimestamp(),
                   };
 

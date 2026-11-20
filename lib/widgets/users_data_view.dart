@@ -6,9 +6,10 @@ import 'package:skazo_admin/models/user_model.dart';
 import 'package:skazo_admin/models/user_pagination_state.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
-import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/user_pagination_provider.dart';
 import 'package:skazo_admin/providers/user_providers.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 import 'dart:async';
 
 class UsersDataView extends ConsumerStatefulWidget {
@@ -107,37 +108,42 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         ? (selectedCity ?? assignedCities.join(', '))
         : selectedCity;
 
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 18 : 32, isMobile ? 16 : 24, isMobile ? 16 : 24),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'User Management',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
-                      letterSpacing: -0.5,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'User Management',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 22 : 28,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Verify and manage business/service providers',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: const Color(0xFF64748B),
-                      fontWeight: FontWeight.w400,
+                    const SizedBox(height: 4),
+                    Text(
+                      'Verify and manage business/service providers',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 12.5 : 14,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF2563EB).withValues(alpha: 0.1),
@@ -166,145 +172,169 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
         ),
 
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: Container(
-                      height: 54,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFF1F5F9)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF0F172A,
-                            ).withValues(alpha: 0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (value) {
-                          setState(() {});
-                          _searchDebounce?.cancel();
-                          _searchDebounce = Timer(
-                            const Duration(milliseconds: 250),
-                            () {
-                              ref.read(userSearchQueryProvider.notifier).state =
-                                  value;
-                            },
-                          );
-                        },
-                        style: GoogleFonts.poppins(fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText:
-                              selectedType == 'Service Providers'
-                                  ? 'Search phone, uid, username, business name...'
-                                  : 'Search phone, uid, username, business name...',
-                          hintStyle: GoogleFonts.poppins(
-                            color: const Color(0xFF94A3B8),
-                            fontSize: 14,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            color: Color(0xFF94A3B8),
-                            size: 20,
-                          ),
-                          suffixIcon:
-                              _searchController.text.isNotEmpty
-                                  ? IconButton(
-                                    icon: const Icon(
-                                      Icons.clear_rounded,
-                                      color: Color(0xFF94A3B8),
-                                      size: 18,
-                                    ),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {});
-                                      ref
-                                          .read(
-                                            userSearchQueryProvider.notifier,
-                                          )
-                                          .state = '';
-                                    },
-                                  )
-                                  : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final useCompactFilters = constraints.maxWidth < 780;
+
+                  final searchBox = Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF0F172A,
+                          ).withValues(alpha: 0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) {
+                        setState(() {});
+                        _searchDebounce?.cancel();
+                        _searchDebounce = Timer(
+                          const Duration(milliseconds: 250),
+                          () {
+                            ref.read(userSearchQueryProvider.notifier).state =
+                                value;
+                          },
+                        );
+                      },
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText:
+                            selectedType == 'Service Providers'
+                                ? 'Search phone, uid, username, business name...'
+                                : 'Search phone, uid, username, business name...',
+                        hintStyle: GoogleFonts.poppins(
+                          color: const Color(0xFF94A3B8),
+                          fontSize: 14,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search_rounded,
+                          color: Color(0xFF94A3B8),
+                          size: 20,
+                        ),
+                        suffixIcon:
+                            _searchController.text.isNotEmpty
+                                ? IconButton(
+                                  icon: const Icon(
+                                    Icons.clear_rounded,
+                                    color: Color(0xFF94A3B8),
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {});
+                                    ref
+                                        .read(userSearchQueryProvider.notifier)
+                                        .state = '';
+                                  },
+                                )
+                                : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  ref
-                      .watch(userCitiesProvider)
-                      .when(
-                        data: (cities) {
-                          final cityNames = {...cities};
-                          if (selectedCity != null) cityNames.add(selectedCity);
-                          final dropdownItems = cityNames.toList()..sort();
+                  );
 
-                          return Container(
-                            height: 54,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: const Color(0xFFF1F5F9),
-                              ),
+                  final cityFilter = ref.watch(allowedCitiesProvider).when(
+                    data: (cities) {
+                      final cityNames = {...cities};
+                      if (selectedCity != null &&
+                          selectedCity != kMissingCityFilterValue &&
+                          (isSuper ||
+                              assignedCities.any(
+                                (c) =>
+                                    canonicalizeCityKey(c) ==
+                                    canonicalizeCityKey(selectedCity),
+                              ))) {
+                        cityNames.add(selectedCity);
+                      }
+                      final dropdownItems = cityNames.toList()..sort();
+                      final validSelection =
+                          selectedCity == null ||
+                          (isSuper && selectedCity == kMissingCityFilterValue) ||
+                          dropdownItems.contains(selectedCity);
+                      final effectiveValue = validSelection ? selectedCity : null;
+
+                      return Container(
+                        height: 54,
+                        constraints: BoxConstraints(
+                          maxWidth:
+                              useCompactFilters ? constraints.maxWidth : 280,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFF1F5F9)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String?>(
+                            isExpanded: useCompactFilters,
+                            value: effectiveValue,
+                            hint: Text(
+                              'City',
+                              style: GoogleFonts.poppins(fontSize: 14),
                             ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String?>(
-                                value: selectedCity,
-                                hint: Text(
-                                  'City',
-                                  style: GoogleFonts.poppins(fontSize: 14),
+                            onChanged: (value) {
+                              ref
+                                  .read(userSelectedCityProvider.notifier)
+                                  .state = value;
+                            },
+                            items: [
+                              DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text(
+                                  (!isSuper && assignedCities.isNotEmpty)
+                                      ? 'My Assigned Cities (${assignedCities.join(', ')})'
+                                      : 'All Cities',
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                onChanged: (value) {
-                                  ref
-                                      .read(userSelectedCityProvider.notifier)
-                                      .state = value;
-                                },
-                                items: [
-                                  DropdownMenuItem<String?>(
-                                    value: null,
-                                    child: Text(
-                                      (!isSuper && assignedCities.isNotEmpty)
-                                          ? 'My Assigned Cities (${assignedCities.join(', ')})'
-                                          : 'All Cities',
-                                    ),
-                                  ),
-                                  ...dropdownItems.map(
-                                    (item) => DropdownMenuItem<String?>(
-                                      value: item,
-                                      child: Text(item),
-                                    ),
-                                  ),
-                                ],
                               ),
-                            ),
-                          );
-                        },
-                        loading:
-                            () => const SizedBox(
-                              width: 100,
-                              child: LinearProgressIndicator(),
-                            ),
-                        error: (_, __) => const SizedBox.shrink(),
-                      ),
-                  const SizedBox(width: 16),
-                  Container(
+                              if (isSuper)
+                                const DropdownMenuItem<String?>(
+                                  value: kMissingCityFilterValue,
+                                  child: Text(
+                                    'Missing City (Data Quality)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ...dropdownItems.map(
+                                (item) => DropdownMenuItem<String?>(
+                                  value: item,
+                                  child: Text(
+                                    item,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    loading:
+                        () => const SizedBox(
+                          width: 100,
+                          child: LinearProgressIndicator(),
+                        ),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+
+                  final dateFilterDropdown = Container(
                     height: 54,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
@@ -471,38 +501,73 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ],
                       ),
                     ),
-                  ),
-                ],
+                  );
+
+                  if (useCompactFilters) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        searchBox,
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [cityFilter, dateFilterDropdown],
+                        ),
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(flex: 3, child: searchBox),
+                      const SizedBox(width: 16),
+                      cityFilter,
+                      const SizedBox(width: 16),
+                      dateFilterDropdown,
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
                 children: [
-                  Expanded(child: _buildTypeChips(ref, selectedType)),
-                  const SizedBox(width: 16),
-                  if (selectedType != 'Customers') ...[
-                    Text(
-                      'Verified Only',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: const Color(0xFF64748B),
-                      ),
+                  _buildTypeChips(ref, selectedType),
+                  if (selectedType != 'Customers')
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Verified Only',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Switch(
+                          value: verifiedOnly,
+                          activeThumbColor: const Color(0xFF16A34A),
+                          activeTrackColor: const Color(
+                            0xFF16A34A,
+                          ).withValues(alpha: 0.5),
+                          onChanged: (value) {
+                            ref.read(userVerifiedOnlyProvider.notifier).state =
+                                value;
+                          },
+                        ),
+                      ],
                     ),
-                    Switch(
-                      value: verifiedOnly,
-                      activeThumbColor: const Color(0xFF16A34A),
-                      activeTrackColor: const Color(
-                        0xFF16A34A,
-                      ).withValues(alpha: 0.5),
-                      onChanged: (value) {
-                        ref.read(userVerifiedOnlyProvider.notifier).state =
-                            value;
-                      },
-                    ),
-                  ],
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
                 children: [
                   if (notifier.filteredCount > 0)
                     Container(
@@ -540,7 +605,6 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                         ),
                       ),
                     ),
-                  const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -552,6 +616,7 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                       border: Border.all(color: const Color(0xFFDCFCE7)),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
                           Icons.verified_rounded,
@@ -559,14 +624,16 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
                           color: Color(0xFF16A34A),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          cityScopeLabel != null
-                              ? '${notifier.serviceProviderCount} Service Providers in $cityScopeLabel'
-                              : '${notifier.serviceProviderCount} Service Providers',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF16A34A),
+                        Flexible(
+                          child: Text(
+                            cityScopeLabel != null
+                                ? '${notifier.serviceProviderCount} Service Providers in $cityScopeLabel'
+                                : '${notifier.serviceProviderCount} Service Providers',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF16A34A),
+                            ),
                           ),
                         ),
                       ],
@@ -615,7 +682,9 @@ class _UsersDataViewState extends ConsumerState<UsersDataView> {
       child: ListView.builder(
         key: const PageStorageKey('users_list'),
         controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: EdgeInsets.symmetric(
+          horizontal: ResponsiveBreakpoints.isMobile(context) ? 16 : 24,
+        ),
         itemCount:
             state.users.length + (state.loadingMore || state.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
@@ -731,29 +800,27 @@ class _UserListTileState extends State<_UserListTile>
                       : const Icon(Icons.business, color: Color(0xFF94A3B8)),
             ),
           ),
-          title: Row(
+          title: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Flexible(
-                child: Text(
-                  user.displayName,
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: const Color(0xFF0F172A),
-                  ),
+              Text(
+                user.displayName,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: const Color(0xFF0F172A),
                 ),
               ),
-              if (user.isverified) ...[
-                const SizedBox(width: 6),
+              if (user.isverified)
                 const Icon(
                   Icons.verified_rounded,
                   color: Color(0xFF10B981),
                   size: 17,
                 ),
-              ],
               if (user.StarServiceprovider == 'true' ||
-                  user.rawData['StarServiceprovider'] == 'true') ...[
-                const SizedBox(width: 6),
+                  user.rawData['StarServiceprovider'] == 'true')
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -791,7 +858,26 @@ class _UserListTileState extends State<_UserListTile>
                     ],
                   ),
                 ),
-              ],
+              if (!hasResolvableCity(user.rawData))
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF59E0B)),
+                  ),
+                  child: Text(
+                    'MISSING CITY',
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFFB45309),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
           ),
           subtitle: Column(
@@ -820,12 +906,17 @@ class _UserListTileState extends State<_UserListTile>
                         color: Color(0xFF6366F1),
                       ),
                       const SizedBox(width: 3),
-                      Text(
-                        getSmartCity(user.toMap()),
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: const Color(0xFF64748B),
-                          fontWeight: FontWeight.w600,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 160),
+                        child: Text(
+                          getSmartCity(user.toMap()),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],

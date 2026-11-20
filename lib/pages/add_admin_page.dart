@@ -125,6 +125,13 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
       final count = countSnapshot.count ?? 0;
       final adminId = 'ADM${(count + 1).toString().padLeft(3, '0')}';
 
+      final normalizedCities =
+          _selectedCities
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList();
+
       final newAdminData = <String, dynamic>{
         'name': name,
         'email': email,
@@ -132,7 +139,7 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
         'level': _selectedRole == 'super_admin' ? 'administrator' : 'staff',
         'admin_id': adminId,
         'isActive': _isActive,
-        'assignedCities': _selectedRole == 'super_admin' ? [] : _selectedCities,
+        'assignedCities': _selectedRole == 'super_admin' ? [] : normalizedCities,
         'createdAt': FieldValue.serverTimestamp(),
       };
       if (createdUid != null) {
@@ -192,7 +199,8 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
   @override
   Widget build(BuildContext context) {
     final systemCitiesAsync = ref.watch(userFilterCitiesProvider);
-    final systemCities = systemCitiesAsync.value ?? ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bheemavaram', 'Tirupathi'];
+    final baseCities = systemCitiesAsync.value ?? const ['Vijayawada', 'Hyderabad', 'Guntur', 'Bangalore', 'Bhimavaram', 'Tirupathi'];
+    final systemCities = {...baseCities, 'Bhimavaram', 'Bheemavaram', 'Tirupati', 'Tirupathi'}.toList()..sort();
 
     return Scaffold(
       appBar: AppBar(
@@ -209,7 +217,9 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.all(
+                  MediaQuery.sizeOf(context).width < 600 ? 16.0 : 24.0,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 500),
                   child: Form(
@@ -248,6 +258,7 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
                         ),
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
+                          isExpanded: true,
                           value: _selectedRole,
                           decoration: const InputDecoration(
                             labelText: 'Role',
@@ -276,7 +287,9 @@ class _AddAdminPageState extends ConsumerState<AddAdminPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Account Active:', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const Expanded(
+                              child: Text('Account Active:', style: TextStyle(fontWeight: FontWeight.w500)),
+                            ),
                             Switch(
                               value: _isActive,
                               onChanged: _isLoading ? null : (v) => setState(() => _isActive = v),

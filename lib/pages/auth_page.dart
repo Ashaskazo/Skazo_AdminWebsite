@@ -29,14 +29,18 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
   void _checkAuthState() {
     if (!mounted) return;
-    FirebaseAuth.instance.authStateChanges().listen((User? user) async {
-      if (user != null && mounted) {
-        await _checkAdminAccess(user);
-      }
-    });
+    try {
+      FirebaseAuth.instance.authStateChanges().listen((User? user) async {
+        if (user != null && mounted) {
+          await _checkAdminAccess(user);
+        }
+      });
+    } catch (_) {
+      // Firebase not initialized in headless test environments
+    }
   }
 
-  Future<bool> _isEmailWhitelisted(String email) async {
+  Future<({bool allowed, bool inactive})> _verifyAdminRecord(String email) async {
     try {
       final snapshot =
           await FirebaseFirestore.instance
@@ -44,9 +48,18 @@ class _AuthPageState extends ConsumerState<AuthPage> {
               .where('email', isEqualTo: email.toLowerCase().trim())
               .limit(1)
               .get();
-      return snapshot.docs.isNotEmpty;
+      if (snapshot.docs.isEmpty) {
+        return (allowed: false, inactive: false);
+      }
+      final data = snapshot.docs.first.data();
+      final status = (data['status'] ?? '').toString().toLowerCase().trim();
+      final isActive = data['isActive'] != false && status != 'inactive';
+      if (!isActive) {
+        return (allowed: false, inactive: true);
+      }
+      return (allowed: true, inactive: false);
     } catch (e) {
-      return false;
+      return (allowed: false, inactive: false);
     }
   }
 
@@ -55,10 +68,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     setState(() => _isCheckingAdminStatus = true);
 
     try {
-      final whitelisted = await _isEmailWhitelisted(user.email ?? '');
+      final verification = await _verifyAdminRecord(user.email ?? '');
       if (!mounted) return;
 
-      if (whitelisted) {
+      if (verification.allowed) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const DashboardPage()),
@@ -67,12 +80,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
         await FirebaseAuth.instance.signOut();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Unauthorized access. Please contact the administrator.',
+                verification.inactive
+                    ? 'Your account has been deactivated. Please contact your administrator.'
+                    : 'Unauthorized access. Please contact the administrator.',
               ),
               backgroundColor: Colors.red,
-              duration: Duration(seconds: 5),
+              duration: const Duration(seconds: 5),
             ),
           );
         }
@@ -183,13 +198,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           child: Center(
             child: SingleChildScrollView(
               child: Card(
-                margin: const EdgeInsets.all(24),
+                margin: EdgeInsets.all(
+                  MediaQuery.sizeOf(context).width < 600 ? 14 : 24,
+                ),
                 elevation: 12,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(32.0),
+                  padding: EdgeInsets.all(
+                    MediaQuery.sizeOf(context).width < 600 ? 22.0 : 32.0,
+                  ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 400),
                     child: Form(

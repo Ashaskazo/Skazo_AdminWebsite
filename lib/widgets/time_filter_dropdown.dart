@@ -92,6 +92,7 @@ class CallLogsTimeFilterDropdown extends ConsumerWidget {
     final selected = ref.watch(globalTimeFilterProvider);
 
     return DropdownButtonFormField<TimeFilterOption>(
+      isExpanded: true,
       initialValue: selected,
       decoration: InputDecoration(
         labelText: 'Date Range',

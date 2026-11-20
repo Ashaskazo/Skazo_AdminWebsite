@@ -91,3 +91,22 @@ class ServiceProvidersOverviewData {
     );
   }
 }
+
+/// Represents a business category with its available/empty Star Service Provider slots.
+/// Each city-category combination has a maximum of 4 Star Service Providers.
+class EmptySlotCategoryItem {
+  final String categoryName;
+  final int occupiedSlots;
+  final int totalSlots;
+  final int availableSlots;
+
+  const EmptySlotCategoryItem({
+    required this.categoryName,
+    required this.occupiedSlots,
+    this.totalSlots = 4,
+    required this.availableSlots,
+  });
+
+  /// True when this category has at least one open slot available.
+  bool get hasVacantSlots => availableSlots > 0;
+}

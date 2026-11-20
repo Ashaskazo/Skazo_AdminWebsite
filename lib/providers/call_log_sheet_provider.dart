@@ -2,10 +2,14 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:skazo_admin/models/call_log_sheet_item.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/repositories/call_log_sheet_repository.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
 
 /// Filter, sort and pagination state providers for Call Log Sheet
 final callLogSheetSearchQueryProvider = StateProvider<String>((ref) => '');
+final callLogSheetSelectedCityProvider = StateProvider<String?>((ref) => null);
 final callLogSheetStatusFilterProvider = StateProvider<String>((ref) => 'All');
 final callLogSheetSortByProvider = StateProvider<CallLogSheetSortOption>(
   (ref) => CallLogSheetSortOption.callsDesc,
@@ -71,9 +75,10 @@ class CallLogSheetState {
 /// collections: `users` and `callLogs`.
 class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
   final CallLogSheetRepository _repository;
+  final Ref _ref;
   bool _isFetching = false;
 
-  CallLogSheetNotifier(this._repository)
+  CallLogSheetNotifier(this._repository, this._ref)
       : super(const CallLogSheetState(isLoading: true)) {
     fetchData();
   }
@@ -82,6 +87,18 @@ class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
   /// Prevents concurrent overlapping fetch operations.
   /// Preserves existing data during refresh to prevent UI flickering.
   Future<void> fetchData({bool isRefresh = false}) async {
+    final scope = _ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      state = state.copyWith(
+        isLoading: false,
+        isRefreshing: false,
+        items: const [],
+        errorMessage: null,
+        warningMessage: null,
+      );
+      return;
+    }
+
     if (_isFetching) {
       if (kDebugMode) {
         debugPrint('[CallLogSheet] Fetch already in progress. Ignoring duplicate call.');
@@ -92,7 +109,7 @@ class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
     _isFetching = true;
 
     // If items exist, mark as refreshing without destroying visible table
-    if (state.items.isNotEmpty) {
+    if (state.items.isNotEmpty && isRefresh) {
       state = state.copyWith(
         isLoading: false,
         isRefreshing: true,
@@ -108,7 +125,18 @@ class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
     }
 
     try {
-      final result = await _repository.fetchEligibleProviders();
+      final selectedCity = _ref.read(callLogSheetSelectedCityProvider);
+      final pincodesMap =
+          await _ref.read(propertyPincodesProvider.future).catchError((_) => <String, List<String>>{});
+      final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
+      final result = await _repository.fetchEligibleProviders(
+        scope: scope,
+        selectedCity: selectedCity,
+        pincodesMap: pincodesMap,
+        pincodeCityLookup: pincodeCityLookup,
+      );
+      if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
         isRefreshing: false,
@@ -121,11 +149,13 @@ class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
       if (kDebugMode) {
         debugPrint('CallLogSheet fetch error: $e\n$stack');
       }
-      state = state.copyWith(
-        isLoading: false,
-        isRefreshing: false,
-        errorMessage: e.toString().replaceFirst('Exception: ', ''),
-      );
+      if (mounted) {
+        state = state.copyWith(
+          isLoading: false,
+          isRefreshing: false,
+          errorMessage: e.toString().replaceFirst('Exception: ', ''),
+        );
+      }
     } finally {
       _isFetching = false;
       // Guarantee loading flags are false under ANY circumstances
@@ -140,7 +170,10 @@ class CallLogSheetNotifier extends StateNotifier<CallLogSheetState> {
 final callLogSheetNotifierProvider =
     StateNotifierProvider<CallLogSheetNotifier, CallLogSheetState>((ref) {
   final repository = ref.watch(callLogSheetRepositoryProvider);
-  return CallLogSheetNotifier(repository);
+  final notifier = CallLogSheetNotifier(repository, ref);
+  ref.listen(cityAccessScopeProvider, (_, __) => notifier.fetchData());
+  ref.listen(callLogSheetSelectedCityProvider, (_, __) => notifier.fetchData());
+  return notifier;
 });
 
 /// Filtered & Sorted Call Log Sheet items provider (full result set matching filter)

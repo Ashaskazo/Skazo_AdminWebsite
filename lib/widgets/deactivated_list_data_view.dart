@@ -9,6 +9,8 @@ import 'package:skazo_admin/pages/business_profile_page.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/providers/deactivated_pagination_provider.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class DeactivatedListDataView extends ConsumerStatefulWidget {
   const DeactivatedListDataView({super.key});
@@ -88,55 +90,62 @@ class _DeactivatedListDataViewState
     final isSuper = ref.watch(isSuperAdminProvider);
     final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
 
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 18 : 32, isMobile ? 16 : 24, isMobile ? 14 : 20),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.person_off_rounded,
+                            color: Color(0xFFEF4444),
+                            size: 24,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.person_off_rounded,
-                          color: Color(0xFFEF4444),
-                          size: 24,
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            'Deactivated List',
+                            style: GoogleFonts.poppins(
+                              fontSize: isMobile ? 20 : 26,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                              letterSpacing: -0.5,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Deactivated List',
-                        style: GoogleFonts.poppins(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0F172A),
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manage permanently deactivated businesses & service providers',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: const Color(0xFF64748B),
-                      fontWeight: FontWeight.w400,
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Manage permanently deactivated businesses & service providers',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 12 : 13,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFFEF4444).withValues(alpha: 0.1),
@@ -174,7 +183,7 @@ class _DeactivatedListDataViewState
 
         // Filter Controls
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -185,7 +194,7 @@ class _DeactivatedListDataViewState
                 children: [
                   // Search Box
                   Container(
-                    width: 320,
+                    width: isMobile ? double.infinity : 320,
                     height: 50,
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -310,15 +319,34 @@ class _DeactivatedListDataViewState
 
                   // City Filter Dropdown
                   ref
-                      .watch(userCitiesProvider)
+                      .watch(allowedCitiesProvider)
                       .when(
                         data: (cities) {
                           final cityNames = {...cities};
-                          if (selectedCity != null) cityNames.add(selectedCity);
+                          if (selectedCity != null &&
+                              selectedCity != kMissingCityFilterValue &&
+                              (isSuper ||
+                                  assignedCities.any(
+                                    (c) =>
+                                        canonicalizeCityKey(c) ==
+                                        canonicalizeCityKey(selectedCity),
+                                  ))) {
+                            cityNames.add(selectedCity);
+                          }
                           final dropdownItems = cityNames.toList()..sort();
+                          final validSelection =
+                              selectedCity == null ||
+                              (isSuper &&
+                                  selectedCity == kMissingCityFilterValue) ||
+                              dropdownItems.contains(selectedCity);
+                          final effectiveValue =
+                              validSelection ? selectedCity : null;
 
                           return Container(
                             height: 50,
+                            constraints: BoxConstraints(
+                              maxWidth: isMobile ? double.infinity : 260,
+                            ),
                             padding: const EdgeInsets.symmetric(horizontal: 14),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -329,7 +357,8 @@ class _DeactivatedListDataViewState
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String?>(
-                                value: selectedCity,
+                                isExpanded: isMobile,
+                                value: effectiveValue,
                                 hint: Text(
                                   'City',
                                   style: GoogleFonts.poppins(fontSize: 13),
@@ -346,12 +375,23 @@ class _DeactivatedListDataViewState
                                   DropdownMenuItem<String?>(
                                     value: null,
                                     child: Text(
-                                      (!isSuper && assignedCities.isNotEmpty)
-                                          ? 'My Cities (${assignedCities.join(', ')})'
+                                      (!isSuper && assignedCities.isNotEmpty)? 'My Cities '
+                                          // ? 'My Cities (${assignedCities.join(', ')})'
                                           : 'All Cities',
+                                      overflow: TextOverflow.ellipsis,
                                       style: GoogleFonts.poppins(fontSize: 13),
                                     ),
                                   ),
+                                  if (isSuper)
+                                    DropdownMenuItem<String?>(
+                                      value: kMissingCityFilterValue,
+                                      child: Text(
+                                        'Missing City (Data Quality)',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
                                   ...dropdownItems.map(
                                     (item) => DropdownMenuItem<String?>(
                                       value: item,
@@ -586,8 +626,9 @@ class _DeactivatedListDataViewState
 
         // Count Banner
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-          child: Row(
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 16, isMobile ? 16 : 24, 12),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Total Deactivated Records: ',
@@ -874,68 +915,86 @@ class _DeactivatedListDataViewState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.phone_rounded,
-                      size: 13,
-                      color: Color(0xFF64748B),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.phone_rounded,
+                          size: 13,
+                          color: Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          phone,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      phone,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Icon(
-                      Icons.location_on_rounded,
-                      size: 13,
-                      color: Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      city,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: const Color(0xFF64748B),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_on_rounded,
+                          size: 13,
+                          color: Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            city,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Row(
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.access_time_rounded,
-                      size: 13,
-                      color: Color(0xFFEF4444),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Deactivated: $formattedDate',
-                      style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFFEF4444),
-                      ),
-                    ),
-                    if (reason != null && reason.trim().isNotEmpty) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Reason: ${reason.replaceAll('_', ' ')}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.access_time_rounded,
+                          size: 13,
+                          color: Color(0xFFEF4444),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Deactivated: $formattedDate',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
-                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFFEF4444),
                           ),
                         ),
+                      ],
+                    ),
+                    if (reason != null && reason.trim().isNotEmpty)
+                      Text(
+                        'Reason: ${reason.replaceAll('_', ' ')}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: const Color(0xFF64748B),
+                        ),
                       ),
-                    ],
                   ],
                 ),
               ],

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/pages/service_post_details_page.dart';
+import 'package:skazo_admin/utils/city_resolver.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
 class ServicePostsDataView extends ConsumerWidget {
   const ServicePostsDataView({super.key});
@@ -10,13 +13,18 @@ class ServicePostsDataView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dataAsync = ref.watch(paginatedServicePostProvider);
+    final selectedCity = ref.watch(serviceSelectedCityProvider);
     final selectedCategory = ref.watch(serviceSelectedCategoryProvider);
     final selectedStatus = ref.watch(serviceStatusFilterProvider);
     final todayOnly = ref.watch(serviceTodayOnlyProvider);
+    final isSuper = ref.watch(isSuperAdminProvider);
+    final assignedCities = ref.watch(currentAdminAssignedCitiesProvider);
     final notifier = ref.watch(paginatedServicePostProvider.notifier);
+    final isMobile = ResponsiveBreakpoints.isMobile(context);
 
     // Listen for filter changes
     ref.listen(serviceSearchQueryProvider, (_, __) => notifier.fetchInitial());
+    ref.listen(serviceSelectedCityProvider, (_, __) => notifier.fetchInitial());
     ref.listen(serviceSelectedCategoryProvider, (_, __) => notifier.fetchInitial());
     ref.listen(serviceStatusFilterProvider, (_, __) => notifier.fetchInitial());
     ref.listen(serviceTodayOnlyProvider, (_, __) => notifier.fetchInitial());
@@ -26,31 +34,34 @@ class ServicePostsDataView extends ConsumerWidget {
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+          padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, isMobile ? 18 : 32, isMobile ? 16 : 24, isMobile ? 16 : 24),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Service Posts',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0F172A),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Service Posts',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 22 : 28,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Monitor services posted by providers.',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: const Color(0xFF64748B),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Monitor services posted by providers.',
+                      style: GoogleFonts.poppins(
+                        fontSize: isMobile ? 12.5 : 14,
+                        color: const Color(0xFF64748B),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF2563EB).withValues(alpha: 0.1),
@@ -59,6 +70,7 @@ class ServicePostsDataView extends ConsumerWidget {
                 child: IconButton(
                   onPressed: () {
                     ref.read(serviceSearchQueryProvider.notifier).state = '';
+                    ref.read(serviceSelectedCityProvider.notifier).state = null;
                     ref.read(serviceSelectedCategoryProvider.notifier).state = null;
                     ref.read(serviceStatusFilterProvider.notifier).state = null;
                     ref.read(serviceTodayOnlyProvider.notifier).state = false;
@@ -73,46 +85,136 @@ class ServicePostsDataView extends ConsumerWidget {
 
         // Count Summary
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Row(
             children: [
               _buildCountCard('Total Posts', notifier.totalCount, const Color(0xFF2563EB)),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               _buildCountCard('Today\'s Posts', notifier.todayCount, const Color(0xFF10B981)),
             ],
           ),
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: isMobile ? 16 : 24),
 
         // Filter Bar
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
+              ResponsiveRowColumn(
+                horizontalSpacing: 16,
+                verticalSpacing: 12,
+                expandChildrenInRow: false,
                 children: [
                   // Search
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: TextField(
-                        onChanged: (v) => ref.read(serviceSearchQueryProvider.notifier).state = v,
-                        decoration: const InputDecoration(
-                          hintText: 'Search by user name...',
-                          prefixIcon: Icon(Icons.search, size: 20),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  isMobile
+                      ? Container(
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: TextField(
+                            onChanged: (v) => ref.read(serviceSearchQueryProvider.notifier).state = v,
+                            decoration: const InputDecoration(
+                              hintText: 'Search by user name...',
+                              prefixIcon: Icon(Icons.search, size: 20),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        )
+                      : Expanded(
+                          flex: 2,
+                          child: Container(
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: TextField(
+                              onChanged: (v) => ref.read(serviceSearchQueryProvider.notifier).state = v,
+                              decoration: const InputDecoration(
+                                hintText: 'Search by user name...',
+                                prefixIcon: Icon(Icons.search, size: 20),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                  // City Filter
+                  ref.watch(allowedCitiesProvider).when(
+                    data: (cities) {
+                      final items = cities.toSet().toList()..sort();
+                      final validSelection =
+                          selectedCity == null ||
+                          (isSuper && selectedCity == kMissingCityFilterValue) ||
+                          items.contains(selectedCity);
+                      final effectiveCity = validSelection ? selectedCity : null;
+
+                      return Container(
+                        height: 50,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String?>(
+                            isExpanded: isMobile,
+                            value: effectiveCity,
+                            hint: Text(
+                              (!isSuper && assignedCities.isNotEmpty)
+                                  ? 'My Cities (${assignedCities.join(', ')})'
+                                  : 'All Cities',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onChanged: (v) => ref
+                                .read(serviceSelectedCityProvider.notifier)
+                                .state = v,
+                            items: [
+                              DropdownMenuItem(
+                                value: null,
+                                child: Text(
+                                  (!isSuper && assignedCities.isNotEmpty)
+                                      ? 'My Cities (${assignedCities.join(', ')})'
+                                      : 'All Cities',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isSuper)
+                                const DropdownMenuItem(
+                                  value: kMissingCityFilterValue,
+                                  child: Text(
+                                    'Missing City (Data Quality)',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ...items.map(
+                                (c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Text(
+                                    c,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    loading: () => const SizedBox(
+                      width: 50,
+                      child: LinearProgressIndicator(),
                     ),
+                    error: (_, __) => const SizedBox.shrink(),
                   ),
-                  const SizedBox(width: 16),
                   // Category Filter
                   ref.watch(serviceCategoriesProvider).when(
                     data: (categories) => Container(
@@ -125,12 +227,13 @@ class ServicePostsDataView extends ConsumerWidget {
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String?>(
+                          isExpanded: isMobile,
                           value: selectedCategory,
                           hint: const Text('All Categories'),
                           onChanged: (v) => ref.read(serviceSelectedCategoryProvider.notifier).state = v,
                           items: [
                             const DropdownMenuItem(value: null, child: Text('All Categories')),
-                            ...categories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                            ...categories.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))),
                           ],
                         ),
                       ),
@@ -141,14 +244,21 @@ class ServicePostsDataView extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _buildAllChip(ref, selectedStatus == null && !todayOnly),
-                  const SizedBox(width: 12),
-                  _buildStatusChip(ref, 'Pending', 'pending', selectedStatus),
-                  const SizedBox(width: 12),
-                  _buildTodayChip(ref, todayOnly),
-                  const Spacer(),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildAllChip(ref, selectedStatus == null && !todayOnly),
+                      _buildStatusChip(ref, 'Pending', 'pending', selectedStatus),
+                      _buildTodayChip(ref, todayOnly),
+                    ],
+                  ),
                   Text(
                     'Showing ${notifier.filteredCount} posts',
                     style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF64748B)),
@@ -159,7 +269,7 @@ class ServicePostsDataView extends ConsumerWidget {
           ),
         ),
 
-        const SizedBox(height: 24),
+        SizedBox(height: isMobile ? 16 : 24),
 
         // List View
         Expanded(
@@ -182,7 +292,7 @@ class ServicePostsDataView extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24),
                       itemCount: posts.length,
                       itemBuilder: (context, index) {
                         final post = posts[index];
@@ -364,15 +474,32 @@ class ServicePostsDataView extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Icon(Icons.category_outlined, size: 14, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(category, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(width: 12),
-                const Icon(Icons.people_outline, size: 14, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text('$contactedCount contacted', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.category_outlined, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        category,
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.people_outline, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text('$contactedCount contacted', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 8),

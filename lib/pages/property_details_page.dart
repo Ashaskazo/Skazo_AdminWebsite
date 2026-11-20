@@ -1,19 +1,23 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/utils/responsive.dart';
 
-class PropertyDetailsPage extends StatefulWidget {
+class PropertyDetailsPage extends ConsumerStatefulWidget {
   final Map<String, dynamic> propertyData;
 
   const PropertyDetailsPage({super.key, required this.propertyData});
 
   @override
-  State<PropertyDetailsPage> createState() => _PropertyDetailsPageState();
+  ConsumerState<PropertyDetailsPage> createState() =>
+      _PropertyDetailsPageState();
 }
 
-class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
+class _PropertyDetailsPageState extends ConsumerState<PropertyDetailsPage> {
   late Map<String, dynamic> _editedData;
   bool _isSaving = false;
 
@@ -28,6 +32,15 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
     try {
       final docId = _editedData['id'];
       if (docId == null) throw 'Document ID not found';
+
+      final scope = ref.read(cityAccessScopeProvider);
+      final pincodesMap =
+          ref.read(propertyPincodesProvider).valueOrNull ?? const {};
+      if (!scope.isAuthorized ||
+          !scope.allowsRecord(widget.propertyData, pincodesMap: pincodesMap) ||
+          !scope.allowsRecord(_editedData, pincodesMap: pincodesMap)) {
+        throw 'Access denied: property belongs to or would move to an unassigned city.';
+      }
 
       final dataToSave = Map<String, dynamic>.from(_editedData);
       dataToSave.remove('id'); // Don't save the ID back into the document fields
@@ -92,7 +105,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: ResponsiveBreakpoints.pagePadding(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -188,13 +201,14 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
   }
 
   Widget _buildGridFields(List<Widget> children) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      childAspectRatio: 2.5,
+    return ResponsiveWrapGrid(
+      mobileColumns: 1,
+      tabletColumns: 2,
+      desktopColumns: 3,
+      mobileBreakpoint: ResponsiveBreakpoints.mobile,
+      desktopBreakpoint: 900,
+      spacing: 16,
+      runSpacing: 16,
       children: children,
     );
   }
@@ -241,33 +255,77 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
   }
 
   Widget _buildDropdownField(String key, String label, List<String> options) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF1E293B),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 300;
+        final dropdown = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
             color: const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: DropdownButton<String>(
-            value: options.contains(_editedData[key]) ? _editedData[key] : options.first,
-            underline: const SizedBox(),
-            onChanged: (val) {
-              if (val != null) setState(() => _editedData[key] = val);
-            },
-            items: options.map((opt) => DropdownMenuItem(value: opt, child: Text(opt))).toList(),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: options.contains(_editedData[key]) ? _editedData[key] : options.first,
+              isDense: true,
+              isExpanded: isNarrow,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF0F172A),
+              ),
+              onChanged: (val) {
+                if (val != null) setState(() => _editedData[key] = val);
+              },
+              items: options
+                  .map((opt) => DropdownMenuItem(
+                        value: opt,
+                        child: Text(
+                          opt,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
+            ),
           ),
-        ),
-      ],
+        );
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 6),
+              dropdown,
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+            ),
+            dropdown,
+          ],
+        );
+      },
     );
   }
 
@@ -334,6 +392,11 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
       );
     }
 
+    final imageWidth =
+        ResponsiveBreakpoints.isMobile(context)
+            ? MediaQuery.sizeOf(context).width - 48
+            : 350.0;
+
     return SizedBox(
       height: 250,
       child: ListView.builder(
@@ -341,7 +404,7 @@ class _PropertyDetailsPageState extends State<PropertyDetailsPage> {
         itemCount: urls.length,
         itemBuilder: (context, index) {
           return Container(
-            width: 350,
+            width: imageWidth,
             margin: const EdgeInsets.only(right: 16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),

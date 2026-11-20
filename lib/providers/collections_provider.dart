@@ -11,11 +11,57 @@ import '../models/user_filters.dart';
 import '../repositories/user_repository.dart';
 export 'package:skazo_admin/utils/city_resolver.dart' show getSmartCity;
 
+Future<Map<String, Map<String, dynamic>>> _fetchRelatedUsersLookup(
+  Iterable<Map<String, dynamic>> records, {
+  Map<String, List<String>> pincodesMap = const {},
+  Map<String, String>? pincodeCityLookup,
+}) async {
+  final idsToFetch = <String>{};
+  for (final record in records) {
+    if (resolveRecordCity(
+          record,
+          pincodesMap: pincodesMap,
+          pincodeCityLookup: pincodeCityLookup,
+        ) ==
+        null) {
+      idsToFetch.addAll(extractAssociatedEntityIds(record));
+    }
+  }
+  if (idsToFetch.isEmpty) {
+    return const {};
+  }
+
+  final lookup = <String, Map<String, dynamic>>{};
+  final chunks = chunkList<String>(idsToFetch.toList(), 30);
+  for (final chunk in chunks) {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snap.docs) {
+        lookup[doc.id] = {'id': doc.id, ...doc.data()};
+      }
+    } catch (e) {
+      debugPrint('Error fetching related users lookup: $e');
+    }
+  }
+  return lookup;
+}
+
 // Generic provider for fetching data from any Firestore collection
 final collectionDataProvider = FutureProvider.family<
   List<Map<String, dynamic>>,
   String
 >((ref, collectionName) async {
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return const [];
+  }
+  if (collectionName == 'app_config' && !scope.isUnrestricted) {
+    return const [];
+  }
+
   final searchQuery = ref.watch(userSearchQueryProvider);
 
   Query query = FirebaseFirestore.instance.collection(collectionName);
@@ -39,10 +85,31 @@ final collectionDataProvider = FutureProvider.family<
   }
 
   final snapshot = await query.limit(searchQuery.isNotEmpty ? 50 : 200).get();
+  final docs =
+      snapshot.docs
+          .map((doc) => {'id': doc.id, ...(doc.data() as Map<String, dynamic>)})
+          .toList();
 
-  return snapshot.docs
-      .map((doc) => {'id': doc.id, ...(doc.data() as Map<String, dynamic>)})
-      .toList();
+  if (scope.isUnrestricted) {
+    return docs;
+  }
+
+  final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+  final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+  final relatedUsers = await _fetchRelatedUsersLookup(
+    docs,
+    pincodesMap: pincodesMap,
+    pincodeCityLookup: pincodeCityLookup,
+  );
+
+  return docs.where((doc) {
+    return scope.allowsRecord(
+      doc,
+      pincodesMap: pincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+      relatedEntityLookup: relatedUsers,
+    );
+  }).toList();
 });
 
 // Shared provider for user-related city filters across User Management and dashboard.
@@ -72,6 +139,7 @@ final userCitiesProvider = FutureProvider<Set<String>>((ref) async {
 
 // Payments State Providers
 final paymentSearchQueryProvider = StateProvider<String>((ref) => '');
+final paymentSelectedCityProvider = StateProvider<String?>((ref) => null);
 final selectedPaymentAdminFilterProvider = StateProvider<String?>(
   (ref) => null,
 );
@@ -79,6 +147,10 @@ final selectedPaymentAdminFilterProvider = StateProvider<String?>(
 final adminsListProvider = FutureProvider<List<Map<String, dynamic>>>((
   ref,
 ) async {
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized || !scope.isUnrestricted) {
+    return const [];
+  }
   final snapshot = await FirebaseFirestore.instance.collection('admin').get();
   return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 });
@@ -102,6 +174,19 @@ final paymentSalesStatsProvider =
       ref,
       filterAdminId,
     ) async {
+      final scope = ref.watch(cityAccessScopeProvider);
+      if (!scope.isAuthorized) {
+        return PaymentSalesStats(
+          todaySale: 0,
+          yesterdaySale: 0,
+          thisMonthSale: 0,
+          totalSale: 0,
+        );
+      }
+      final selectedCity = ref.watch(paymentSelectedCityProvider);
+      final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+      final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
       final snapshot =
           await FirebaseFirestore.instance
               .collection('users')
@@ -124,6 +209,16 @@ final paymentSalesStatsProvider =
 
         // Filter by admin ID
         if (filterAdminId != null && senderId != filterAdminId) {
+          continue;
+        }
+
+        // Enforce city-wise data access and optional city dropdown filter
+        if (!scope.allowsRecord(
+          data,
+          selectedCity: selectedCity,
+          pincodesMap: pincodesMap,
+          pincodeCityLookup: pincodeCityLookup,
+        )) {
           continue;
         }
 
@@ -169,10 +264,13 @@ class PaginatedPaymentNotifier
     extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>> {
   final Ref ref;
   PaginatedPaymentNotifier(this.ref) : super(const AsyncValue.loading()) {
+    ref.listen(cityAccessScopeProvider, (_, __) => fetchInitial());
+    ref.listen(paymentSelectedCityProvider, (_, __) => fetchInitial());
     fetchInitial();
   }
 
   final List<DocumentSnapshot?> _pageCursors = [null];
+  List<Map<String, dynamic>>? _cityScopedCache;
   int _currentPage = 0;
   final int _pageSize = 50;
   int _totalCount = 0;
@@ -187,20 +285,21 @@ class PaginatedPaymentNotifier
         .where('paymentLinkSend', isEqualTo: true);
 
     // Apply Admin Filter
-    final isSuperAdmin = ref.read(isSuperAdminProvider);
+    final scope = ref.read(cityAccessScopeProvider);
     final adminProfile = ref.read(currentAdminProfileProvider).value;
 
-    if (isSuperAdmin) {
+    if (scope.isUnrestricted) {
       final selectedAdminId = ref.read(selectedPaymentAdminFilterProvider);
       if (selectedAdminId != null) {
         query = query.where('paymentLinkSenderId', isEqualTo: selectedAdminId);
       }
     } else {
-      // Regular admin: only see their own payments
+      // Regular admin: only see their own payments within assigned cities
       final currentAdminId = adminProfile?['admin_id'] ?? adminProfile?['id'];
-      if (currentAdminId != null) {
-        query = query.where('paymentLinkSenderId', isEqualTo: currentAdminId);
-      }
+      query = query.where(
+        'paymentLinkSenderId',
+        isEqualTo: currentAdminId ?? '__UNAUTHORIZED__',
+      );
     }
 
     if (searchQuery.isNotEmpty) {
@@ -227,6 +326,25 @@ class PaginatedPaymentNotifier
     _currentPage = 0;
     _pageCursors.clear();
     _pageCursors.add(null);
+    _cityScopedCache = null;
+
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _totalCount = 0;
+      _filteredCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
+    final selectedCity = ref.read(paymentSelectedCityProvider);
+    final needsInMemoryCityScope =
+        !scope.isUnrestricted ||
+        (selectedCity != null && selectedCity.trim().isNotEmpty);
+
+    if (needsInMemoryCityScope) {
+      await fetchPage(0);
+      return;
+    }
 
     try {
       Query query = FirebaseFirestore.instance.collection('users');
@@ -245,6 +363,86 @@ class PaginatedPaymentNotifier
   }
 
   Future<void> fetchPage(int pageIndex) async {
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _totalCount = 0;
+      _filteredCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
+    final selectedCity = ref.read(paymentSelectedCityProvider);
+    final needsInMemoryCityScope =
+        !scope.isUnrestricted ||
+        (selectedCity != null && selectedCity.trim().isNotEmpty);
+
+    if (needsInMemoryCityScope) {
+      if (_cityScopedCache != null && pageIndex > 0) {
+        _currentPage = pageIndex;
+        final slice =
+            _cityScopedCache!
+                .skip(_currentPage * _pageSize)
+                .take(_pageSize)
+                .toList();
+        state = AsyncValue.data(slice);
+        return;
+      }
+
+      state = const AsyncValue.loading();
+      try {
+        final pincodesMap = await ref.read(propertyPincodesProvider.future);
+        final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
+        Query query = FirebaseFirestore.instance.collection('users');
+        query = _applyFilters(query);
+
+        QuerySnapshot snapshot;
+        try {
+          snapshot = await query.orderBy('createdAt', descending: true).get();
+        } catch (_) {
+          snapshot = await query.get();
+        }
+
+        final docs =
+            snapshot.docs
+                .map(
+                  (doc) => {
+                    'id': doc.id,
+                    ...(doc.data() as Map<String, dynamic>),
+                  },
+                )
+                .where(
+                  (data) => scope.allowsRecord(
+                    data,
+                    selectedCity: selectedCity,
+                    pincodesMap: pincodesMap,
+                    pincodeCityLookup: pincodeCityLookup,
+                  ),
+                )
+                .toList();
+
+        docs.sort((a, b) {
+          final aDate = _parseDateTime(a['createdAt']) ?? DateTime(2000);
+          final bDate = _parseDateTime(b['createdAt']) ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
+
+        _cityScopedCache = docs;
+        _filteredCount = docs.length;
+        if (ref.read(paymentSearchQueryProvider).isEmpty &&
+            selectedCity == null) {
+          _totalCount = _filteredCount;
+        }
+        _currentPage = pageIndex;
+        final slice =
+            docs.skip(_currentPage * _pageSize).take(_pageSize).toList();
+        state = AsyncValue.data(slice);
+      } catch (e, stack) {
+        state = AsyncValue.error(e, stack);
+      }
+      return;
+    }
+
     state = const AsyncValue.loading();
     try {
       Query query = FirebaseFirestore.instance.collection('users');
@@ -437,6 +635,13 @@ class PaginatedRentalNotifier
       _currentPage = 0;
       _applyFiltersAndNotify();
     });
+    ref.listen(cityAccessScopeProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(propertyPincodesProvider, (prev, next) {
+      _applyFiltersAndNotify();
+    });
     ref.listen(rentalTypeFilterProvider, (prev, next) {
       _currentPage = 0;
       _applyFiltersAndNotify();
@@ -476,28 +681,42 @@ class PaginatedRentalNotifier
   int get totalPages => (_filteredProperties.length / pageSize).ceil();
 
   void _applyFiltersAndNotify() {
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _filteredProperties = [];
+      _filteredCount = 0;
+      _totalCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
     final searchQuery =
         ref.read(rentalSearchQueryProvider).trim().toLowerCase();
     final selectedCity = ref.read(rentalSelectedCityProvider);
     final filterType = ref.read(rentalTypeFilterProvider);
     final timeFilter = ref.read(rentalTimeFilterProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
     final pincodesMap = ref.read(propertyPincodesProvider).value ?? {};
     final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
 
-    _totalCount = _allProperties.length;
-
-    List<Map<String, dynamic>> temp = List.from(_allProperties);
-
-    // 1. Filter by City and Admin Assigned Cities Scope
-    temp =
-        temp.where((p) {
-          return userMatchesAssignedCities(
+    final scopedBase =
+        _allProperties.where((p) {
+          return scope.allowsRecord(
             p,
-            selectedCity,
-            assignedCities,
-            pincodesMap,
-            pincodeCityLookup,
+            pincodesMap: pincodesMap,
+            pincodeCityLookup: pincodeCityLookup,
+          );
+        }).toList();
+
+    _totalCount = scopedBase.length;
+
+    // 1. Filter by optional dropdown City within Admin Assigned Cities Scope
+    List<Map<String, dynamic>> temp =
+        scopedBase.where((p) {
+          return scope.allowsRecord(
+            p,
+            selectedCity: selectedCity,
+            pincodesMap: pincodesMap,
+            pincodeCityLookup: pincodeCityLookup,
           );
         }).toList();
 
@@ -655,20 +874,48 @@ final paginatedRentalProvider = StateNotifierProvider<
 
 // Service Post State Providers
 final serviceSearchQueryProvider = StateProvider<String>((ref) => '');
+final serviceSelectedCityProvider = StateProvider<String?>((ref) => null);
 final serviceSelectedCategoryProvider = StateProvider<String?>((ref) => null);
 final serviceTodayOnlyProvider = StateProvider<bool>((ref) => false);
 final serviceStatusFilterProvider = StateProvider<String?>((ref) => null);
 
 // Provider to gather a comprehensive list of categories from service posts
 final serviceCategoriesProvider = FutureProvider<Set<String>>((ref) async {
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return const {};
+  }
+
   final snapshot =
       await FirebaseFirestore.instance
           .collection('service_posts')
           .limit(500)
           .get();
+  final docs =
+      snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+
+  Iterable<Map<String, dynamic>> allowedDocs = docs;
+  if (!scope.isUnrestricted) {
+    final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+    final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+    final relatedUsers = await _fetchRelatedUsersLookup(
+      docs,
+      pincodesMap: pincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+    );
+    allowedDocs = docs.where(
+      (doc) => scope.allowsRecord(
+        doc,
+        pincodesMap: pincodesMap,
+        pincodeCityLookup: pincodeCityLookup,
+        relatedEntityLookup: relatedUsers,
+      ),
+    );
+  }
+
   final Set<String> categories = {};
-  for (var doc in snapshot.docs) {
-    final category = doc.data()['category']?.toString();
+  for (final data in allowedDocs) {
+    final category = data['category']?.toString();
     if (category != null && category.isNotEmpty) categories.add(category);
   }
   return categories;
@@ -679,10 +926,13 @@ class PaginatedServicePostNotifier
     extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>> {
   final Ref ref;
   PaginatedServicePostNotifier(this.ref) : super(const AsyncValue.loading()) {
+    ref.listen(cityAccessScopeProvider, (_, __) => fetchInitial());
+    ref.listen(serviceSelectedCityProvider, (_, __) => fetchInitial());
     fetchInitial();
   }
 
   final List<DocumentSnapshot?> _pageCursors = [null];
+  List<Map<String, dynamic>>? _cityScopedCache;
   int _currentPage = 0;
   final int _pageSize = 50;
   int _totalCount = 0;
@@ -693,6 +943,26 @@ class PaginatedServicePostNotifier
     _currentPage = 0;
     _pageCursors.clear();
     _pageCursors.add(null);
+    _cityScopedCache = null;
+
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _totalCount = 0;
+      _filteredCount = 0;
+      _todayCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
+    final selectedCity = ref.read(serviceSelectedCityProvider);
+    final needsCityScoping =
+        !scope.isUnrestricted ||
+        (selectedCity != null && selectedCity.trim().isNotEmpty);
+
+    if (needsCityScoping) {
+      await fetchPage(0);
+      return;
+    }
 
     try {
       final searchQuery = ref.read(serviceSearchQueryProvider);
@@ -746,6 +1016,130 @@ class PaginatedServicePostNotifier
   }
 
   Future<void> fetchPage(int pageIndex) async {
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _totalCount = 0;
+      _filteredCount = 0;
+      _todayCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
+    final selectedCity = ref.read(serviceSelectedCityProvider);
+    final needsCityScoping =
+        !scope.isUnrestricted ||
+        (selectedCity != null && selectedCity.trim().isNotEmpty);
+
+    if (needsCityScoping) {
+      if (_cityScopedCache != null && pageIndex > 0) {
+        _currentPage = pageIndex;
+        final slice =
+            _cityScopedCache!
+                .skip(_currentPage * _pageSize)
+                .take(_pageSize)
+                .toList();
+        state = AsyncValue.data(slice);
+        return;
+      }
+
+      state = const AsyncValue.loading();
+      try {
+        final searchQuery =
+            ref.read(serviceSearchQueryProvider).trim().toLowerCase();
+        final selectedCategory = ref.read(serviceSelectedCategoryProvider);
+        final selectedStatus = ref.read(serviceStatusFilterProvider);
+        final todayOnly = ref.read(serviceTodayOnlyProvider);
+
+        final pincodesMap = await ref.read(propertyPincodesProvider.future);
+        final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
+        final snapshot = await FirebaseFirestore.instance
+            .collection('service_posts')
+            .orderBy('timestamp', descending: true)
+            .limit(1000)
+            .get();
+        final rawDocs =
+            snapshot.docs
+                .map((doc) => {'id': doc.id, ...doc.data()})
+                .toList();
+        final relatedUsers = await _fetchRelatedUsersLookup(
+          rawDocs,
+          pincodesMap: pincodesMap,
+          pincodeCityLookup: pincodeCityLookup,
+        );
+
+        final now = DateTime.now();
+        final todayStart = DateTime(now.year, now.month, now.day);
+
+        final cityScopedAll =
+            rawDocs
+                .where(
+                  (post) => scope.allowsRecord(
+                    post,
+                    selectedCity: selectedCity,
+                    pincodesMap: pincodesMap,
+                    pincodeCityLookup: pincodeCityLookup,
+                    relatedEntityLookup: relatedUsers,
+                  ),
+                )
+                .toList();
+
+        _totalCount = cityScopedAll.length;
+        _todayCount =
+            cityScopedAll.where((post) {
+              final dt = _parseDateTime(
+                post['timestamp'] ?? post['createdAt'],
+              );
+              return dt != null &&
+                  (dt.isAfter(todayStart) || dt.isAtSameMomentAs(todayStart));
+            }).length;
+
+        final filtered =
+            cityScopedAll.where((post) {
+              if (searchQuery.isNotEmpty) {
+                final userName =
+                    post['userName']?.toString().toLowerCase() ?? '';
+                final desc =
+                    (post['description'] ?? post['title'])
+                        ?.toString()
+                        .toLowerCase() ??
+                    '';
+                if (!userName.contains(searchQuery) &&
+                    !desc.contains(searchQuery)) {
+                  return false;
+                }
+              } else if (selectedCategory != null) {
+                if (post['category']?.toString() != selectedCategory) {
+                  return false;
+                }
+              }
+              if (selectedStatus != null &&
+                  post['status']?.toString() != selectedStatus) {
+                return false;
+              }
+              if (todayOnly) {
+                final dt = _parseDateTime(
+                  post['timestamp'] ?? post['createdAt'],
+                );
+                if (dt == null || dt.isBefore(todayStart)) {
+                  return false;
+                }
+              }
+              return true;
+            }).toList();
+
+        _cityScopedCache = filtered;
+        _filteredCount = filtered.length;
+        _currentPage = pageIndex;
+        final slice =
+            filtered.skip(_currentPage * _pageSize).take(_pageSize).toList();
+        state = AsyncValue.data(slice);
+      } catch (e, stack) {
+        state = AsyncValue.error(e, stack);
+      }
+      return;
+    }
+
     state = const AsyncValue.loading();
     try {
       final searchQuery = ref.read(serviceSearchQueryProvider);
@@ -839,73 +1233,59 @@ final collectionCountProvider = FutureProvider.family<int, String>((
   ref,
   collectionName,
 ) async {
-  final isSuper = ref.watch(isSuperAdminProvider);
-  final dashboardCity = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities =
-      isSuper
-          ? (dashboardCity != null && dashboardCity.isNotEmpty
-              ? [dashboardCity]
-              : const <String>[])
-          : ref.watch(currentAdminAssignedCitiesProvider);
-
-  if (assignedCities.isNotEmpty) {
-    if (collectionName == 'users') {
-      final repo = ref.watch(userRepositoryProvider);
-      return repo.countUsers(
-        filters: UserFilters(city: assignedCities.first),
-        assignedCities: assignedCities,
-      );
-    }
-
-    final query = FirebaseFirestore.instance.collection(collectionName);
-    final normalizedKey = assignedCities.first.trim().toLowerCase();
-
-    try {
-      if (assignedCities.length == 1) {
-        final snapKey =
-            await query
-                .where('cityKey', isEqualTo: normalizedKey)
-                .count()
-                .get();
-        if ((snapKey.count ?? 0) > 0) return snapKey.count!;
-
-        final snapCity =
-            await query
-                .where('city', isEqualTo: assignedCities.first)
-                .count()
-                .get();
-        if ((snapCity.count ?? 0) > 0) return snapCity.count!;
-      } else if (assignedCities.length <= 30) {
-        final keys =
-            assignedCities.map((c) => c.trim().toLowerCase()).toList();
-        final snapKey = await query.where('cityKey', whereIn: keys).count().get();
-        if ((snapKey.count ?? 0) > 0) return snapKey.count!;
-
-        final snapCity =
-            await query.where('city', whereIn: assignedCities).count().get();
-        if ((snapCity.count ?? 0) > 0) return snapCity.count!;
-      }
-    } catch (_) {}
-
-    final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
-    final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
-
-    final snapshot =
-        await FirebaseFirestore.instance.collection(collectionName).get();
-    return snapshot.docs.where((doc) {
-      return userMatchesAssignedCities(
-        doc.data(),
-        null,
-        assignedCities,
-        pincodesMap,
-        pincodeCityLookup,
-      );
-    }).length;
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return 0;
+  }
+  if ((collectionName == 'admin' || collectionName == 'app_config') &&
+      !scope.isUnrestricted) {
+    return 0;
   }
 
+  final dashboardCity = ref.watch(dashboardSelectedCityProvider);
+  final hasDashboardCity =
+      dashboardCity != null &&
+      dashboardCity.trim().isNotEmpty &&
+      dashboardCity.trim() != 'All' &&
+      dashboardCity.trim() != 'All Cities';
+
+  if (scope.isUnrestricted && !hasDashboardCity) {
+    final snapshot =
+        await FirebaseFirestore.instance.collection(collectionName).count().get();
+    return snapshot.count ?? 0;
+  }
+
+  if (collectionName == 'users') {
+    final repo = ref.watch(userRepositoryProvider);
+    return repo.countUsers(
+      filters: UserFilters(city: hasDashboardCity ? dashboardCity : null),
+      assignedCities: scope.assignedCities,
+      isSuperAdmin: scope.isUnrestricted,
+    );
+  }
+
+  final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
+  final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
+
   final snapshot =
-      await FirebaseFirestore.instance.collection(collectionName).count().get();
-  return snapshot.count ?? 0;
+      await FirebaseFirestore.instance.collection(collectionName).get();
+  final docs =
+      snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  final relatedUsers = await _fetchRelatedUsersLookup(
+    docs,
+    pincodesMap: pincodesMap,
+    pincodeCityLookup: pincodeCityLookup,
+  );
+
+  return docs.where((data) {
+    return scope.allowsRecord(
+      data,
+      selectedCity: hasDashboardCity ? dashboardCity : null,
+      pincodesMap: pincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+      relatedEntityLookup: relatedUsers,
+    );
+  }).length;
 });
 
 class CollectionDateFieldInfo {
@@ -1154,14 +1534,23 @@ final collectionTodayCountProvider = StreamProvider.family<int, String>((
   ref,
   collectionName,
 ) {
-  final isSuper = ref.watch(isSuperAdminProvider);
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return Stream.value(0);
+  }
+  if ((collectionName == 'admin' || collectionName == 'app_config') &&
+      !scope.isUnrestricted) {
+    return Stream.value(0);
+  }
+
   final dashboardCity = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities =
-      isSuper
-          ? (dashboardCity != null && dashboardCity.isNotEmpty
-              ? [dashboardCity]
-              : const <String>[])
-          : ref.watch(currentAdminAssignedCitiesProvider);
+  final hasDashboardCity =
+      dashboardCity != null &&
+      dashboardCity.trim().isNotEmpty &&
+      dashboardCity.trim() != 'All' &&
+      dashboardCity.trim() != 'All Cities';
+  final selectedCity = hasDashboardCity ? dashboardCity : null;
+  final needsCityFilter = !scope.isUnrestricted || selectedCity != null;
 
   final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
   final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
@@ -1170,25 +1559,38 @@ final collectionTodayCountProvider = StreamProvider.family<int, String>((
   final startTs = Timestamp.fromDate(range.startUtc);
   final endTs = Timestamp.fromDate(range.endUtc);
 
+  Future<int> countMatching(List<Map<String, dynamic>> docs) async {
+    if (!needsCityFilter) {
+      return docs.length;
+    }
+    final relatedUsers = await _fetchRelatedUsersLookup(
+      docs,
+      pincodesMap: pincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+    );
+    return docs.where((data) {
+      return scope.allowsRecord(
+        data,
+        selectedCity: selectedCity,
+        pincodesMap: pincodesMap,
+        pincodeCityLookup: pincodeCityLookup,
+        relatedEntityLookup: relatedUsers,
+      );
+    }).length;
+  }
+
   if (collectionName == 'users') {
     return FirebaseFirestore.instance
         .collection('users')
         .where('createdAt', isGreaterThanOrEqualTo: startTs)
         .where('createdAt', isLessThan: endTs)
         .snapshots()
-        .map((snapshot) {
-          if (assignedCities.isEmpty) {
-            return snapshot.docs.length;
-          }
-          return snapshot.docs.where((doc) {
-            return userMatchesAssignedCities(
-              doc.data(),
-              null,
-              assignedCities,
-              pincodesMap,
-              pincodeCityLookup,
-            );
-          }).length;
+        .asyncMap((snapshot) {
+          final docs =
+              snapshot.docs
+                  .map((doc) => {'id': doc.id, ...doc.data()})
+                  .toList();
+          return countMatching(docs);
         });
   }
 
@@ -1198,79 +1600,35 @@ final collectionTodayCountProvider = StreamProvider.family<int, String>((
         .where('timestamp', isGreaterThanOrEqualTo: startTs)
         .where('timestamp', isLessThan: endTs)
         .snapshots()
-        .map((snapshot) {
-          if (assignedCities.isEmpty) {
-            return snapshot.docs.length;
-          }
-          return snapshot.docs.where((doc) {
-            return userMatchesAssignedCities(
-              doc.data(),
-              null,
-              assignedCities,
-              pincodesMap,
-              pincodeCityLookup,
-            );
-          }).length;
+        .asyncMap((snapshot) {
+          final docs =
+              snapshot.docs
+                  .map((doc) => {'id': doc.id, ...doc.data()})
+                  .toList();
+          return countMatching(docs);
         });
   }
 
-  if (collectionName == 'local_promotions') {
+  if (collectionName == 'local_promotions' ||
+      collectionName == 'rental_properties') {
     return FirebaseFirestore.instance
-        .collection('local_promotions')
+        .collection(collectionName)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.where((doc) {
-            final data = doc.data();
-            final dt = _parseDateTime(
-              data['createdAt'] ?? data['timestamp'] ?? data['date'],
-            );
-            if (dt == null) return false;
-            final dtUtc = dt.toUtc();
-            if (dtUtc.isBefore(range.startUtc) ||
-                !dtUtc.isBefore(range.endUtc)) {
-              return false;
-            }
-            if (assignedCities.isEmpty) {
-              return true;
-            }
-            return userMatchesAssignedCities(
-              data,
-              null,
-              assignedCities,
-              pincodesMap,
-              pincodeCityLookup,
-            );
-          }).length;
-        });
-  }
-
-  if (collectionName == 'rental_properties') {
-    return FirebaseFirestore.instance
-        .collection('rental_properties')
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.where((doc) {
-            final data = doc.data();
-            final dt = _parseDateTime(
-              data['createdAt'] ?? data['timestamp'] ?? data['date'],
-            );
-            if (dt == null) return false;
-            final dtUtc = dt.toUtc();
-            if (dtUtc.isBefore(range.startUtc) ||
-                !dtUtc.isBefore(range.endUtc)) {
-              return false;
-            }
-            if (assignedCities.isEmpty) {
-              return true;
-            }
-            return userMatchesAssignedCities(
-              data,
-              null,
-              assignedCities,
-              pincodesMap,
-              pincodeCityLookup,
-            );
-          }).length;
+        .asyncMap((snapshot) {
+          final docs =
+              snapshot.docs
+                  .map((doc) => {'id': doc.id, ...doc.data()})
+                  .where((data) {
+                    final dt = _parseDateTime(
+                      data['createdAt'] ?? data['timestamp'] ?? data['date'],
+                    );
+                    if (dt == null) return false;
+                    final dtUtc = dt.toUtc();
+                    return !dtUtc.isBefore(range.startUtc) &&
+                        dtUtc.isBefore(range.endUtc);
+                  })
+                  .toList();
+          return countMatching(docs);
         });
   }
 
@@ -1278,33 +1636,25 @@ final collectionTodayCountProvider = StreamProvider.family<int, String>((
   return FirebaseFirestore.instance
       .collection(collectionName)
       .snapshots()
-      .map((snapshot) {
-        return snapshot.docs.where((doc) {
-          final data = doc.data();
-          final dt = _parseDateTime(
-            data['createdAt'] ??
-                data['timestamp'] ??
-                data['dateTime'] ??
-                data['date'] ??
-                data['created_at'],
-          );
-          if (dt == null) return false;
-          final dtUtc = dt.toUtc();
-          if (dtUtc.isBefore(range.startUtc) ||
-              !dtUtc.isBefore(range.endUtc)) {
-            return false;
-          }
-          if (assignedCities.isEmpty) {
-            return true;
-          }
-          return userMatchesAssignedCities(
-            data,
-            null,
-            assignedCities,
-            pincodesMap,
-            pincodeCityLookup,
-          );
-        }).length;
+      .asyncMap((snapshot) {
+        final docs =
+            snapshot.docs
+                .map((doc) => {'id': doc.id, ...doc.data()})
+                .where((data) {
+                  final dt = _parseDateTime(
+                    data['createdAt'] ??
+                        data['timestamp'] ??
+                        data['dateTime'] ??
+                        data['date'] ??
+                        data['created_at'],
+                  );
+                  if (dt == null) return false;
+                  final dtUtc = dt.toUtc();
+                  return !dtUtc.isBefore(range.startUtc) &&
+                      dtUtc.isBefore(range.endUtc);
+                })
+                .toList();
+        return countMatching(docs);
       });
 });
 
@@ -1312,14 +1662,32 @@ final collectionPeriodStatsProvider = FutureProvider.family<
   CollectionPeriodStats,
   String
 >((ref, collectionName) async {
-  final isSuper = ref.watch(isSuperAdminProvider);
+  final scope = ref.watch(cityAccessScopeProvider);
+  if (!scope.isAuthorized) {
+    return CollectionPeriodStats(
+      today: 0,
+      yesterday: 0,
+      last7Days: 0,
+      last30Days: 0,
+    );
+  }
+  if ((collectionName == 'admin' || collectionName == 'app_config') &&
+      !scope.isUnrestricted) {
+    return CollectionPeriodStats(
+      today: 0,
+      yesterday: 0,
+      last7Days: 0,
+      last30Days: 0,
+    );
+  }
+
   final dashboardCity = ref.watch(dashboardSelectedCityProvider);
-  final assignedCities =
-      isSuper
-          ? (dashboardCity != null && dashboardCity.isNotEmpty
-              ? [dashboardCity]
-              : const <String>[])
-          : ref.watch(currentAdminAssignedCitiesProvider);
+  final hasDashboardCity =
+      dashboardCity != null &&
+      dashboardCity.trim().isNotEmpty &&
+      dashboardCity.trim() != 'All' &&
+      dashboardCity.trim() != 'All Cities';
+  final selectedCity = hasDashboardCity ? dashboardCity : null;
 
   final pincodesMap = ref.watch(propertyPincodesProvider).value ?? const {};
   final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
@@ -1363,7 +1731,7 @@ final collectionPeriodStatsProvider = FutureProvider.family<
   );
 
   try {
-    if (isSuper || assignedCities.isEmpty) {
+    if (scope.isUnrestricted && selectedCity == null) {
       final baseQuery = FirebaseFirestore.instance.collection(collectionName);
       final results = await Future.wait([
         baseQuery
@@ -1393,28 +1761,35 @@ final collectionPeriodStatsProvider = FutureProvider.family<
       );
     }
 
-    // For Admin with assigned cities:
-    // Query documents from 30 days ago to now (single field index on date),
-    // and bucket in-memory by assigned city and date range
+    // For Sales Employees OR Super Admin filtered to a specific city:
+    // Query documents from 30 days ago to now, resolve direct or linked user city,
+    // and bucket strictly inside the authorized city scope.
     final snapshot =
         await FirebaseFirestore.instance
             .collection(collectionName)
             .where(fieldName, isGreaterThanOrEqualTo: thirtyDaysAgoVal)
             .get();
 
+    final docs =
+        snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+    final relatedUsers = await _fetchRelatedUsersLookup(
+      docs,
+      pincodesMap: pincodesMap,
+      pincodeCityLookup: pincodeCityLookup,
+    );
+
     int todayCount = 0;
     int yesterdayCount = 0;
     int sevenDaysCount = 0;
     int thirtyDaysCount = 0;
 
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      if (!userMatchesAssignedCities(
+    for (final data in docs) {
+      if (!scope.allowsRecord(
         data,
-        null,
-        assignedCities,
-        pincodesMap,
-        pincodeCityLookup,
+        selectedCity: selectedCity,
+        pincodesMap: pincodesMap,
+        pincodeCityLookup: pincodeCityLookup,
+        relatedEntityLookup: relatedUsers,
       )) {
         continue;
       }
@@ -1556,6 +1931,13 @@ class PaginatedLocalPromotionsNotifier
       _currentPage = 0;
       _applyFiltersAndNotify();
     });
+    ref.listen(cityAccessScopeProvider, (prev, next) {
+      _currentPage = 0;
+      _applyFiltersAndNotify();
+    });
+    ref.listen(propertyPincodesProvider, (prev, next) {
+      _applyFiltersAndNotify();
+    });
     ref.listen(currentAdminAssignedCitiesProvider, (prev, next) {
       _currentPage = 0;
       _applyFiltersAndNotify();
@@ -1606,28 +1988,42 @@ class PaginatedLocalPromotionsNotifier
   }
 
   void _applyFiltersAndNotify() {
+    final scope = ref.read(cityAccessScopeProvider);
+    if (!scope.isAuthorized) {
+      _filteredPromotions = [];
+      _filteredCount = 0;
+      _totalCount = 0;
+      state = const AsyncValue.data([]);
+      return;
+    }
+
     final searchQuery =
         ref.read(localPromotionsSearchQueryProvider).trim().toLowerCase();
     final selectedCity = ref.read(localPromotionsSelectedCityProvider);
     final filterType = ref.read(localPromotionsTypeFilterProvider);
     final timeFilter = ref.read(localPromotionsTimeFilterProvider);
-    final assignedCities = ref.read(currentAdminAssignedCitiesProvider);
     final pincodesMap = ref.read(propertyPincodesProvider).value ?? {};
     final pincodeCityLookup = buildPincodeCityLookup(pincodesMap);
 
-    _totalCount = _allPromotions.length;
-
-    List<Map<String, dynamic>> temp = List.from(_allPromotions);
-
-    // 1. Filter by City and Admin Assigned Cities Scope
-    temp =
-        temp.where((p) {
-          return userMatchesAssignedCities(
+    final scopedBase =
+        _allPromotions.where((p) {
+          return scope.allowsRecord(
             p,
-            selectedCity,
-            assignedCities,
-            pincodesMap,
-            pincodeCityLookup,
+            pincodesMap: pincodesMap,
+            pincodeCityLookup: pincodeCityLookup,
+          );
+        }).toList();
+
+    _totalCount = scopedBase.length;
+
+    // 1. Filter by optional dropdown City within Admin Assigned Cities Scope
+    List<Map<String, dynamic>> temp =
+        scopedBase.where((p) {
+          return scope.allowsRecord(
+            p,
+            selectedCity: selectedCity,
+            pincodesMap: pincodesMap,
+            pincodeCityLookup: pincodeCityLookup,
           );
         }).toList();
 
