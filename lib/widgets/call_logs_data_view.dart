@@ -84,6 +84,185 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   int _statConverted = 0;
   int _statFollowUpsDue = 0;
 
+  // ---------------------------------------------------------------------------
+  // PROVIDER PREMIUM CACHE
+  // ---------------------------------------------------------------------------
+  //
+  // Maps a provider/business ID (from the callLog document) to its Premium
+  // status as determined by PlanClassificationService.isPremium().
+  //
+  // Key   : provider/business ID string (see _extractProviderIdFromRawData)
+  // Value : true  → Premium category  (show Sales Feedback dropdown)
+  //         false → Non-Premium        (hide Sales Feedback dropdown)
+  //
+  // Cache persists for the lifetime of this widget and is never invalidated,
+  // because provider categories do not change during an admin session.
+  // ---------------------------------------------------------------------------
+  final Map<String, bool> _providerPremiumCache = {};
+
+  // Tracks IDs currently being fetched so we don't fire duplicate requests.
+  final Set<String> _premiumFetchInProgress = {};
+
+  // ---------------------------------------------------------------------------
+  // SALES FEEDBACK DESCRIPTION
+  // ---------------------------------------------------------------------------
+  // Text controller and saving state for the per-doc description box in the
+  // right panel.  Reloaded whenever _selectedDocId changes.
+  // ---------------------------------------------------------------------------
+  final TextEditingController _descriptionController = TextEditingController();
+  bool _isSavingDescription = false;
+  // Tracks which doc the controller currently holds text for.
+  String? _descriptionDocId;
+
+  // ---------------------------------------------------------------------------
+  // _extractProviderIdFromRawData
+  //
+  // Reads whichever provider-ID field the mobile app may have written into the
+  // callLogs document.  Returns null when no recognisable ID field is present.
+  // ---------------------------------------------------------------------------
+  String? _extractProviderIdFromRawData(Map<String, dynamic> rawData) {
+    for (final key in const [
+      'businessId',
+      'providerId',
+      'serviceProviderId',
+      'userId',
+      'uid',
+      'providerUid',
+    ]) {
+      final val = rawData[key];
+      if (val is String && val.trim().isNotEmpty) {
+        return val.trim();
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // _resolveProviderIsPremium
+  //
+  // Returns the Premium status for the provider associated with [rawData].
+  //
+  // Resolution order (cheapest-first):
+  //   1. If rawData itself contains a 'category' / 'businessCategory' /
+  //      'serviceCategory' field, use isPremium(rawData) directly.
+  //   2. If the provider ID is already in [_providerPremiumCache], return
+  //      the cached value.
+  //   3. Otherwise return false (Non-Premium / unknown) immediately and
+  //      trigger an async fetch via [_fetchAndCacheProviderPremium].
+  //      The fetch calls setState when done, which rebuilds the right panel
+  //      with the correct value on the next frame.
+  //
+  // Default-to-false ensures the dropdown is NEVER shown before we know the
+  // provider is truly Premium.
+  // ---------------------------------------------------------------------------
+  bool _resolveProviderIsPremium(Map<String, dynamic> rawData) {
+    // Fast path: category already embedded in the callLog document.
+    final embeddedCategory =
+        rawData['category'] ??
+        rawData['businessCategory'] ??
+        rawData['serviceCategory'];
+    if (embeddedCategory != null &&
+        embeddedCategory.toString().trim().isNotEmpty) {
+      return PlanClassificationService.isPremium(rawData);
+    }
+
+    // Slow path: look up provider document by ID.
+    final providerId = _extractProviderIdFromRawData(rawData);
+    if (providerId == null) {
+      return false; // No ID → treat as Non-Premium.
+    }
+
+    if (_providerPremiumCache.containsKey(providerId)) {
+      return _providerPremiumCache[providerId]!;
+    }
+
+    // Not cached yet — trigger background fetch (non-blocking).
+    _fetchAndCacheProviderPremium(providerId);
+    return false; // Default to hidden until fetch completes.
+  }
+
+  // ---------------------------------------------------------------------------
+  // _fetchAndCacheProviderPremium
+  //
+  // Fetches a single provider document from the 'users' Firestore collection,
+  // evaluates its category via PlanClassificationService.isPremium(), and
+  // stores the result in [_providerPremiumCache].
+  //
+  // Guards against duplicate concurrent fetches using [_premiumFetchInProgress].
+  // Calls setState so that _buildRightPanel is re-evaluated after caching.
+  // ---------------------------------------------------------------------------
+  Future<void> _fetchAndCacheProviderPremium(String providerId) async {
+    if (_premiumFetchInProgress.contains(providerId)) return;
+    _premiumFetchInProgress.add(providerId);
+
+    try {
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(providerId)
+              .get();
+
+      bool isPremium = false;
+      if (doc.exists) {
+        final data = doc.data();
+        if (data != null) {
+          isPremium = PlanClassificationService.isPremium(data);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _providerPremiumCache[providerId] = isPremium;
+        });
+      }
+    } catch (e) {
+      // On error treat provider as Non-Premium — keep dropdown hidden.
+      if (mounted) {
+        setState(() {
+          _providerPremiumCache[providerId] = false;
+        });
+      }
+      if (kDebugMode) {
+        debugPrint('CallLogs: premium lookup failed for $providerId: $e');
+      }
+    } finally {
+      _premiumFetchInProgress.remove(providerId);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // _prefetchProviderPremiumForPage
+  //
+  // Called after _applyFilters() populates [_currentPageLogs].
+  // Batch-fetches premium status for all unique provider IDs on the page that
+  // are not yet cached.  Results arrive asynchronously; each completion
+  // calls setState to refresh the right panel.
+  //
+  // This avoids N+1 by grouping all missing IDs found on the visible page
+  // into a single pass before the user clicks any individual log.
+  // ---------------------------------------------------------------------------
+  void _prefetchProviderPremiumForPage(List<Map<String, dynamic>> pageLogs) {
+    for (final log in pageLogs) {
+      final rawData = log['rawData'] as Map<String, dynamic>? ?? {};
+
+      // Skip if category is already embedded (isPremium resolves locally).
+      final embeddedCategory =
+          rawData['category'] ??
+          rawData['businessCategory'] ??
+          rawData['serviceCategory'];
+      if (embeddedCategory != null &&
+          embeddedCategory.toString().trim().isNotEmpty) {
+        continue;
+      }
+
+      final providerId = _extractProviderIdFromRawData(rawData);
+      if (providerId == null) continue;
+      if (_providerPremiumCache.containsKey(providerId)) continue;
+
+      _fetchAndCacheProviderPremium(providerId);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -249,10 +428,10 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
               .get();
       _statInterested = interestedSnap.count ?? 0;
 
-      // Converted (feedbackStatus == 'converted')
+      // Converted (feedbackStatus == 'converted' or 'Converted')
       final convertedSnap =
           await baseCol
-              .where('feedbackStatus', isEqualTo: 'converted')
+              .where('feedbackStatus', whereIn: ['converted', 'Converted'])
               .count()
               .get();
       _statConverted = convertedSnap.count ?? 0;
@@ -557,8 +736,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
                   return false;
                 break;
               case 'Paid Providers':
-                final plan = _normalizeString(raw['plan']);
-                if (plan != 'paid' && plan != '599' && plan != 'premium') {
+                if (!PlanClassificationService.isPremium(raw)) {
                   return false;
                 }
                 break;
@@ -1949,6 +2127,7 @@ class _CallLogsDataViewState extends ConsumerState<CallLogsDataView> {
   Color _getFeedbackStatusColor(String status) {
     final norm = status.trim().toLowerCase();
     if (norm == 'converted') return const Color(0xFF10B981);
+    if (norm == 'enquiry') return const Color(0xFF6366F1);
     if (norm == 'not converted' || norm == 'not converetd')
       return const Color(0xFFEF4444);
     return const Color(0xFF64748B);

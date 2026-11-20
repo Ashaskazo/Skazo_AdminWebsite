@@ -940,8 +940,11 @@ class _UserListTileState extends State<_UserListTile>
                       ),
                     ],
                   ),
+                  // [PPL DISABLED] Pay Per Lead rate badge disabled
+                  /*
                   if (user.payperLeadCharge != null &&
-                      user.payperLeadCharge! > 0)
+                      user.payperLeadCharge! > 0 &&
+                      PlanClassificationService.isPremium(user))
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -974,6 +977,7 @@ class _UserListTileState extends State<_UserListTile>
                         ],
                       ),
                     ),
+                  */
                 ],
               ),
             ],

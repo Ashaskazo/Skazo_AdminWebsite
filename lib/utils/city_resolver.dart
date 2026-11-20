@@ -451,18 +451,9 @@ Map<String, String> buildPincodeCityLookup(
 }
 
 String? extractUserPincode(Map<String, dynamic> user) {
-  final explicitPin = (user['pincode'] ??
-          user['businessPincode'] ??
-          user['customerPincode'] ??
-          user['pinCode'] ??
-          user['business_pincode'] ??
-          user['customer_pincode'] ??
-          user['pin'])
-      ?.toString()
-      .trim();
+  final explicitPin = user['businessPincode']?.toString().trim();
   final normExplicit = _normalizePincode(explicitPin);
   if (normExplicit != null) return normExplicit;
-
   final address = _addressSource(user);
   final pinMatch = RegExp(r'\b\d{6}\b').firstMatch(address);
   return _normalizePincode(pinMatch?.group(0));

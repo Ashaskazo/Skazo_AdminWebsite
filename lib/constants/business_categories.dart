@@ -41,3 +41,12 @@ const kBusinessCategories = [
   'Diagnostic Centers',
   'Others',
 ];
+
+/// Canonical list of all 44 revenue and service categories across SKAZO.
+const kAllCanonicalCategories = [
+  ...kBusinessCategories,
+  'Tenant Membership',
+  'Rental Property Listing',
+  'Agent Verification',
+  'Local Promotions',
+];

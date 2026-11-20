@@ -248,6 +248,8 @@ class DashboardPage extends ConsumerWidget {
         return const ServiceProvidersDataView();
       case DashboardView.users:
         return const UsersDataView();
+      case DashboardView.serviceProviders:
+        return const ServiceProvidersDataView();
       case DashboardView.deactivatedList:
         return const DeactivatedListDataView();
       case DashboardView.servicePosts:
@@ -314,6 +316,8 @@ class DashboardPage extends ConsumerWidget {
         return const CallLogsDetailDataView();
       case DashboardView.logs:
         return const CallLogsDataView();
+      case DashboardView.pendingProviderFeedback:
+        return const PendingProviderFeedbackDataView();
       case DashboardView.payments:
         return const PaymentsDataView();
         case DashboardView.payPerLead:

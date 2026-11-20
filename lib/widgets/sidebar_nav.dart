@@ -304,15 +304,15 @@ class SidebarNav extends ConsumerWidget {
                   isCollapsed,
                   activeGradient: const [Color(0xFF14B8A6), Color(0xFF0D9488)],
                 ),
-                _buildNavItem(
-                  ref,
-                  'WhatsApp Logs',
-                  Icons.chat_bubble_rounded,
-                  DashboardView.whatsappMessages,
-                  currentView,
-                  isCollapsed,
-                  activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
-                ),
+                // _buildNavItem(
+                //   ref,
+                //   'WhatsApp Logs',
+                //   Icons.chat_bubble_rounded,
+                //   DashboardView.whatsappMessages,
+                //   currentView,
+                //   isCollapsed,
+                //   activeGradient: const [Color(0xFF22C55E), Color(0xFF16A34A)],
+                // ),
 
                 if (ref.watch(isSuperAdminProvider)) ...[
                   const SizedBox(height: 16),

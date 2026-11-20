@@ -1,30 +1,21 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:skazo_admin/main.dart';
+import 'package:skazo_admin/models/payment_record.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('PaymentStream enum names and display labels', () {
+    expect(PaymentStream.providerSubscription.displayName, 'Provider Subscription');
+    expect(PaymentStream.payPerLeadOutstanding.displayName, 'Pay-per-Lead (Outstanding)');
+    expect(PaymentStream.payPerLeadCollected.displayName, 'Pay-per-Lead (Collected)');
+    expect(PaymentStream.tenantContact.displayName, 'Tenant Property Contact');
+    expect(PaymentStream.propertyListing.displayName, 'Property Listing / Premium');
+    expect(PaymentStream.agentVerification.displayName, 'Agent Verification');
+    expect(PaymentStream.localPromotion.displayName, 'Local Promotion / Ads');
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('PaymentStatus enum displays accurately', () {
+    expect(PaymentStatus.collected.displayName, 'Collected');
+    expect(PaymentStatus.outstanding.displayName, 'Outstanding (Owed)');
+    expect(PaymentStatus.refunded.displayName, 'Refunded');
+    expect(PaymentStatus.partiallyRefunded.displayName, 'Partially Refunded');
   });
 }

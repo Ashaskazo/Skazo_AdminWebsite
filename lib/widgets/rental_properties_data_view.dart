@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/services/plan_classification_service.dart';
 import 'package:skazo_admin/pages/property_details_page.dart';
 import 'package:skazo_admin/utils/responsive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -493,15 +494,7 @@ class _RentalPropertiesDataViewState
         'Unnamed Property';
     final location = prop['location'] ?? prop['address'] ?? 'No address';
     final isVerified = prop['isPropertyVerified'] == true;
-    final plan = prop['ownerPlan']?.toString().toLowerCase() ?? '';
-    final isBoosted = prop['isBoosted'] == true;
-    final isPremium = prop['isPremium'] == true;
-    final isPremiumProperty =
-        plan.contains('premium') ||
-        plan == 'paid' ||
-        plan == '599' ||
-        isBoosted ||
-        isPremium;
+    final isPremiumProperty = PlanClassificationService.isPremium(prop);
 
     // Robust image logic using our new helper
     final List<String> imageUrls = extractPropertyImageUrls(prop);

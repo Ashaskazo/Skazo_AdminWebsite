@@ -49,6 +49,10 @@ class UserModel {
   final int? totalAmount;
   final num? payperLeadCharge;
   final num? extraPlanCharge;
+  final DateTime? lastpaymentpayperlead;
+  final String? lastpayperleadtransactionid;
+  final num? overallpayperleadamount;
+  final String? payPerLeadFeedback;
   final bool paymentLinkSend;
   final String? paymentLinkSenderId;
   final String? paymentLinkSenderName;
@@ -129,6 +133,10 @@ class UserModel {
     this.totalAmount,
     this.payperLeadCharge,
     this.extraPlanCharge,
+    this.lastpaymentpayperlead,
+    this.lastpayperleadtransactionid,
+    this.overallpayperleadamount,
+    this.payPerLeadFeedback,
     this.paymentLinkSend = false,
     this.paymentLinkSenderId,
     this.paymentLinkSenderName,
@@ -179,9 +187,11 @@ class UserModel {
     final inferredIsUser =
         _parseBool(data['isuser']) ?? !_looksLikeServiceProvider(data);
 
-    final starProviderStr =
-        (data['StarServiceprovider'] ?? data['starServiceProvider'])
-            ?.toString();
+    final starProviderRaw = data['StarServiceprovider'] ??
+        data['starserviceprovider'] ??
+        data['starServiceProvider'] ??
+        data['StarServiceProvider'];
+    final starProviderStr = starProviderRaw?.toString();
 
     final rawLeadCharge = data['payperLeadcharge'] ?? data['payperLeadCharge'] ?? data['payPerLeadCharge'];
     final leadChargeNum = _parseNum(rawLeadCharge);
@@ -214,8 +224,8 @@ class UserModel {
       city: data['city']?.toString(),
       cityCapital: data['City']?.toString(),
       cityKey: data['cityKey']?.toString(),
-      pincode: (data['pincode'] ?? data['customerPincode'] ?? data['postalCode'])?.toString(),
-      businessPincode: (data['businessPincode'] ?? data['business_pincode'])?.toString(),
+      // pincode: (data['pincode'] ?? data['customerPincode'] ?? data['postalCode'])?.toString(),
+      businessPincode: data['businessPincode'].toString(),
       category: data['category'],
       categoryPriority: data['categoryPriority'] is Map ? Map<String, dynamic>.from(data['categoryPriority'] as Map) : null,
       categoryBoostEnabled: _parseBool(data['categoryBoostEnabled']) ?? false,
@@ -237,6 +247,20 @@ class UserModel {
       totalAmount: _parseInt(data['totalAmount']),
       payperLeadCharge: leadChargeNum,
       extraPlanCharge: extraPlanNum,
+      lastpaymentpayperlead: _parseDateTime(
+        data['lastpaymentpayperlead'] ?? data['lastPaymentPayPerLead'],
+      ),
+      lastpayperleadtransactionid:
+          (data['lastpayperleadtransactionid'] ??
+                  data['lastPayPerLeadTransactionId'])
+              ?.toString(),
+      overallpayperleadamount: _parseNum(
+        data['overallpayperleadamount'] ?? data['overallPayPerLeadAmount'],
+      ),
+      payPerLeadFeedback: (data['payPerLeadFeedback'] ??
+              data['payperLeadFeedback'] ??
+              data['payperleadfeedback'])
+          ?.toString(),
       paymentLinkSend: _parseBool(data['paymentLinkSend']) ?? false,
       paymentLinkSenderId: data['paymentLinkSenderId']?.toString(),
       paymentLinkSenderName: data['paymentLinkSenderName']?.toString(),
@@ -337,6 +361,7 @@ class UserModel {
       if (totalAmount != null) 'totalAmount': totalAmount,
       if (payperLeadCharge != null) 'payperLeadcharge': payperLeadCharge,
       if (extraPlanCharge != null) 'extraPlanCharge': extraPlanCharge,
+      if (payPerLeadFeedback != null) 'payPerLeadFeedback': payPerLeadFeedback,
       'paymentLinkSend': paymentLinkSend,
       if (paymentLinkSenderId != null) 'paymentLinkSenderId': paymentLinkSenderId,
       if (paymentLinkSenderName != null) 'paymentLinkSenderName': paymentLinkSenderName,
@@ -388,6 +413,101 @@ class UserModel {
     final hasBusinessName = businessname?.trim().isNotEmpty == true;
     final hasBusinessPic = businesspic?.trim().isNotEmpty == true;
     return hasBusinessName || hasBusinessPic;
+  }
+
+  bool get isStarServiceProvider => StarServiceprovider?.trim() == '1';
+
+  UserModel copyWith({
+    String? payPerLeadFeedback,
+  }) {
+    return UserModel(
+      id: id,
+      rawData: {
+        ...rawData,
+        if (payPerLeadFeedback != null)
+          'payPerLeadFeedback': payPerLeadFeedback,
+      },
+      uid: uid,
+      firstname: firstname,
+      lastname: lastname,
+      username: username,
+      name: name,
+      email: email,
+      phone: phone,
+      gender: gender,
+      businessname: businessname,
+      businessbio: businessbio,
+      businessaddress: businessaddress,
+      businesspic: businesspic,
+      businesspics: businesspics,
+      businessLocation: businessLocation,
+      address: address,
+      city: city,
+      cityCapital: cityCapital,
+      cityKey: cityKey,
+      pincode: pincode,
+      businessPincode: businessPincode,
+      category: category,
+      categoryPriority: categoryPriority,
+      categoryBoostEnabled: categoryBoostEnabled,
+      ServiceRateCard: ServiceRateCard,
+      StarServiceprovider: StarServiceprovider,
+      priority: priority,
+      isverified: isverified,
+      isactive: isactive,
+      isDeactivated: isDeactivated,
+      isProviderTemperoryDeactivatedStatus:
+          isProviderTemperoryDeactivatedStatus,
+      isuser: isuser,
+      isonline: isonline,
+      profileComplete: profileComplete,
+      basicplanenable: basicplanenable,
+      activePlan: activePlan,
+      paymentPlanDuration: paymentPlanDuration,
+      paymentCount: paymentCount,
+      totalAmount: totalAmount,
+      payperLeadCharge: payperLeadCharge,
+      extraPlanCharge: extraPlanCharge,
+      lastpaymentpayperlead: lastpaymentpayperlead,
+      lastpayperleadtransactionid: lastpayperleadtransactionid,
+      overallpayperleadamount: overallpayperleadamount,
+      payPerLeadFeedback: payPerLeadFeedback ?? this.payPerLeadFeedback,
+      paymentLinkSend: paymentLinkSend,
+      paymentLinkSenderId: paymentLinkSenderId,
+      paymentLinkSenderName: paymentLinkSenderName,
+      paymentLinkSentAt: paymentLinkSentAt,
+      transactionId: transactionId,
+      paymentDate: paymentDate,
+      lastPaymentAt: lastPaymentAt,
+      ownerPropertyPaid: ownerPropertyPaid,
+      userPropertyPaid: userPropertyPaid,
+      fcmtoken: fcmtoken,
+      deactivatedAt: deactivatedAt,
+      deactivationReason: deactivationReason,
+      avgRating: avgRating,
+      ratingSum: ratingSum,
+      totalRatings: totalRatings,
+      totalCallLogs: totalCallLogs,
+      totalCallsGenerated: totalCallsGenerated,
+      callsAfterLastPayment: callsAfterLastPayment,
+      lastCallAt: lastCallAt,
+      todayApplinkClicks: todayApplinkClicks,
+      totalApplinkClicks: totalApplinkClicks,
+      lastClickAt: lastClickAt,
+      clickCounterDate: clickCounterDate,
+      aadhaarCardUrl: aadhaarCardUrl,
+      aadhaarNumber: aadhaarNumber,
+      panCardUrl: panCardUrl,
+      panNumber: panNumber,
+      coordinates: coordinates,
+      geohash5: geohash5,
+      geohash7: geohash7,
+      location: location,
+      sheetSent: sheetSent,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      verifiedAt: verifiedAt,
+    );
   }
 
   static int? _parsePhone(dynamic value) {
