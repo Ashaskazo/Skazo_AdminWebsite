@@ -17,6 +17,7 @@ enum DashboardView {
   admin,
   appConfig,
   logs,
+  pendingProviderFeedback,
   payments,
     serviceProviders,
 }

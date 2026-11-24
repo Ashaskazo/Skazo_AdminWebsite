@@ -7,6 +7,7 @@ import 'package:skazo_admin/constants/business_categories.dart';
 import 'package:skazo_admin/models/payment_record.dart';
 import 'package:skazo_admin/models/revenue_analytics_model.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
+import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/pages/business_profile_page.dart';
 
 /// CEO-Level Financial Command Center & Razorpay Reconciliation Dashboard
@@ -348,274 +349,91 @@ class _PaymentsDataViewState extends ConsumerState<PaymentsDataView> {
     required IconData icon,
   }) {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-            columns: [
-              DataColumn(label: Text('STREAM', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('TRANSACTIONS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('COLLECTED REVENUE', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('OUTSTANDING', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              if (showAllColumns)
-                DataColumn(label: Text('REFUNDED', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('NET REVENUE', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('% OF TOTAL', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('ACTION', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-            ],
-            rows: data.streamBreakdown.map((item) {
-              final isPplOutstanding = item.stream == PaymentStream.payPerLeadOutstanding;
-
-              return DataRow(
-                cells: [
-                  DataCell(
-                    Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isPplOutstanding ? const Color(0xFFEA580C) : const Color(0xFF0284C7),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          item.stream.displayName,
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: isPplOutstanding ? const Color(0xFFEA580C) : const Color(0xFF0F172A),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  DataCell(Text('${item.transactionCount}', style: GoogleFonts.poppins(fontSize: 13))),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.collectedRevenue)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: item.collectedRevenue > 0 ? const Color(0xFF16A34A) : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.outstandingAmount)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: item.outstandingAmount > 0 ? const Color(0xFFEA580C) : const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ),
-                  if (showAllColumns)
-                    DataCell(
-                      Text(
-                        '₹${NumberFormat('#,##,###').format(item.refundedAmount)}',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: item.refundedAmount > 0 ? const Color(0xFFDC2626) : const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.netAmount)}',
-                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
-                    ),
-                  ),
-                  DataCell(
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 50,
-                          child: Text(
-                            '${item.revenuePercentage.toStringAsFixed(1)}%',
-                            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          width: 60,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: (item.revenuePercentage / 100.0).clamp(0.0, 1.0),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0284C7),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  DataCell(
-                    InkWell(
-                      onTap: () {
-                        ref.read(revenueFilterProvider.notifier).state =
-                            ref.read(revenueFilterProvider).copyWith(selectedStream: item.stream);
-                        ref.read(revenueActiveTabProvider.notifier).state =
-                            RevenueDashboardTab.transactions;
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'View Ledgers',
-                          style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF0284C7)),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }).toList(),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-        ),
-      ),
-    );
-  }
-
-  // =========================================================================
-  // TAB 3: CITY WISE TAB
-  // =========================================================================
-
-  Widget _buildCitiesTab(AsyncValue<RevenueAnalyticsData> analyticsAsync) {
-    return analyticsAsync.when(
-      data: (data) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            'CITY / GEOGRAPHIC DISTRIBUTION',
-            'Attribution of collections, outstanding balances, and paying customer accounts across cities',
-          ),
-          const SizedBox(height: 16),
-          _buildCityBreakdownTable(data),
         ],
       ),
-      loading: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
-      error: (e, _) => _buildErrorCard(e.toString()),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '₹',
+                  style: GoogleFonts.poppins(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildCityBreakdownTable(RevenueAnalyticsData data, {int? limit}) {
-    final list = limit != null ? data.cityBreakdown.take(limit).toList() : data.cityBreakdown;
+  Widget _buildPaginationFooter(PaginatedPaymentNotifier notifier) {
+    final int start = (notifier.currentPage * notifier.pageSize) + 1;
+    final int end =
+        (notifier.currentPage + 1) * notifier.pageSize > notifier.totalCount
+            ? notifier.totalCount
+            : (notifier.currentPage + 1) * notifier.pageSize;
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-            columns: [
-              DataColumn(label: Text('CITY', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('PAYING USERS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('TRANSACTIONS', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('COLLECTED REVENUE', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('OUTSTANDING', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('REFUNDED', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('NET REVENUE', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('AVG PAYMENT', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-              DataColumn(label: Text('ACTION', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w700))),
-            ],
-            rows: list.map((item) {
-              return DataRow(
-                cells: [
-                  DataCell(
-                    Text(
-                      item.city,
-                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
-                    ),
-                  ),
-                  DataCell(Text('${item.uniqueUsers}', style: GoogleFonts.poppins(fontSize: 13))),
-                  DataCell(Text('${item.transactionCount}', style: GoogleFonts.poppins(fontSize: 13))),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.collectedRevenue)}',
-                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF16A34A)),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.outstandingAmount)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: item.outstandingAmount > 0 ? const Color(0xFFEA580C) : const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.refundedAmount)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: item.refundedAmount > 0 ? const Color(0xFFDC2626) : const Color(0xFF94A3B8),
-                      ),
-                    ),
-                  ),
-                  DataCell(
-                    Text(
-                      '₹${NumberFormat('#,##,###').format(item.netAmount)}',
-                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  DataCell(
-                    Text('₹${item.averagePayment.toStringAsFixed(0)}', style: GoogleFonts.poppins(fontSize: 13)),
-                  ),
-                  DataCell(
-                    InkWell(
-                      onTap: () {
-                        ref.read(revenueFilterProvider.notifier).state =
-                            ref.read(revenueFilterProvider).copyWith(selectedCity: item.city);
-                        ref.read(revenueActiveTabProvider.notifier).state =
-                            RevenueDashboardTab.transactions;
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Filter City',
-                          style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF0284C7)),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }).toList(),
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            '– of ',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: const Color(0xFF64748B),
+            ),
           ),
-        ),
+          const SizedBox(width: 24),
+          IconButton(
+            onPressed:
+                notifier.currentPage > 0 ? () => notifier.prevPage() : null,
+            icon: const Icon(Icons.chevron_left_rounded),
+          ),
+          IconButton(
+            onPressed:
+                end < notifier.totalCount ? () => notifier.nextPage() : null,
+            icon: const Icon(Icons.chevron_right_rounded),
+          ),
+        ],
       ),
     );
   }

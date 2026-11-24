@@ -2,10 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-<<<<<<< HEAD
 import 'package:skazo_admin/constants/business_categories.dart';
-=======
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 import 'package:skazo_admin/constants/hyderabad_area_groups.dart';
 import 'package:skazo_admin/models/service_provider_overview_model.dart';
 import 'package:skazo_admin/models/user_model.dart';
@@ -13,7 +10,6 @@ import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
 import 'package:skazo_admin/repositories/user_repository.dart';
 
-<<<<<<< HEAD
 /// Active tab within the Star Service Providers entity
 enum StarServiceProvidersTab {
   starProviders,
@@ -42,9 +38,6 @@ final emptySlotsSelectedZoneProvider =
 
 /// Maximum allowed Star Service Providers per city-category combination
 const int kMaxStarProvidersPerCategory = 4;
-
-=======
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 /// Currently selected city for Service Providers feature.
 /// `null` represents "All Cities" for Super Admin or auto-resolved first city.
 final serviceProvidersSelectedCityProvider = StateProvider<String?>((ref) => null);
@@ -84,7 +77,6 @@ final serviceProvidersOverviewProvider = FutureProvider<ServiceProvidersOverview
   final repository = ref.watch(userRepositoryProvider);
   final selectedCity = ref.watch(serviceProvidersSelectedCityProvider);
   final selectedZone = ref.watch(serviceProvidersSelectedZoneProvider);
-<<<<<<< HEAD
   final scope = ref.watch(cityAccessScopeProvider);
   if (!scope.isAuthorized) {
     return ServiceProvidersOverviewData.empty(
@@ -92,29 +84,17 @@ final serviceProvidersOverviewProvider = FutureProvider<ServiceProvidersOverview
       selectedDate: DateTime.now(),
     );
   }
-=======
-  final isSuper = ref.watch(isSuperAdminProvider);
-  final assignedCities = isSuper
-      ? const <String>[]
-      : ref.watch(currentAdminAssignedCitiesProvider);
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
   final pincodesMap = await ref.watch(propertyPincodesProvider.future);
 
   return repository.fetchServiceProvidersOverviewStats(
     selectedCity: selectedCity,
-<<<<<<< HEAD
     assignedCities: scope.assignedCities,
     isSuperAdmin: scope.isUnrestricted,
-=======
-    assignedCities: assignedCities,
-    isSuperAdmin: isSuper,
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
     pincodesMap: pincodesMap,
     zonePincodes: selectedZone?.pincodes,
   );
 });
 
-<<<<<<< HEAD
 /// FutureProvider computing categories and available empty slots for a selected city.
 /// Each city-category combination has a maximum of 4 Star Service Providers.
 /// Available Slots = 4 - eligible existing Star Service Providers count.
@@ -210,8 +190,6 @@ final emptySlotsFilteredCategoriesProvider = Provider<List<EmptySlotCategoryItem
   return result;
 });
 
-=======
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 /// State for the server-side paginated category provider list.
 class CategoryProvidersPaginationState {
   final List<UserModel> providers;
@@ -275,10 +253,7 @@ class CategoryProvidersPaginationNotifier
 
     ref.listen(serviceProvidersSelectedCityProvider, (_, __) => refresh());
     ref.listen(serviceProvidersSelectedZoneProvider, (_, __) => refresh());
-<<<<<<< HEAD
     ref.listen(cityAccessScopeProvider, (_, __) => refresh());
-=======
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
     ref.listen(serviceProvidersCategorySearchQueryProvider, (_, query) {
       _searchDebounce?.cancel();
       _searchDebounce = Timer(const Duration(milliseconds: 300), refresh);
@@ -315,18 +290,11 @@ class CategoryProvidersPaginationNotifier
     final selectedCity = ref.read(serviceProvidersSelectedCityProvider);
     final selectedZone = ref.read(serviceProvidersSelectedZoneProvider);
     final searchQuery = ref.read(serviceProvidersCategorySearchQueryProvider);
-<<<<<<< HEAD
     final scope = ref.read(cityAccessScopeProvider);
     if (!scope.isAuthorized) {
       state = state.copyWith(totalCount: 0);
       return;
     }
-=======
-    final isSuper = ref.read(isSuperAdminProvider);
-    final assignedCities = isSuper
-        ? const <String>[]
-        : ref.read(currentAdminAssignedCitiesProvider);
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 
     try {
       final count = await repository.countCategoryServiceProviders(
@@ -334,13 +302,8 @@ class CategoryProvidersPaginationNotifier
         areaPincodes: selectedZone?.pincodes,
         selectedCity: selectedCity,
         searchQuery: searchQuery,
-<<<<<<< HEAD
         assignedCities: scope.assignedCities,
         isSuperAdmin: scope.isUnrestricted,
-=======
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuper,
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
       );
       state = state.copyWith(totalCount: count);
     } catch (e) {
@@ -356,7 +319,6 @@ class CategoryProvidersPaginationNotifier
     final selectedCity = ref.read(serviceProvidersSelectedCityProvider);
     final selectedZone = ref.read(serviceProvidersSelectedZoneProvider);
     final searchQuery = ref.read(serviceProvidersCategorySearchQueryProvider);
-<<<<<<< HEAD
     final scope = ref.read(cityAccessScopeProvider);
     if (!scope.isAuthorized) {
       state = state.copyWith(
@@ -369,12 +331,6 @@ class CategoryProvidersPaginationNotifier
       );
       return;
     }
-=======
-    final isSuper = ref.read(isSuperAdminProvider);
-    final assignedCities = isSuper
-        ? const <String>[]
-        : ref.read(currentAdminAssignedCitiesProvider);
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 
     try {
       final pincodesMap = await ref.read(propertyPincodesProvider.future);
@@ -383,13 +339,8 @@ class CategoryProvidersPaginationNotifier
         areaPincodes: selectedZone?.pincodes,
         selectedCity: selectedCity,
         searchQuery: searchQuery,
-<<<<<<< HEAD
         assignedCities: scope.assignedCities,
         isSuperAdmin: scope.isUnrestricted,
-=======
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuper,
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
         pincodesMap: pincodesMap,
         startAfter: isRefresh ? null : state.lastDocument,
         limit: 20,
@@ -437,10 +388,7 @@ class AreaProvidersPaginationNotifier
       _searchDebounce?.cancel();
     });
 
-<<<<<<< HEAD
     ref.listen(cityAccessScopeProvider, (_, __) => refresh());
-=======
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
     ref.listen(serviceProvidersCategorySearchQueryProvider, (_, query) {
       _searchDebounce?.cancel();
       _searchDebounce = Timer(const Duration(milliseconds: 300), refresh);
@@ -487,18 +435,11 @@ class AreaProvidersPaginationNotifier
     final repository = ref.read(userRepositoryProvider);
     final selectedCity = ref.read(serviceProvidersSelectedCityProvider);
     final searchQuery = ref.read(serviceProvidersCategorySearchQueryProvider);
-<<<<<<< HEAD
     final scope = ref.read(cityAccessScopeProvider);
     if (!scope.isAuthorized) {
       state = state.copyWith(totalCount: 0);
       return;
     }
-=======
-    final isSuper = ref.read(isSuperAdminProvider);
-    final assignedCities = isSuper
-        ? const <String>[]
-        : ref.read(currentAdminAssignedCitiesProvider);
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 
     try {
       final count = await repository.countCategoryServiceProviders(
@@ -506,13 +447,8 @@ class AreaProvidersPaginationNotifier
         areaPincodes: _areaPincodes,
         selectedCity: selectedCity,
         searchQuery: searchQuery,
-<<<<<<< HEAD
         assignedCities: scope.assignedCities,
         isSuperAdmin: scope.isUnrestricted,
-=======
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuper,
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
       );
       state = state.copyWith(totalCount: count);
     } catch (e) {
@@ -526,7 +462,6 @@ class AreaProvidersPaginationNotifier
     final repository = ref.read(userRepositoryProvider);
     final selectedCity = ref.read(serviceProvidersSelectedCityProvider);
     final searchQuery = ref.read(serviceProvidersCategorySearchQueryProvider);
-<<<<<<< HEAD
     final scope = ref.read(cityAccessScopeProvider);
     if (!scope.isAuthorized) {
       state = state.copyWith(
@@ -539,12 +474,6 @@ class AreaProvidersPaginationNotifier
       );
       return;
     }
-=======
-    final isSuper = ref.read(isSuperAdminProvider);
-    final assignedCities = isSuper
-        ? const <String>[]
-        : ref.read(currentAdminAssignedCitiesProvider);
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
 
     try {
       final pincodesMap = await ref.read(propertyPincodesProvider.future);
@@ -553,13 +482,8 @@ class AreaProvidersPaginationNotifier
         areaPincodes: _areaPincodes,
         selectedCity: selectedCity,
         searchQuery: searchQuery,
-<<<<<<< HEAD
         assignedCities: scope.assignedCities,
         isSuperAdmin: scope.isUnrestricted,
-=======
-        assignedCities: assignedCities,
-        isSuperAdmin: isSuper,
->>>>>>> 843c6b012822faceeaaef5e2493e29b262269d99
         pincodesMap: pincodesMap,
         startAfter: isRefresh ? null : state.lastDocument,
         limit: 20,

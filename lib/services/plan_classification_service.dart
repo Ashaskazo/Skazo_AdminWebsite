@@ -23,9 +23,16 @@ class PlanClassificationService {
   /// Returns true ONLY if the provider's category is one of the explicitly
   /// configured Premium categories.
   ///
+  /// Accepts either a [UserModel], a [Map<String, dynamic>], or a raw category value.
   /// Plan, payment, or verification status does NOT make a non-Premium category Premium.
-  static bool isPremium(UserModel provider) {
-    return isPremiumCategory(provider.category);
+  static bool isPremium(dynamic provider) {
+    if (provider is UserModel) {
+      return isPremiumCategory(provider.category);
+    }
+    if (provider is Map) {
+      return isPremiumCategory(provider['category']);
+    }
+    return isPremiumCategory(provider);
   }
 
   /// Checks if a raw category (which can be a String, a List, or null) matches

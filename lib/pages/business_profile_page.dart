@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:skazo_admin/providers/admin_providers.dart';
 import 'package:skazo_admin/providers/collections_provider.dart';
+import 'package:skazo_admin/providers/user_pagination_provider.dart';
+import 'package:skazo_admin/providers/deactivated_pagination_provider.dart';
 import 'package:skazo_admin/utils/responsive.dart';
 import 'package:skazo_admin/widgets/provider_call_logs_section.dart';
 

@@ -131,17 +131,20 @@ class ProviderCallLogItem {
 /// matching `callLogs.businessId == selectedProviderId`.
 class ProviderCallLogsSection extends StatefulWidget {
   final String providerId;
+  final String? providerUid;
   final Map<String, dynamic>? providerData;
   final Stream<List<ProviderCallLogItem>>? callLogsStream;
   final FirebaseFirestore? firestore;
 
   const ProviderCallLogsSection({
     super.key,
-    required this.providerId,
+    String? providerId,
+    String? providerUid,
     this.providerData,
     this.callLogsStream,
     this.firestore,
-  });
+  })  : providerId = providerId ?? providerUid ?? '',
+        providerUid = providerUid ?? providerId;
 
   @override
   State<ProviderCallLogsSection> createState() => _ProviderCallLogsSectionState();

@@ -26,6 +26,7 @@ import 'package:skazo_admin/widgets/service_providers_data_view.dart';
 import '../widgets/call_logs_data_view.dart';
 import 'package:skazo_admin/widgets/call_log_sheet_view.dart';
 import 'package:skazo_admin/widgets/call_logs_detail_data_view.dart';
+import 'package:skazo_admin/widgets/pending_provider_feedback_data_view.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -235,6 +236,8 @@ class DashboardPage extends ConsumerWidget {
         return 'App Configuration';
       case DashboardView.logs:
         return 'Call Logs & Feedback';
+      case DashboardView.pendingProviderFeedback:
+        return 'Pending Provider Feedback';
       case DashboardView.payments:
         return 'Payments';
     }
@@ -244,8 +247,6 @@ class DashboardPage extends ConsumerWidget {
     switch (view) {
       case DashboardView.summary:
         return const _SummaryDashboard();
-             case DashboardView.serviceProviders:
-        return const ServiceProvidersDataView();
       case DashboardView.users:
         return const UsersDataView();
       case DashboardView.serviceProviders:
